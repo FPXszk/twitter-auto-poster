@@ -5,6 +5,7 @@
 .env
 .env.local
 config/secrets.yaml
+config/tickers_jp.csv.bak
 
 # Twitter cookieキャッシュ
 *.cookie

@@ -190,7 +190,8 @@ bash scripts/fetch_and_post.sh --category invest --post
 ```bash
 python3 -m venv python/.venv
 python/.venv/bin/pip install --upgrade pip
-python/.venv/bin/pip install pandas yfinance twitter-cli
+python/.venv/bin/pip install pandas yfinance twitter-cli xlrd
+python/.venv/bin/python python/update_tickers_jp.py
 python/.venv/bin/python python/update_tickers.py
 python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json
 python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json
@@ -199,6 +200,7 @@ python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/sto
 ### 日本株サマリーを実投稿する
 
 ```bash
+python/.venv/bin/python python/update_tickers_jp.py
 python/.venv/bin/python python/update_tickers.py
 python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json
 python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json
@@ -214,7 +216,7 @@ just logs
 just stop
 twitter status --yaml
 git --no-pager status --short
-python/.venv/bin/python -m py_compile python/stock_fetcher.py python/stock_cache.py python/update_tickers.py python/morning_summary.py python/evening_summary.py
+python/.venv/bin/python -m py_compile python/stock_fetcher.py python/stock_cache.py python/update_tickers.py python/update_tickers_jp.py python/morning_summary.py python/evening_summary.py
 ```
 
 README や workflow を触ったときの軽い確認例:
