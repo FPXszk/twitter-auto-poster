@@ -1,0 +1,78 @@
+name: Evening stock post
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Skip the final twitter post step
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  schedule:
+    - cron: "0 9 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evening-stock-post
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install yfinance pandas twitter-cli
+
+      - name: Prepare runtime files
+        run: |
+          mkdir -p tmp
+          touch tmp/posted_ids.txt
+
+      - name: Restore post state
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/posted_ids.txt
+          key: ${{ runner.os }}-evening-stock-state-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-evening-stock-state-
+
+      - name: Run evening summary
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            python/.venv/bin/python python/evening_summary.py --dry-run
+          else
+            python/.venv/bin/python python/evening_summary.py
+          fi
+
+      - name: Save post state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tmp/posted_ids.txt
+          key: ${{ runner.os }}-evening-stock-state-${{ github.run_id }}
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evening-stock-run
+          path: tmp/
+          if-no-files-found: ignore

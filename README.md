@@ -1,6 +1,6 @@
 # twitter-auto-poster
 
-`twitter-cli` を使って、`news` / `invest` 系の情報を収集し、投稿候補を作り、必要に応じて X へ投稿するための自動化プロジェクトです。
+`twitter-cli` を使って、`news` / `invest` 系の情報収集投稿と、日本株サマリーの定時投稿を行う自動化プロジェクトです。
 
 現状は **`dry-run` 既定の MVP** として構成してあり、ローカル実行と GitHub Actions の両方で同じスクリプトを使います。
 
@@ -13,6 +13,7 @@
 3. 投稿済み ID を避けながら候補を選ぶ
 4. `dry-run` では候補文だけ表示する
 5. 明示的に投稿モードにしたときだけ `twitter post` を実行する
+6. 日本株サマリーでは `yfinance` で東証プライム銘柄を集計し、朝夕の要約を投稿する
 
 ## ディレクトリ構成
 
@@ -20,19 +21,26 @@
 .
 ├── .agents/
 │   └── skills/twitter-cli/SKILL.md
-├── .github/
-│   └── workflows/
-│       ├── post_invest.yml
-│       └── post_news.yml
 ├── config/
 │   ├── accounts.yaml
-│   └── sources.yaml
+│   ├── sources.yaml
+│   └── tickers_jp.csv
+├── python/
+│   ├── stock_fetcher.py
+│   ├── morning_summary.py
+│   └── evening_summary.py
 ├── scripts/
 │   ├── lib/
 │   │   └── common.sh
 │   ├── fetch_and_post.sh
 │   ├── fetch_search.sh
 │   └── fetch_user.sh
+├── .github/
+│   └── workflows/
+│       ├── evening_post.yml
+│       ├── morning_post.yml
+│       ├── post_invest.yml
+│       └── post_news.yml
 ├── devinit.sh
 ├── justfile
 └── twitter-auto-poster.log
@@ -74,13 +82,19 @@
   - `news` 用の定期実行 / 手動実行
 - `post_invest.yml`
   - `invest` 用の定期実行 / 手動実行
+- `morning_post.yml`
+  - 日本株の朝まとめ投稿
+- `evening_post.yml`
+  - 日本株の夜総括投稿
 
-どちらも state をキャッシュし、`tmp/` を artifact として保存します。
+各 workflow は state をキャッシュし、`tmp/` を artifact として保存します。
 
 ## 必要なもの
 
 - `python3`
 - `pyyaml`
+- `pandas`
+- `yfinance`
 - `twitter-cli`
 - `tmux`
 - `lazygit`
@@ -91,6 +105,7 @@
 
 ```bash
 python3 -m pip install --user pyyaml
+python3 -m pip install --user pandas yfinance
 uv tool install twitter-cli
 twitter whoami
 ```
@@ -170,6 +185,23 @@ bash scripts/fetch_and_post.sh --category news --post
 bash scripts/fetch_and_post.sh --category invest --post
 ```
 
+### 日本株サマリーを手動確認する
+
+```bash
+python3 -m venv python/.venv
+python/.venv/bin/pip install --upgrade pip
+python/.venv/bin/pip install pandas yfinance twitter-cli
+python/.venv/bin/python python/morning_summary.py --dry-run
+python/.venv/bin/python python/evening_summary.py --dry-run
+```
+
+### 日本株サマリーを実投稿する
+
+```bash
+python/.venv/bin/python python/morning_summary.py
+python/.venv/bin/python python/evening_summary.py
+```
+
 ## 保守・確認コマンド
 
 普段よく使うものをまとめると以下です。
@@ -180,6 +212,7 @@ just logs
 just stop
 twitter status --yaml
 git --no-pager status --short
+python/.venv/bin/python -m py_compile python/stock_fetcher.py python/morning_summary.py python/evening_summary.py
 ```
 
 README や workflow を触ったときの軽い確認例:
@@ -207,7 +240,7 @@ PY
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
 - `tmp/posted_ids.txt`
-  - `post_invest.yml` が使う投稿済み ID の簡易 state
+  - `post_invest.yml` と日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
 
 ## ドキュメント
 
@@ -215,6 +248,8 @@ PY
   - Secrets 設定、`workflow_dispatch` から schedule への移行、障害復旧の手順
 - `docs/SCHEMA.md`
   - `config/sources.yaml` と `config/accounts.yaml` の schema
+- `docs/PLAN.md`
+  - 日本株サマリー機能の実装要件
 
 ## GitHub Actions
 
@@ -222,6 +257,8 @@ PY
 
 - `.github/workflows/post_news.yml`
 - `.github/workflows/post_invest.yml`
+- `.github/workflows/morning_post.yml`
+- `.github/workflows/evening_post.yml`
 
 ### 挙動
 
@@ -229,11 +266,13 @@ PY
 - `schedule` 対応
 - `dry_run` 入力あり
 - `post_invest.yml` は `python/.venv/bin/twitter` を使い、毎時間の自動投稿を行います
+- `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
+- `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - Python 3.11 をセットアップ
-- `pyyaml` と `twitter-cli` をインストール
+- `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
 - state を cache restore/save
 - `tmp/` を artifact 保存
-- `Job summary` に選ばれた候補、score 内訳、要約文を出力します
+- `post_news.yml` / `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
 
 ### 必要な Secrets
 
