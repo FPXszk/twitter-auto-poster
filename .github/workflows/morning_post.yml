@@ -11,6 +11,14 @@ on:
         options:
           - "true"
           - "false"
+      force_repost:
+        description: Ignore the once-per-day duplicate guard for this manual run
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     - cron: "0 23 * * 0-4"
 
@@ -26,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      FORCE_REPOST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_repost || 'false' }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -56,10 +65,14 @@ jobs:
 
       - name: Run morning summary
         run: |
+          EXTRA_ARGS=""
+          if [ "${FORCE_REPOST}" = "true" ]; then
+            EXTRA_ARGS="--force-repost"
+          fi
           if [ "${DRY_RUN}" = "true" ]; then
-            python/.venv/bin/python python/morning_summary.py --dry-run
+            python/.venv/bin/python python/morning_summary.py --dry-run ${EXTRA_ARGS}
           else
-            python/.venv/bin/python python/morning_summary.py
+            python/.venv/bin/python python/morning_summary.py ${EXTRA_ARGS}
           fi
 
       - name: Save post state

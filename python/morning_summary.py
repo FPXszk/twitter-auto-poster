@@ -35,6 +35,7 @@ def configure_logging(level: str = "INFO") -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Post the morning Japanese stock summary.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force-repost", action="store_true")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
     parser.add_argument("--log-level", default="INFO")
@@ -263,8 +264,11 @@ def main() -> int:
         summary_key = f"stock-morning:{current_jst_date()}"
         state_entries = load_state_entries()
         if summary_key in state_entries:
-            LOGGER.warning("morning summary already posted for %s; skipping", trade_date)
-            return 0
+            if args.force_repost:
+                LOGGER.warning("morning summary already posted for %s; continuing due to --force-repost", trade_date)
+            else:
+                LOGGER.warning("morning summary already posted for %s; skipping", trade_date)
+                return 0
 
         LOGGER.info("prepared morning summary: %s", tweet_text.replace("\n", " | "))
         if args.dry_run:
