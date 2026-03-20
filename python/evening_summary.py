@@ -21,7 +21,6 @@ POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 MAX_POST_LENGTH = 140
 NIKKEI_TICKER = "^N225"
-MEDALS = ("🥇", "🥈", "🥉")
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -73,16 +72,12 @@ def code_of(ticker: str) -> str:
     return ticker.removesuffix(".T")
 
 
-def format_abs_pct(value: float) -> str:
-    return f"{abs(value):.1f}"
+def format_signed_pct(value: float) -> str:
+    return f"{value:+.1f}"
 
 
 def format_price(value: float) -> str:
     return f"{value:,.0f}"
-
-
-def arrow_of(value: float) -> str:
-    return "📈" if value >= 0 else "📉"
 
 
 def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
@@ -117,22 +112,10 @@ def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
 
 def compute_rankings(
     snapshots: Sequence[StockSnapshot],
-) -> tuple[list[StockSnapshot], list[StockSnapshot], list[StockSnapshot]]:
-    trading_top = sorted(snapshots, key=lambda item: item.trading_value, reverse=True)[:3]
+) -> tuple[list[StockSnapshot], list[StockSnapshot]]:
     gainers = sorted((item for item in snapshots if item.pct_change > 0), key=lambda item: item.pct_change, reverse=True)[:3]
     losers = sorted((item for item in snapshots if item.pct_change < 0), key=lambda item: item.pct_change)[:3]
-    return trading_top, gainers, losers
-
-
-def format_trading_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
-    if not items:
-        return "🥇 なし"
-
-    return "\n".join(
-        f"{medal} {short_name(item.name, name_limit)}({code_of(item.ticker)}) "
-        f"¥{format_price(item.current_close)} {arrow_of(item.pct_change)}{format_abs_pct(item.pct_change)}%"
-        for medal, item in zip(MEDALS, items)
-    )
+    return gainers, losers
 
 
 def format_gainer_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
@@ -140,7 +123,7 @@ def format_gainer_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
         return "1. なし"
 
     return "\n".join(
-        f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) 📈+{format_abs_pct(item.pct_change)}%"
+        f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) {format_signed_pct(item.pct_change)}%"
         for index, item in enumerate(items, start=1)
     )
 
@@ -150,8 +133,32 @@ def format_loser_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
         return "1. なし"
 
     return "\n".join(
-        f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) 📉-{format_abs_pct(item.pct_change)}%"
+        f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) {format_signed_pct(item.pct_change)}%"
         for index, item in enumerate(items, start=1)
+    )
+
+
+def render_post_text(
+    trade_date: str,
+    nikkei_price: float,
+    nikkei_change: float,
+    gainers: Sequence[StockSnapshot],
+    losers: Sequence[StockSnapshot],
+    name_limit: int | None = None,
+) -> str:
+    date_label = trade_date[5:].replace("-", "/")
+    candidate_names = [item.name for item in (*gainers, *losers)]
+    if name_limit is not None:
+        resolved_name_limit = name_limit
+    else:
+        resolved_name_limit = max((len(name) for name in candidate_names), default=1)
+    return (
+        f"【🌆 本日の市場総括】{date_label}\n"
+        f"🗾 日経平均 ¥{format_price(nikkei_price)} {format_signed_pct(nikkei_change)}%\n"
+        f"値上がり率TOP3\n"
+        f"{format_gainer_lines(gainers, resolved_name_limit)}\n"
+        f"値下がり率TOP3\n"
+        f"{format_loser_lines(losers, resolved_name_limit)}"
     )
 
 
@@ -159,44 +166,30 @@ def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
-    trading_top, gainers, losers = compute_rankings(snapshots)
+    gainers, losers = compute_rankings(snapshots)
     trade_date = latest_trade_date(snapshots)
-    date_label = trade_date[5:].replace("-", "/")
     nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_TICKER)
 
-    count_options = (
-        (3, 3, 3),
-        (3, 3, 2),
-        (3, 2, 2),
-        (3, 2, 1),
-        (2, 2, 2),
-        (2, 2, 1),
-        (2, 1, 1),
-        (1, 1, 1),
-    )
-    name_limits = (12, 10, 8, 6, 4, 3, 2, 1)
+    tweet_text = render_post_text(trade_date, nikkei_price, nikkei_change, gainers, losers)
+    if len(tweet_text) <= MAX_POST_LENGTH:
+        return trade_date, tweet_text
 
-    for trading_count, gainer_count, loser_count in count_options:
-        for name_limit in name_limits:
-            trading_items = trading_top[:trading_count]
-            gainer_items = gainers[:gainer_count]
-            loser_items = losers[:loser_count]
-            trading_label = len(trading_items) if trading_items else 1
-            gainer_label = len(gainer_items) if gainer_items else 1
-            loser_label = len(loser_items) if loser_items else 1
+    tweet_text = render_post_text(trade_date, nikkei_price, nikkei_change, gainers, losers, name_limit=6)
+    if len(tweet_text) <= MAX_POST_LENGTH:
+        return trade_date, tweet_text
 
-            tweet_text = (
-                f"【🌆 本日の市場総括】{date_label}\n\n"
-                f"🗾 日経平均 ¥{format_price(nikkei_price)} {arrow_of(nikkei_change)}{format_abs_pct(nikkei_change)}%\n\n"
-                f"💴 売買代金TOP{trading_label}\n"
-                f"{format_trading_lines(trading_items, name_limit)}\n\n"
-                f"📈 値上がりTOP{gainer_label}\n"
-                f"{format_gainer_lines(gainer_items, name_limit)}\n\n"
-                f"📉 値下がりTOP{loser_label}\n"
-                f"{format_loser_lines(loser_items, name_limit)}"
-            )
-            if len(tweet_text) <= MAX_POST_LENGTH:
-                return trade_date, tweet_text
+    count_options = ((3, 2), (2, 2), (2, 1), (1, 1))
+    for gainer_count, loser_count in count_options:
+        tweet_text = render_post_text(
+            trade_date,
+            nikkei_price,
+            nikkei_change,
+            gainers[:gainer_count],
+            losers[:loser_count],
+            name_limit=6,
+        )
+        if len(tweet_text) <= MAX_POST_LENGTH:
+            return trade_date, tweet_text
 
     raise ValueError("could not fit evening summary within 140 characters")
 

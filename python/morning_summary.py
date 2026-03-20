@@ -20,9 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 MAX_POST_LENGTH = 140
-NIKKEI_TICKER = "^N225"
 NIKKEI_FUTURES_TICKER = "NKD=F"
-MEDALS = ("🥇", "🥈", "🥉")
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -74,16 +72,12 @@ def code_of(ticker: str) -> str:
     return ticker.removesuffix(".T")
 
 
-def format_abs_pct(value: float) -> str:
-    return f"{abs(value):.1f}"
+def format_signed_pct(value: float) -> str:
+    return f"{value:+.1f}"
 
 
 def format_price(value: float) -> str:
     return f"{value:,.0f}"
-
-
-def arrow_of(value: float) -> str:
-    return "📈" if value >= 0 else "📉"
 
 
 def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
@@ -116,27 +110,13 @@ def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
     return current_close, pct_change
 
 
-def compute_rankings(snapshots: Sequence[StockSnapshot]) -> tuple[list[StockSnapshot], list[StockSnapshot]]:
-    trading_top = sorted(snapshots, key=lambda item: item.trading_value, reverse=True)[:3]
-
+def compute_rankings(snapshots: Sequence[StockSnapshot]) -> list[StockSnapshot]:
     high_breakouts = [
         snapshot
         for snapshot in snapshots
-        if snapshot.high_price >= snapshot.fifty_two_week_high * 0.999
+        if snapshot.high_price >= snapshot.fifty_two_week_high
     ]
-    breakout_top = sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:3]
-    return trading_top, breakout_top
-
-
-def format_trading_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
-    if not items:
-        return "🥇 なし"
-
-    return "\n".join(
-        f"{medal} {short_name(item.name, name_limit)}({code_of(item.ticker)}) "
-        f"¥{format_price(item.current_close)} {arrow_of(item.pct_change)}{format_abs_pct(item.pct_change)}%"
-        for medal, item in zip(MEDALS, items)
-    )
+    return sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:5]
 
 
 def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
@@ -145,8 +125,30 @@ def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> st
 
     return "\n".join(
         f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) "
-        f"{arrow_of(item.pct_change)}{format_abs_pct(item.pct_change)}%"
+        f"{format_signed_pct(item.pct_change)}%"
         for index, item in enumerate(items, start=1)
+    )
+
+
+def render_post_text(
+    trade_date: str,
+    futures_price: float,
+    futures_change: float,
+    breakout_items: Sequence[StockSnapshot],
+    name_limit: int | None = None,
+) -> str:
+    date_label = trade_date[5:].replace("-", "/")
+    if name_limit is not None:
+        resolved_name_limit = name_limit
+    elif breakout_items:
+        resolved_name_limit = max(len(item.name) for item in breakout_items)
+    else:
+        resolved_name_limit = 1
+    return (
+        f"【🌅 本日の注目銘柄】{date_label}\n"
+        f"🌙 日経平均先物(夜間) ¥{format_price(futures_price)} {format_signed_pct(futures_change)}%\n"
+        f"52週高値更新中\n"
+        f"{format_breakout_lines(breakout_items, resolved_name_limit)}"
     )
 
 
@@ -154,33 +156,28 @@ def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
-    trading_top, breakout_top = compute_rankings(snapshots)
+    breakout_top = compute_rankings(snapshots)
     trade_date = latest_trade_date(snapshots)
-    date_label = trade_date[5:].replace("-", "/")
-    nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_TICKER)
     futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
 
-    count_options = ((3, 3), (3, 2), (3, 1), (2, 2), (2, 1), (1, 1))
-    name_limits = (12, 10, 8, 6, 4, 3, 2, 1)
+    tweet_text = render_post_text(trade_date, futures_price, futures_change, breakout_top)
+    if len(tweet_text) <= MAX_POST_LENGTH:
+        return trade_date, tweet_text
 
-    for trading_count, breakout_count in count_options:
-        for name_limit in name_limits:
-            trading_items = trading_top[:trading_count]
-            breakout_items = breakout_top[:breakout_count]
-            trading_label = len(trading_items) if trading_items else 1
-            breakout_label = len(breakout_items) if breakout_items else 1
+    tweet_text = render_post_text(trade_date, futures_price, futures_change, breakout_top, name_limit=6)
+    if len(tweet_text) <= MAX_POST_LENGTH:
+        return trade_date, tweet_text
 
-            tweet_text = (
-                f"【🌅 本日の注目銘柄】{date_label}\n\n"
-                f"🗾 日経平均 ¥{format_price(nikkei_price)} {arrow_of(nikkei_change)}{format_abs_pct(nikkei_change)}%\n"
-                f"🌙 日経先物 ¥{format_price(futures_price)} {arrow_of(futures_change)}{format_abs_pct(futures_change)}%\n\n"
-                f"💴 売買代金TOP{trading_label}\n"
-                f"{format_trading_lines(trading_items, name_limit)}\n\n"
-                f"🏔️ 52週高値更新TOP{breakout_label}\n"
-                f"{format_breakout_lines(breakout_items, name_limit)}"
-            )
-            if len(tweet_text) <= MAX_POST_LENGTH:
-                return trade_date, tweet_text
+    for item_count in range(len(breakout_top) - 1, 0, -1):
+        tweet_text = render_post_text(
+            trade_date,
+            futures_price,
+            futures_change,
+            breakout_top[:item_count],
+            name_limit=6,
+        )
+        if len(tweet_text) <= MAX_POST_LENGTH:
+            return trade_date, tweet_text
 
     raise ValueError("could not fit morning summary within 140 characters")
 
