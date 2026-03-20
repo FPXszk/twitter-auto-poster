@@ -23,6 +23,7 @@ on:
     - cron: "0 9 * * 1-5"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -63,6 +64,63 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-evening-stock-state-
 
+      - name: Restore stock cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          repository = "${{ github.repository }}"
+          result = subprocess.run(
+              [
+                  "gh",
+                  "run",
+                  "list",
+                  "--repo",
+                  repository,
+                  "--workflow",
+                  "update_tickers.yml",
+                  "--branch",
+                  "main",
+                  "--status",
+                  "success",
+                  "--limit",
+                  "1",
+                  "--json",
+                  "databaseId",
+              ],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          runs = json.loads(result.stdout)
+          if not runs:
+              raise SystemExit("no successful update_tickers.yml run found")
+
+          subprocess.run(
+              [
+                  "gh",
+                  "run",
+                  "download",
+                  str(runs[0]["databaseId"]),
+                  "--repo",
+                  repository,
+                  "--name",
+                  "stock-cache",
+                  "--dir",
+                  "tmp",
+              ],
+              check=True,
+          )
+
+          target = Path("tmp/stock_cache.json")
+          if not target.is_file():
+              raise SystemExit(f"stock_cache.json was not restored to the expected path: {target}")
+          PY
+
       - name: Run evening summary
         run: |
           EXTRA_ARGS=""
@@ -70,9 +128,9 @@ jobs:
             EXTRA_ARGS="--force-repost"
           fi
           if [ "${DRY_RUN}" = "true" ]; then
-            python/.venv/bin/python python/evening_summary.py --dry-run ${EXTRA_ARGS}
+            python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json ${EXTRA_ARGS}
           else
-            python/.venv/bin/python python/evening_summary.py ${EXTRA_ARGS}
+            python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json ${EXTRA_ARGS}
           fi
 
       - name: Save post state

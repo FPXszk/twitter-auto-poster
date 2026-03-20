@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import json
 import logging
@@ -19,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TICKERS_PATH = PROJECT_ROOT / "config" / "tickers_jp.csv"
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_SLEEP_SECONDS = 1.0
+INFO_FETCH_MAX_WORKERS = 8
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,27 @@ def _fetch_fifty_two_week_high(ticker: str) -> float:
     return fifty_two_week_high
 
 
+def _fetch_fifty_two_week_highs(batch: Sequence[TickerRecord]) -> tuple[dict[str, float], dict[str, Exception]]:
+    values: dict[str, float] = {}
+    errors: dict[str, Exception] = {}
+    max_workers = min(INFO_FETCH_MAX_WORKERS, len(batch))
+    if max_workers <= 0:
+        return values, errors
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(_fetch_fifty_two_week_high, record.ticker): record.ticker
+            for record in batch
+        }
+        for future in as_completed(future_map):
+            ticker = future_map[future]
+            try:
+                values[ticker] = future.result()
+            except Exception as error:
+                errors[ticker] = error
+    return values, errors
+
+
 def _build_snapshot(
     record: TickerRecord,
     frame: pd.DataFrame,
@@ -199,10 +222,14 @@ def _download_batch(batch: Sequence[TickerRecord]) -> list[StockSnapshot]:
         return []
 
     snapshots: list[StockSnapshot] = []
+    fifty_two_week_highs, info_errors = _fetch_fifty_two_week_highs(batch)
     for record in batch:
         try:
             frame = _extract_frame(history, record.ticker, len(batch))
-            fifty_two_week_high = _fetch_fifty_two_week_high(record.ticker)
+            error = info_errors.get(record.ticker)
+            if error is not None:
+                raise error
+            fifty_two_week_high = fifty_two_week_highs[record.ticker]
             snapshot = _build_snapshot(record, frame, fifty_two_week_high)
         except (RuntimeError, ValueError) as error:
             LOGGER.warning("%s", error)

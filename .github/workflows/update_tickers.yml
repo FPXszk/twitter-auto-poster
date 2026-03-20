@@ -1,0 +1,43 @@
+name: Update stock cache
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * *"
+    - cron: "0 8 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-stock-cache
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install yfinance pandas
+
+      - name: Prepare runtime files
+        run: mkdir -p tmp
+
+      - name: Build stock cache
+        run: python/.venv/bin/python python/update_tickers.py
+
+      - name: Upload stock cache artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-cache
+          path: tmp/stock_cache.json
+          if-no-files-found: error

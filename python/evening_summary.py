@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
+from stock_cache import load_stock_cache
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Post the evening Japanese stock summary.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-repost", action="store_true")
+    parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
     parser.add_argument("--log-level", default="INFO")
@@ -261,10 +263,14 @@ def main() -> int:
     configure_logging(args.log_level)
 
     try:
-        snapshots = fetch_stock_snapshots(
-            batch_size=args.batch_size,
-            sleep_seconds=args.sleep_seconds,
-        )
+        if args.cache_path is not None:
+            snapshots = load_stock_cache(args.cache_path)
+            LOGGER.info("loaded %s stock snapshots from cache: %s", len(snapshots), args.cache_path)
+        else:
+            snapshots = fetch_stock_snapshots(
+                batch_size=args.batch_size,
+                sleep_seconds=args.sleep_seconds,
+            )
         if not snapshots:
             LOGGER.error("no stock data available; skipping evening post")
             return 1

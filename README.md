@@ -191,15 +191,17 @@ bash scripts/fetch_and_post.sh --category invest --post
 python3 -m venv python/.venv
 python/.venv/bin/pip install --upgrade pip
 python/.venv/bin/pip install pandas yfinance twitter-cli
-python/.venv/bin/python python/morning_summary.py --dry-run
-python/.venv/bin/python python/evening_summary.py --dry-run
+python/.venv/bin/python python/update_tickers.py
+python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json
+python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json
 ```
 
 ### 日本株サマリーを実投稿する
 
 ```bash
-python/.venv/bin/python python/morning_summary.py
-python/.venv/bin/python python/evening_summary.py
+python/.venv/bin/python python/update_tickers.py
+python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json
+python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json
 ```
 
 ## 保守・確認コマンド
@@ -212,7 +214,7 @@ just logs
 just stop
 twitter status --yaml
 git --no-pager status --short
-python/.venv/bin/python -m py_compile python/stock_fetcher.py python/morning_summary.py python/evening_summary.py
+python/.venv/bin/python -m py_compile python/stock_fetcher.py python/stock_cache.py python/update_tickers.py python/morning_summary.py python/evening_summary.py
 ```
 
 README や workflow を触ったときの軽い確認例:
@@ -259,6 +261,7 @@ PY
 - `.github/workflows/post_invest.yml`
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
+- `.github/workflows/update_tickers.yml`
 
 ### 挙動
 
@@ -268,9 +271,12 @@ PY
 - `post_invest.yml` は `python/.venv/bin/twitter` を使い、毎時間の自動投稿を行います
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
+- `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
 - Python 3.11 をセットアップ
 - `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
 - state を cache restore/save
+- 日本株 summary workflow は `update_tickers.yml` が保存した `stock-cache` artifact を復元して使います
+- 初回デプロイ時は先に `update_tickers.yml` を手動実行してください。`stock-cache` artifact を取得できない場合、朝夕 summary workflow は fail-fast します
 - `tmp/` を artifact 保存
 - `post_news.yml` / `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
 
