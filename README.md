@@ -1,21 +1,93 @@
 # twitter-auto-poster
 
-`twitter-cli` を使って、`news` と `invest` の 2 カテゴリを安全に収集・投稿するための最小構成です。
+`twitter-cli` を使って、`news` / `invest` 系の情報を収集し、投稿候補を作り、必要に応じて X へ投稿するための自動化プロジェクトです。
 
-## 方針
+現状は **`dry-run` 既定の MVP** として構成してあり、ローカル実行と GitHub Actions の両方で同じスクリプトを使います。
 
-- 既定は `dry-run` です
-- 収集と投稿判定は `scripts/` に集約します
-- 設定は `config/` の YAML に置きます
-- GitHub Actions からもローカルからも同じスクリプトを呼びます
+## プロジェクト概要
+
+このリポジトリは次の流れを扱います。
+
+1. `config/sources.yaml` から収集対象を読む
+2. `twitter-cli` でユーザー投稿または検索結果を取得する
+3. 投稿済み ID を避けながら候補を選ぶ
+4. `dry-run` では候補文だけ表示する
+5. 明示的に投稿モードにしたときだけ `twitter post` を実行する
+
+## ディレクトリ構成
+
+```text
+.
+├── .agents/
+│   └── skills/twitter-cli/SKILL.md
+├── .github/
+│   └── workflows/
+│       ├── post_invest.yml
+│       └── post_news.yml
+├── config/
+│   ├── accounts.yaml
+│   └── sources.yaml
+├── scripts/
+│   ├── lib/
+│   │   └── common.sh
+│   ├── fetch_and_post.sh
+│   ├── fetch_search.sh
+│   └── fetch_user.sh
+├── devinit.sh
+├── justfile
+└── twitter-auto-poster.log
+```
+
+## 主要ファイルの役割
+
+### `scripts/`
+
+- `scripts/lib/common.sh`
+  - 共通関数
+  - 依存コマンド確認
+  - 認証確認
+  - `tmp/` 出力ディレクトリ管理
+  - YAML 読み出し補助
+- `scripts/fetch_user.sh`
+  - `type: user` の source を読み、`twitter user-posts` を実行
+- `scripts/fetch_search.sh`
+  - `type: search` の source を読み、`twitter search` を実行
+- `scripts/fetch_and_post.sh`
+  - 収集 → 候補選定 → `dry-run` 表示 or 実投稿 のオーケストレーション
+
+### `config/`
+
+- `config/sources.yaml`
+  - 収集対象の一覧
+  - `news` / `invest`
+  - `user` / `search`
+  - クエリ、ユーザー名、取得件数など
+- `config/accounts.yaml`
+  - カテゴリ別の投稿ポリシー
+  - `dry_run`
+  - `post_prefix`
+  - `max_candidates`
+
+### `.github/workflows/`
+
+- `post_news.yml`
+  - `news` 用の定期実行 / 手動実行
+- `post_invest.yml`
+  - `invest` 用の定期実行 / 手動実行
+
+どちらも state をキャッシュし、`tmp/` を artifact として保存します。
 
 ## 必要なもの
 
 - `python3`
 - `pyyaml`
 - `twitter-cli`
+- `tmux`
+- `lazygit`
+- `gh`
+- `just`
 
-ローカル例:
+ローカルの最低限セットアップ例:
 
 ```bash
 python3 -m pip install --user pyyaml
@@ -23,80 +95,176 @@ uv tool install twitter-cli
 twitter whoami
 ```
 
-`twitter-cli` の認証が通らない場合、各スクリプトは失敗します。まず `twitter whoami` または `twitter status --yaml` が成功する状態にしてください。
+`twitter-cli` の認証確認:
 
-## 設定ファイル
+```bash
+twitter status --yaml
+twitter whoami
+```
 
-### `config/sources.yaml`
+これが失敗する場合、各スクリプトも失敗します。
 
-収集元の定義です。`type: user` は `twitter user-posts`、`type: search` は `twitter search` を使います。
+## ローカル起動コマンド
 
-主な項目:
+### 開発セッション起動
 
-- `id`: 出力ファイル名にも使う識別子
-- `category`: `news` または `invest`
-- `type`: `user` / `search`
-- `username`: user ソース用
-- `query`: search ソース用
-- `max_results`: 取得件数
-- `exclude_retweets`: RT を除外するか
+`just dev` で `devinit.sh` を起動します。
 
-### `config/accounts.yaml`
+```bash
+just dev
+```
 
-カテゴリごとの投稿ポリシーです。
+`devinit.sh` は `tmux` セッション `twitter-auto-poster` を作り、3 ペイン構成で起動します。
 
-主な項目:
+- `copilot`
+- `logs`
+- `git`
 
-- `dry_run`: 既定の dry-run 挙動
-- `post_prefix`: 投稿文の接頭辞
-- `max_candidates`: 投稿候補に使う件数
+内部的には以下を行います。
 
-## ローカル実行
+- `gh auth status` を確認
+- 必要なら GitHub ログイン
+- Copilot CLI を起動
+- `twitter-auto-poster.log` を tail
+- `lazygit` を起動
 
-ユーザー系ソースだけ取得:
+### 開発セッション停止
+
+```bash
+just stop
+```
+
+### ログ監視
+
+```bash
+just logs
+```
+
+## 収集・投稿コマンド
+
+### ユーザー系 source を取得
 
 ```bash
 bash scripts/fetch_user.sh --category news
+bash scripts/fetch_user.sh --category invest
 ```
 
-検索系ソースだけ取得:
+### 検索系 source を取得
 
 ```bash
+bash scripts/fetch_search.sh --category news
 bash scripts/fetch_search.sh --category invest
 ```
 
-投稿候補を作るが実投稿しない:
+### 候補生成のみ
 
 ```bash
 bash scripts/fetch_and_post.sh --category news --dry-run true
+bash scripts/fetch_and_post.sh --category invest --dry-run true
 ```
 
-明示的に投稿する:
+### 明示的に投稿する
 
 ```bash
+bash scripts/fetch_and_post.sh --category news --post
 bash scripts/fetch_and_post.sh --category invest --post
 ```
 
-実行結果は `tmp/` 配下に保存されます。
+## 保守・確認コマンド
 
-- `tmp/raw/<category>/`: 取得した JSON
-- `tmp/runs/`: 投稿候補や投稿結果
-- `tmp/state/<category>-posted.txt`: 投稿済み ID の簡易状態
+普段よく使うものをまとめると以下です。
+
+```bash
+just dev
+just logs
+just stop
+twitter status --yaml
+git --no-pager status --short
+```
+
+README や workflow を触ったときの軽い確認例:
+
+```bash
+bash -n scripts/lib/common.sh scripts/fetch_user.sh scripts/fetch_search.sh scripts/fetch_and_post.sh
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+for path in [Path('config/sources.yaml'), Path('config/accounts.yaml'), Path('.github/workflows/post_news.yml'), Path('.github/workflows/post_invest.yml')]:
+    yaml.safe_load(path.read_text(encoding='utf-8'))
+print('OK')
+PY
+```
+
+## 実行結果の保存先
+
+実行時には `tmp/` 配下にファイルが作られます。
+
+- `tmp/raw/<category>/`
+  - 取得した JSON レスポンス
+- `tmp/runs/`
+  - 投稿候補や投稿結果の一時ファイル
+- `tmp/state/<category>-posted.txt`
+  - 投稿済み ID の簡易 state
 
 ## GitHub Actions
+
+### 対象 workflow
 
 - `.github/workflows/post_news.yml`
 - `.github/workflows/post_invest.yml`
 
-どちらも `workflow_dispatch` と `schedule` を持ちます。スケジュール実行は安全のため常に `dry-run` です。手動実行時だけ `dry_run=false` を選べます。
+### 挙動
 
-必要な Secrets:
+- `workflow_dispatch` 対応
+- `schedule` 対応
+- `dry_run` 入力あり
+- Python 3.11 をセットアップ
+- `pyyaml` と `twitter-cli` をインストール
+- state を cache restore/save
+- `tmp/` を artifact 保存
+
+### 必要な Secrets
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
 
-注意:
+### 使い方
 
-- `twitter-cli` の write 操作は Cookie ベースのほうが安定します
-- GitHub Actions 上では環境変数認証だけだと投稿時に 226 エラーになる場合があります
-- そのため、この構成はまず dry-run 検証を優先しています
+まずは **手動実行 + `dry_run=true`** で試すのがおすすめです。
+
+## 設定ファイルの見方
+
+### `config/sources.yaml`
+
+主なキー:
+
+- `id`
+- `category`
+- `type`
+- `enabled`
+- `username`
+- `query`
+- `timeline`
+- `max_results`
+- `exclude_retweets`
+
+### `config/accounts.yaml`
+
+主なキー:
+
+- `dry_run`
+- `post_prefix`
+- `max_candidates`
+
+## 運用上の注意
+
+- 既定は `dry-run` です
+- 投稿を有効にするのは `--post` または `--dry-run false` を明示したときだけです
+- GitHub Actions 上では環境変数認証のみだと 226 エラーが出る可能性があります
+- `twitter-cli` の write 系は Cookie ベース認証のほうが安定します
+- state は重複投稿防止のために使います
+
+## 今の前提
+
+この README は **現在の実装状態** に合わせて書いています。
+将来的に候補選定ロジック、投稿文整形、state 永続化の方式、workflow の運用方針を変えた場合は README も一緒に更新してください。
