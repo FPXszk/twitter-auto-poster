@@ -150,8 +150,9 @@ jobs:
                       continue
 
                   payload = json.loads(stdout)
-                  data = payload.get("data") or {}
-                  text = " ".join(str(data.get("text") or "").split())
+                  data = payload.get("data") or []
+                  tweet = data[0] if isinstance(data, list) and data else data
+                  text = " ".join(str((tweet or {}).get("text") or "").split())
                   lines.extend(
                       [
                           f"- `{tweet_id}` lookup succeeded.",
