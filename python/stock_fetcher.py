@@ -101,7 +101,35 @@ def _extract_frame(history: pd.DataFrame, ticker: str, batch_size: int) -> pd.Da
     return pd.DataFrame()
 
 
-def _build_snapshot(record: TickerRecord, frame: pd.DataFrame) -> StockSnapshot | None:
+def _fetch_fifty_two_week_high(ticker: str) -> float:
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception as error:
+        raise RuntimeError(f"failed to fetch ticker info for {ticker}") from error
+
+    if not isinstance(info, dict):
+        raise ValueError(f"ticker info is invalid for {ticker}")
+
+    raw_value = info.get("fiftyTwoWeekHigh")
+    if raw_value is None:
+        raise ValueError(f"fiftyTwoWeekHigh is missing for {ticker}")
+
+    try:
+        fifty_two_week_high = float(raw_value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"fiftyTwoWeekHigh is not numeric for {ticker}") from error
+
+    if not math.isfinite(fifty_two_week_high) or math.isclose(fifty_two_week_high, 0.0) or fifty_two_week_high < 0:
+        raise ValueError(f"fiftyTwoWeekHigh is invalid for {ticker}")
+
+    return fifty_two_week_high
+
+
+def _build_snapshot(
+    record: TickerRecord,
+    frame: pd.DataFrame,
+    fifty_two_week_high: float,
+) -> StockSnapshot | None:
     if frame.empty:
         LOGGER.warning("no data returned for %s", record.ticker)
         return None
@@ -135,7 +163,6 @@ def _build_snapshot(record: TickerRecord, frame: pd.DataFrame) -> StockSnapshot 
         LOGGER.warning("insufficient volume history for %s", record.ticker)
         return None
     average_volume_5d = float(volume_baseline.tail(5).mean())
-    fifty_two_week_high = float(numeric_frame["High"].max())
     pct_change = ((current_close - previous_close) / previous_close) * 100.0
     latest_date = pd.Timestamp(numeric_frame.index[-1]).date().isoformat()
 
@@ -175,7 +202,11 @@ def _download_batch(batch: Sequence[TickerRecord]) -> list[StockSnapshot]:
     for record in batch:
         try:
             frame = _extract_frame(history, record.ticker, len(batch))
-            snapshot = _build_snapshot(record, frame)
+            fifty_two_week_high = _fetch_fifty_two_week_high(record.ticker)
+            snapshot = _build_snapshot(record, frame, fifty_two_week_high)
+        except (RuntimeError, ValueError) as error:
+            LOGGER.warning("%s", error)
+            snapshot = None
         except Exception:
             LOGGER.exception("failed to normalize data for %s", record.ticker)
             snapshot = None

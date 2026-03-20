@@ -16,6 +16,13 @@ export LESS="-R"
 export EDITOR=nano
 export TERM=xterm-256color
 
+# Twitter認証情報を読み込む
+if [[ -f "${ROOT_DIR}/config/.env" ]]; then
+  set -a
+  source "${ROOT_DIR}/config/.env"
+  set +a
+fi
+
 # ===== Robust SSH Agent Auto Start =====
 if ! ssh-add -l >/dev/null 2>&1; then
   echo "[devinit] starting new ssh-agent..."
