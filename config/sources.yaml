@@ -1,0 +1,34 @@
+# Source definitions for twitter-cli collection.
+defaults:
+  max_results: 5
+  timeline: Latest
+  exclude_retweets: true
+
+sources:
+  - id: invest-market-search
+    category: invest
+    type: search
+    enabled: true
+    query: "(stocks OR macro OR earnings) min_faves:25 lang:en"
+    timeline: Latest
+
+  - id: invest-watchlist-user
+    category: invest
+    type: user
+    enabled: true
+    username: BloombergTV
+    max_results: 4
+
+  - id: news-breaking-search
+    category: news
+    type: search
+    enabled: true
+    query: "\"breaking\" (AI OR startup OR open-source) lang:en"
+    timeline: Latest
+
+  - id: news-curated-user
+    category: news
+    type: user
+    enabled: true
+    username: TechCrunch
+    max_results: 4

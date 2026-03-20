@@ -1,0 +1,14 @@
+# Account-specific posting policy.
+defaults:
+  dry_run: true
+  post_prefix: "Auto update:"
+  max_candidates: 1
+
+accounts:
+  invest:
+    post_prefix: "Market watch:"
+    max_candidates: 1
+
+  news:
+    post_prefix: "News watch:"
+    max_candidates: 1
