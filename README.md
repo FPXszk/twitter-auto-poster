@@ -186,6 +186,7 @@ README や workflow を触ったときの軽い確認例:
 
 ```bash
 bash -n scripts/lib/common.sh scripts/fetch_user.sh scripts/fetch_search.sh scripts/fetch_and_post.sh
+python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py scripts/lib/post_filters.py
 python3 - <<'PY'
 from pathlib import Path
 import yaml
@@ -208,6 +209,13 @@ PY
 - `tmp/posted_ids.txt`
   - `post_invest.yml` が使う投稿済み ID の簡易 state
 
+## ドキュメント
+
+- `docs/RUNBOOK.md`
+  - Secrets 設定、`workflow_dispatch` から schedule への移行、障害復旧の手順
+- `docs/SCHEMA.md`
+  - `config/sources.yaml` と `config/accounts.yaml` の schema
+
 ## GitHub Actions
 
 ### 対象 workflow
@@ -225,6 +233,7 @@ PY
 - `pyyaml` と `twitter-cli` をインストール
 - state を cache restore/save
 - `tmp/` を artifact 保存
+- `Job summary` に選ばれた候補、score 内訳、要約文を出力します
 
 ### 必要な Secrets
 
@@ -258,6 +267,12 @@ PY
 - `dry_run`
 - `post_prefix`
 - `max_candidates`
+- `summary_prefix`
+- `summary_language`
+- `summary_max_length`
+- `state_file`
+- `score_weights`
+- `filters`
 
 ## 運用上の注意
 

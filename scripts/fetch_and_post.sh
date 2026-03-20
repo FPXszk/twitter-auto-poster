@@ -21,6 +21,46 @@ Options:
 EOF
 }
 
+resolve_state_file() {
+  local output_dir="$1"
+  local category="$2"
+  local account_json="$3"
+
+  python3 - "${output_dir}" "${category}" "${account_json}" <<'PY'
+import json
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+account = json.loads(sys.argv[3])
+configured = str(account.get("state_file") or "").strip()
+
+if configured:
+    state_path = pathlib.Path(configured)
+    if not state_path.is_absolute():
+        state_path = output_dir / state_path
+else:
+    state_path = output_dir / "state" / f"{category}-posted.txt"
+
+print(state_path)
+PY
+}
+
+emit_candidate_warnings() {
+  local candidate_file="$1"
+
+  python3 - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+for item in payload.get("warnings") or []:
+    print(item)
+PY
+}
+
 main() {
   local category=""
   local sources_config="${DEFAULT_SOURCES_CONFIG}"
@@ -38,6 +78,7 @@ main() {
   local selected_count=""
   local posted_id=""
   local summary_warnings=""
+  local state_path_config=""
 
   while (($# > 0)); do
     case "$1" in
@@ -84,6 +125,8 @@ main() {
 
   ensure_config_file "${sources_config}"
   ensure_config_file "${accounts_config}"
+  validate_sources_config "${sources_config}"
+  validate_accounts_config "${accounts_config}"
   ensure_dependencies
   ensure_output_layout "${output_dir}"
   ensure_twitter_auth
@@ -121,139 +164,38 @@ PY
     exit 0
   fi
 
-  if [[ "${category}" == "invest" ]]; then
-    state_file="${output_dir}/posted_ids.txt"
-  else
-    state_file="${output_dir}/state/${category}-posted.txt"
-  fi
+  state_file="$(resolve_state_file "${output_dir}" "${category}" "${account_json}")"
   mkdir -p "$(dirname "${state_file}")"
   touch "${state_file}"
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  python3 - "${category}" "${state_file}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python3 - "${category}" "${state_file}" "${account_json}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
 import sys
+from post_filters import candidate_rejection_reasons
+from post_scoring import calculate_score, extract_candidate_metrics
+from post_summary import build_summary, clean_source_text
+
 category = sys.argv[1]
 state_file = pathlib.Path(sys.argv[2])
-payload_files = [pathlib.Path(item) for item in sys.argv[3:]]
+account = json.loads(sys.argv[3])
+payload_files = [pathlib.Path(item) for item in sys.argv[4:]]
 
-posted_ids = {
-    line.strip()
-    for line in state_file.read_text(encoding="utf-8").splitlines()
-    if line.strip()
-}
-
+posted_ids = {line.strip() for line in state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
+skipped_candidates = []
 seen_ids = set()
 seen_text = set()
 candidates = []
 
-
-def coerce_int(value):
-    if value is None:
-        return 0
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        compact = value.replace(",", "").strip()
-        if compact.isdigit():
-            return int(compact)
-        match = re.search(r"\d[\d,]*", value)
-        if match:
-            return int(match.group(0).replace(",", ""))
-    return 0
-
-
-def nested_get(mapping, *path):
-    current = mapping
-    for key in path:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
-
-
-def extract_metric(item, keys):
-    values = []
-    for path in keys:
-        values.append(nested_get(item, *path))
-    return max((coerce_int(value) for value in values), default=0)
-
-
-def clean_source_text(text):
-    text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"@\w+", "", text)
-    text = re.sub(r"#(\w+)", r"\1", text)
-    text = text.replace("\n", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip(" \"'|")
-
-
-def build_summary(text):
-    cleaned = clean_source_text(text)
-    replacements = [
-        (r"\bearnings beat expectations\b", "決算が市場予想を上振れ"),
-        (r"\brevenue outlook improves\b", "売上見通しが改善"),
-        (r"\bearnings\b", "決算"),
-        (r"\bexpectation(s)?\b", "期待"),
-        (r"\brevenue\b", "売上"),
-        (r"\boutlook\b", "見通し"),
-        (r"\bguidance\b", "見通し"),
-        (r"\bforecast\b", "予想"),
-        (r"\bdemand\b", "需要"),
-        (r"\bimprove(s|d)?\b", "改善"),
-        (r"\bstrong\b", "強い"),
-        (r"\bsteady\b", "安定"),
-        (r"\brecent\b", "直近"),
-        (r"\bpullback\b", "調整"),
-        (r"\bmemory\b", "メモリ"),
-        (r"\bchip(s)?\b", "半導体"),
-        (r"\bsemiconductor(s)?\b", "半導体"),
-        (r"\bbeat(s|ing)?\b", "上振れ"),
-        (r"\bmiss(es|ing)?\b", "下振れ"),
-        (r"\bsurge(s|d)?\b", "急伸"),
-        (r"\bjump(s|ed|ing)?\b", "上昇"),
-        (r"\brise(s|n|ing)?\b", "上昇"),
-        (r"\bfall(s|ing|en)?\b", "下落"),
-        (r"\bdrop(s|ped|ping)?\b", "下落"),
-        (r"\bgain(s|ed|ing)?\b", "上昇"),
-        (r"\bloss(es)?\b", "損失"),
-        (r"\bprofit(s)?\b", "利益"),
-        (r"\bbullish\b", "強気"),
-        (r"\bbearish\b", "弱気"),
-        (r"\bupgrade(d)?\b", "格上げ"),
-        (r"\bdowngrade(d)?\b", "格下げ"),
-        (r"\bAI\b", "AI"),
-        (r"&", "と"),
-    ]
-
-    for pattern, replacement in replacements:
-        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
-
-    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -,:;")
-
-    if not cleaned:
-        cleaned = "$MU関連の注目投稿"
-
-    prefix = "Xで反応上位の$MU投稿: "
-    if "$MU" in cleaned.upper():
-        prefix = "Xで反応上位: "
-
-    max_body_length = 140 - len(prefix)
-    if len(cleaned) > max_body_length:
-        cleaned = cleaned[: max_body_length - 1].rstrip(" ,.;:") + "…"
-
-    summary = prefix + cleaned
-    if len(summary) < 140 and not summary.endswith(("。", "！", "?", "？")):
-        summary += "。"
-    if len(summary) > 140:
-        summary = summary[:139].rstrip(" ,.;:") + "…"
-    return summary
+summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
+summary_language = str(account.get("summary_language") or "ja")
+summary_max_length = int(account.get("summary_max_length") or 140)
+score_weights = account.get("score_weights") or {}
+filters = account.get("filters") or {}
+max_candidates = max(int(account.get("max_candidates") or 1), 1)
 
 
 for payload_path in payload_files:
@@ -269,7 +211,8 @@ for payload_path in payload_files:
 
     for item in payload.get("data") or []:
         tweet_id = str(item.get("id") or "").strip()
-        text = clean_source_text(str(item.get("text") or ""))
+        raw_text = str(item.get("text") or "")
+        text = clean_source_text(raw_text)
         if not tweet_id or not text:
             continue
 
@@ -280,36 +223,28 @@ for payload_path in payload_files:
         if normalized_text in seen_text:
             continue
 
+        created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
+        rejection_reasons = candidate_rejection_reasons(text=text, created_at=created_at, raw_filters=filters)
+        if rejection_reasons:
+            skipped_candidates.append({"id": tweet_id, "text": text[:120], "reasons": rejection_reasons})
+            continue
+
         author = item.get("author") or {}
-        likes = extract_metric(item, [("metrics", "likes"), ("likes",), ("legacy", "favorite_count")])
-        retweets = extract_metric(item, [("metrics", "retweets"), ("retweets",), ("legacy", "retweet_count")])
-        views = extract_metric(
-            item,
-            [
-                ("metrics", "views"),
-                ("metrics", "viewCount"),
-                ("views",),
-                ("viewCount",),
-                ("view_count",),
-                ("views", "count"),
-                ("legacy", "views"),
-                ("legacy", "view_count"),
-            ],
-        )
-        score = likes + retweets + views
+        metrics = extract_candidate_metrics(item)
+        score, score_breakdown = calculate_score(metrics, score_weights)
 
         candidates.append(
             {
                 "id": tweet_id,
                 "text": text,
-                "summary_text": build_summary(text),
                 "screen_name": str(author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
-                "likes": likes,
-                "retweets": retweets,
-                "views": views,
-                "score": score,
-                "created_at": str(item.get("createdAtISO") or item.get("createdAt") or ""),
+                "likes": metrics["likes"],
+                "retweets": metrics["retweets"],
+                "views": metrics["views"],
+                "score": round(score, 2),
+                "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
+                "created_at": created_at,
             }
         )
         seen_ids.add(tweet_id)
@@ -326,26 +261,30 @@ candidates.sort(
     reverse=True,
 )
 
-selected = candidates[0] if candidates else None
+selected_candidates = candidates[:max_candidates]
+selected = selected_candidates[0] if selected_candidates else None
+post_text = ""
+if selected:
+    post_text = build_summary(
+        selected["text"],
+        prefix=summary_prefix,
+        language=summary_language,
+        max_length=summary_max_length,
+    )
+    selected["summary_text"] = post_text
+
 payload = {
     "category": category,
-    "post_text": selected["summary_text"] if selected else "",
+    "post_text": post_text,
     "selected": selected,
+    "selected_candidates": selected_candidates,
+    "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
 }
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
 
-  summary_warnings="$(python3 - "${candidate_file}" <<'PY'
-import json
-import pathlib
-import sys
-
-payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-for item in payload.get("warnings") or []:
-    print(item)
-PY
-)"
+  summary_warnings="$(emit_candidate_warnings "${candidate_file}")"
 
   if [[ -n "${summary_warnings}" ]]; then
     while IFS= read -r summary_warning; do
@@ -397,7 +336,7 @@ PY
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! twitter_cmd post "${post_text}" --json > "${post_result_file}"; then
+  if ! retry_to_file "${post_result_file}" "${DEFAULT_RETRY_ATTEMPTS}" "${DEFAULT_RETRY_DELAY_SECONDS}" twitter_cmd post "${post_text}" --json; then
     warn "twitter post failed for '${category}'"
     exit 0
   fi

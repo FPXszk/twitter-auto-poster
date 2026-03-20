@@ -61,6 +61,7 @@ main() {
   [[ -n "${category}" ]] || die "--category is required"
 
   ensure_config_file "${sources_config}"
+  validate_sources_config "${sources_config}"
   ensure_dependencies
   ensure_output_layout "${output_dir}"
   ensure_twitter_auth
@@ -89,11 +90,22 @@ PY
     output_path="${source_dir}/${source_id}.json"
 
     info "fetching user posts for @${username} -> ${output_path}"
-    twitter user-posts "${username}" --max "${max_results}" --json > "${output_path}"
-    assert_structured_success "${output_path}" "user:${source_id}"
+    if ! retry_to_file "${output_path}" "${DEFAULT_RETRY_ATTEMPTS}" "${DEFAULT_RETRY_DELAY_SECONDS}" twitter_cmd user-posts "${username}" --max "${max_results}" --json; then
+      warn "user fetch failed for '${source_id}'; continuing"
+      rm -f "${output_path}"
+      continue
+    fi
+
+    if ! assert_structured_success "${output_path}" "user:${source_id}"; then
+      warn "invalid user response for '${source_id}'; continuing"
+      rm -f "${output_path}"
+      continue
+    fi
 
     if [[ "${exclude_retweets}" == "true" ]]; then
-      filter_retweets_inplace "${output_path}"
+      if ! filter_retweets_inplace "${output_path}"; then
+        warn "failed to filter retweets for '${source_id}'; keeping original payload"
+      fi
     fi
   done
 }

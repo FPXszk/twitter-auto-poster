@@ -3,12 +3,39 @@ defaults:
   dry_run: true
   post_prefix: "Auto update:"
   max_candidates: 1
+  summary_prefix: "Xで反応上位: "
+  summary_language: "ja"
+  summary_max_length: 140
+  state_file: ""
+  score_weights:
+    likes: 1
+    retweets: 1
+    views: 1
+  filters:
+    max_age_hours: 48
+    required_terms: []
+    exclude_keywords: []
 
 accounts:
   invest:
     post_prefix: "Market watch:"
     max_candidates: 1
+    summary_prefix: "Xで反応上位: "
+    state_file: "posted_ids.txt"
+    filters:
+      max_age_hours: 24
+      required_terms:
+        - "$MU"
+        - "Micron"
+      exclude_keywords:
+        - "earn money"
+        - "join now"
+        - "whatsapp"
+        - "referral"
 
   news:
     post_prefix: "News watch:"
     max_candidates: 1
+    summary_prefix: "Xで反応上位: "
+    filters:
+      max_age_hours: 48

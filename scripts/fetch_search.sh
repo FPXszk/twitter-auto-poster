@@ -62,6 +62,7 @@ main() {
   [[ -n "${category}" ]] || die "--category is required"
 
   ensure_config_file "${sources_config}"
+  validate_sources_config "${sources_config}"
   ensure_dependencies
   ensure_output_layout "${output_dir}"
   ensure_twitter_auth
@@ -97,7 +98,7 @@ PY
     output_path="${source_dir}/${source_id}.json"
 
     info "fetching search timeline '${query}' -> ${output_path}"
-    if ! twitter_cmd search "${query}" -t "${timeline}" -n "${max_results}" --json > "${output_path}"; then
+    if ! retry_to_file "${output_path}" "${DEFAULT_RETRY_ATTEMPTS}" "${DEFAULT_RETRY_DELAY_SECONDS}" twitter_cmd search "${query}" -t "${timeline}" -n "${max_results}" --json; then
       warn "search fetch failed for '${source_id}'; continuing"
       rm -f "${output_path}"
       continue
