@@ -1,0 +1,26 @@
+# Python仮想環境
+.venv/
+
+# 環境変数・認証情報（絶対にコミットしない）
+.env
+.env.local
+config/secrets.yaml
+
+# Twitter cookieキャッシュ
+*.cookie
+cookies.json
+
+# ログファイル
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/
+.idea/
+
+# 一時ファイル
+tmp/
+*.tmp
