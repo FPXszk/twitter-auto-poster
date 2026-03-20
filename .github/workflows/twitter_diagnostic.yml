@@ -1,0 +1,172 @@
+name: Twitter account diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      tweet_id_1:
+        description: First tweet ID to verify
+        required: false
+        default: ""
+        type: string
+      tweet_id_2:
+        description: Second tweet ID to verify
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twitter-account-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TWEET_ID_1: ${{ inputs.tweet_id_1 }}
+      TWEET_ID_2: ${{ inputs.tweet_id_2 }}
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install twitter-cli
+
+      - name: Run Twitter diagnostics
+        run: |
+          mkdir -p tmp/diagnostics
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          diagnostics_dir = Path("tmp/diagnostics")
+          twitter_bin = Path("python/.venv/bin/twitter")
+          tweet_ids = [item.strip() for item in (os.environ.get("TWEET_ID_1", ""), os.environ.get("TWEET_ID_2", "")) if item.strip()]
+
+          def run_json(command: list[str], output_name: str) -> tuple[int, str, str]:
+              result = subprocess.run(command, capture_output=True, text=True, check=False)
+              output_path = diagnostics_dir / output_name
+              payload = {
+                  "command": command,
+                  "returncode": result.returncode,
+                  "stdout": result.stdout,
+                  "stderr": result.stderr,
+              }
+              output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+              return result.returncode, result.stdout, result.stderr
+
+          lines = ["## Twitter account diagnostic", ""]
+
+          code, stdout, stderr = run_json([str(twitter_bin), "whoami", "--json"], "whoami.json")
+          if code != 0:
+              lines.extend([
+                  "- `twitter whoami` failed.",
+                  "",
+                  "```text",
+                  stderr.strip() or stdout.strip() or "no output",
+                  "```",
+              ])
+              summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+              sys.exit(code)
+
+          whoami_payload = json.loads(stdout)
+          user = ((whoami_payload.get("data") or {}).get("user") or {})
+          username = str(user.get("username") or "").strip()
+          name = str(user.get("name") or "").strip()
+          user_id = str(user.get("id") or "").strip()
+
+          lines.extend(
+              [
+                  f"- Username: `{username}`",
+                  f"- Name: `{name}`",
+                  f"- User ID: `{user_id}`",
+                  "",
+              ]
+          )
+
+          recent_posts: list[dict[str, object]] = []
+          if username:
+              code, stdout, stderr = run_json(
+                  [str(twitter_bin), "user-posts", username, "--max", "10", "--json"],
+                  "recent-posts.json",
+              )
+              if code == 0:
+                  recent_posts = list((json.loads(stdout).get("data") or []))
+              else:
+                  lines.extend(
+                      [
+                          "- Failed to fetch recent posts.",
+                          "",
+                          "```text",
+                          stderr.strip() or stdout.strip() or "no output",
+                          "```",
+                          "",
+                      ]
+                  )
+
+          if recent_posts:
+              lines.extend(["### Recent posts", "", "| ID | Created | Text |", "| --- | --- | --- |"])
+              for item in recent_posts:
+                  tweet_id = str(item.get("id") or "")
+                  created_at = str(item.get("created_at") or item.get("createdAt") or item.get("time") or "")
+                  text = " ".join(str(item.get("text") or "").split())
+                  snippet = text[:120] + ("…" if len(text) > 120 else "")
+                  escaped = snippet.replace("|", "\\|")
+                  lines.append(f"| `{tweet_id}` | `{created_at}` | {escaped} |")
+              lines.append("")
+          else:
+              lines.extend(["- Recent posts were not returned.", ""])
+
+          if tweet_ids:
+              lines.extend(["### Tweet ID lookup", ""])
+              for tweet_id in tweet_ids:
+                  code, stdout, stderr = run_json(
+                      [str(twitter_bin), "tweet", tweet_id, "--json"],
+                      f"tweet-{tweet_id}.json",
+                  )
+                  if code != 0:
+                      lines.extend(
+                          [
+                              f"- `{tweet_id}` lookup failed.",
+                              "```text",
+                              stderr.strip() or stdout.strip() or "no output",
+                              "```",
+                          ]
+                      )
+                      continue
+
+                  payload = json.loads(stdout)
+                  data = payload.get("data") or {}
+                  text = " ".join(str(data.get("text") or "").split())
+                  lines.extend(
+                      [
+                          f"- `{tweet_id}` lookup succeeded.",
+                          f"  - URL: https://x.com/i/status/{tweet_id}",
+                          f"  - Text: {text[:180]}{'…' if len(text) > 180 else ''}",
+                      ]
+                  )
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitter-diagnostic
+          path: tmp/diagnostics/
+          if-no-files-found: ignore
