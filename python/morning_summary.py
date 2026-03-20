@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Iterable, Sequence
 from zoneinfo import ZoneInfo
 
+import yfinance as yf
+
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
 
 LOGGER = logging.getLogger(__name__)
@@ -18,6 +20,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 MAX_POST_LENGTH = 140
+NIKKEI_TICKER = "^N225"
+NIKKEI_FUTURES_TICKER = "NKD=F"
+MEDALS = ("🥇", "🥈", "🥉")
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -68,12 +73,16 @@ def code_of(ticker: str) -> str:
     return ticker.removesuffix(".T")
 
 
-def format_pct(value: float) -> str:
-    return f"{value:+.1f}%"
+def format_abs_pct(value: float) -> str:
+    return f"{abs(value):.1f}"
 
 
-def format_ratio(value: float) -> str:
-    return f"{value * 100:.0f}%"
+def format_price(value: float) -> str:
+    return f"{value:,.0f}"
+
+
+def arrow_of(value: float) -> str:
+    return "📈" if value >= 0 else "📉"
 
 
 def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
@@ -84,17 +93,30 @@ def current_jst_date() -> str:
     return datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat()
 
 
-def compute_rankings(
-    snapshots: Sequence[StockSnapshot],
-) -> tuple[list[StockSnapshot], list[tuple[StockSnapshot, float]], list[StockSnapshot]]:
-    trading_top = sorted(snapshots, key=lambda item: item.trading_value, reverse=True)[:5]
+def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
+    try:
+        history = yf.Ticker(ticker).history(period="5d", interval="1d", auto_adjust=False)
+    except Exception as error:
+        raise RuntimeError(f"failed to download market data for {ticker}") from error
 
-    volume_surges = [
-        (snapshot, snapshot.volume / snapshot.average_volume_5d)
-        for snapshot in snapshots
-        if snapshot.average_volume_5d > 0 and (snapshot.volume / snapshot.average_volume_5d) >= 2
-    ]
-    volume_top = sorted(volume_surges, key=lambda item: item[1], reverse=True)[:3]
+    if history.empty or "Close" not in history.columns:
+        raise ValueError(f"no market close data returned for {ticker}")
+
+    closes = history["Close"].dropna()
+    if len(closes.index) < 2:
+        raise ValueError(f"insufficient market close history for {ticker}")
+
+    previous_close = float(closes.iloc[-2])
+    current_close = float(closes.iloc[-1])
+    if previous_close == 0:
+        raise ValueError(f"previous market close is zero for {ticker}")
+
+    pct_change = ((current_close - previous_close) / previous_close) * 100.0
+    return current_close, pct_change
+
+
+def compute_rankings(snapshots: Sequence[StockSnapshot]) -> tuple[list[StockSnapshot], list[StockSnapshot]]:
+    trading_top = sorted(snapshots, key=lambda item: item.trading_value, reverse=True)[:3]
 
     high_breakouts = [
         snapshot
@@ -102,40 +124,59 @@ def compute_rankings(
         if snapshot.high_price >= snapshot.fifty_two_week_high * 0.999
     ]
     breakout_top = sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:3]
-    return trading_top, volume_top, breakout_top
+    return trading_top, breakout_top
+
+
+def format_trading_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
+    if not items:
+        return "🥇 なし"
+
+    return "\n".join(
+        f"{medal} {short_name(item.name, name_limit)}({code_of(item.ticker)}) "
+        f"¥{format_price(item.current_close)} {arrow_of(item.pct_change)}{format_abs_pct(item.pct_change)}%"
+        for medal, item in zip(MEDALS, items)
+    )
+
+
+def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
+    if not items:
+        return "1. なし"
+
+    return "\n".join(
+        f"{index}. {short_name(item.name, name_limit)}({code_of(item.ticker)}) "
+        f"{arrow_of(item.pct_change)}{format_abs_pct(item.pct_change)}%"
+        for index, item in enumerate(items, start=1)
+    )
 
 
 def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
-    trading_top, volume_top, breakout_top = compute_rankings(snapshots)
+    trading_top, breakout_top = compute_rankings(snapshots)
     trade_date = latest_trade_date(snapshots)
     date_label = trade_date[5:].replace("-", "/")
+    nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_TICKER)
+    futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
 
-    count_options = ((3, 3, 3), (2, 3, 3), (2, 2, 2), (2, 2, 1), (1, 2, 1), (1, 1, 1))
-    name_limits = (6, 5, 4, 3)
+    count_options = ((3, 3), (3, 2), (3, 1), (2, 2), (2, 1), (1, 1))
+    name_limits = (12, 10, 8, 6, 4, 3, 2, 1)
 
-    for name_limit in name_limits:
-        for trading_count, volume_count, breakout_count in count_options:
-            trading_items = " ".join(
-                f"{short_name(item.name, name_limit)}{code_of(item.ticker)}{format_pct(item.pct_change)}"
-                for item in trading_top[:trading_count]
-            ) or "なし"
-            volume_items = " ".join(
-                f"{short_name(item.name, name_limit)}{format_ratio(ratio)}"
-                for item, ratio in volume_top[:volume_count]
-            ) or "なし"
-            breakout_items = " ".join(
-                short_name(item.name, name_limit) for item in breakout_top[:breakout_count]
-            ) or "なし"
+    for trading_count, breakout_count in count_options:
+        for name_limit in name_limits:
+            trading_items = trading_top[:trading_count]
+            breakout_items = breakout_top[:breakout_count]
+            trading_label = len(trading_items) if trading_items else 1
+            breakout_label = len(breakout_items) if breakout_items else 1
 
             tweet_text = (
-                f"【注目銘柄】{date_label}\n"
-                f"代金 {trading_items}\n"
-                f"急増 {volume_items}\n"
-                f"高値 {breakout_items}\n"
-                "#日本株 #株式投資"
+                f"【🌅 本日の注目銘柄】{date_label}\n\n"
+                f"🗾 日経平均 ¥{format_price(nikkei_price)} {arrow_of(nikkei_change)}{format_abs_pct(nikkei_change)}%\n"
+                f"🌙 日経先物 ¥{format_price(futures_price)} {arrow_of(futures_change)}{format_abs_pct(futures_change)}%\n\n"
+                f"💴 売買代金TOP{trading_label}\n"
+                f"{format_trading_lines(trading_items, name_limit)}\n\n"
+                f"🏔️ 52週高値更新TOP{breakout_label}\n"
+                f"{format_breakout_lines(breakout_items, name_limit)}"
             )
             if len(tweet_text) <= MAX_POST_LENGTH:
                 return trade_date, tweet_text
