@@ -97,11 +97,22 @@ PY
     output_path="${source_dir}/${source_id}.json"
 
     info "fetching search timeline '${query}' -> ${output_path}"
-    twitter search "${query}" -t "${timeline}" --max "${max_results}" --json > "${output_path}"
-    assert_structured_success "${output_path}" "search:${source_id}"
+    if ! twitter_cmd search "${query}" -t "${timeline}" -n "${max_results}" --json > "${output_path}"; then
+      warn "search fetch failed for '${source_id}'; continuing"
+      rm -f "${output_path}"
+      continue
+    fi
+
+    if ! assert_structured_success "${output_path}" "search:${source_id}"; then
+      warn "invalid search response for '${source_id}'; continuing"
+      rm -f "${output_path}"
+      continue
+    fi
 
     if [[ "${exclude_retweets}" == "true" ]]; then
-      filter_retweets_inplace "${output_path}"
+      if ! filter_retweets_inplace "${output_path}"; then
+        warn "failed to filter retweets for '${source_id}'; keeping original payload"
+      fi
     fi
   done
 }

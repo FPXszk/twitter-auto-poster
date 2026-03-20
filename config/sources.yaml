@@ -5,17 +5,18 @@ defaults:
   exclude_retweets: true
 
 sources:
-  - id: invest-market-search
+  - id: invest-mu-top-search
     category: invest
     type: search
     enabled: true
-    query: "(stocks OR macro OR earnings) min_faves:25 lang:en"
-    timeline: Latest
+    query: "$MU lang:en"
+    timeline: top
+    max_results: 5
 
   - id: invest-watchlist-user
     category: invest
     type: user
-    enabled: true
+    enabled: false
     username: BloombergTV
     max_results: 4
 

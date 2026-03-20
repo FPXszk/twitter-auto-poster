@@ -53,7 +53,7 @@
 - `scripts/fetch_search.sh`
   - `type: search` の source を読み、`twitter search` を実行
 - `scripts/fetch_and_post.sh`
-  - 収集 → 候補選定 → `dry-run` 表示 or 実投稿 のオーケストレーション
+  - 収集 → スコア選定 → 日本語要約 → `dry-run` 表示 or 実投稿 のオーケストレーション
 
 ### `config/`
 
@@ -205,6 +205,8 @@ PY
   - 投稿候補や投稿結果の一時ファイル
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
+- `tmp/posted_ids.txt`
+  - `post_invest.yml` が使う投稿済み ID の簡易 state
 
 ## GitHub Actions
 
@@ -218,6 +220,7 @@ PY
 - `workflow_dispatch` 対応
 - `schedule` 対応
 - `dry_run` 入力あり
+- `post_invest.yml` は `python/.venv/bin/twitter` を使い、毎時間の自動投稿を行います
 - Python 3.11 をセットアップ
 - `pyyaml` と `twitter-cli` をインストール
 - state を cache restore/save

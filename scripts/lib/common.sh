@@ -7,6 +7,9 @@ readonly PROJECT_ROOT="$(cd "${COMMON_DIR}/../.." && pwd)"
 readonly DEFAULT_SOURCES_CONFIG="${PROJECT_ROOT}/config/sources.yaml"
 readonly DEFAULT_ACCOUNTS_CONFIG="${PROJECT_ROOT}/config/accounts.yaml"
 readonly DEFAULT_TMP_DIR="${PROJECT_ROOT}/tmp"
+readonly DEFAULT_TWITTER_BIN="${PROJECT_ROOT}/python/.venv/bin/twitter"
+
+TWITTER_BIN_CACHE=""
 
 log() {
   local level="$1"
@@ -39,10 +42,47 @@ import yaml  # noqa: F401
 PY
 }
 
+resolve_twitter_bin() {
+  local configured_bin="${TWITTER_BIN:-}"
+
+  if [[ -n "${configured_bin}" ]]; then
+    if [[ "${configured_bin}" == */* ]]; then
+      [[ -x "${configured_bin}" ]] || die "twitter-cli executable not found: ${configured_bin}"
+      printf '%s\n' "${configured_bin}"
+      return
+    fi
+
+    command -v "${configured_bin}" >/dev/null 2>&1 || die "required command not found: ${configured_bin}"
+    command -v "${configured_bin}"
+    return
+  fi
+
+  if [[ -x "${DEFAULT_TWITTER_BIN}" ]]; then
+    printf '%s\n' "${DEFAULT_TWITTER_BIN}"
+    return
+  fi
+
+  if command -v twitter >/dev/null 2>&1; then
+    warn "falling back to twitter from PATH; expected ${DEFAULT_TWITTER_BIN}"
+    command -v twitter
+    return
+  fi
+
+  die "twitter-cli not found. expected ${DEFAULT_TWITTER_BIN} or a TWITTER_BIN override"
+}
+
+twitter_cmd() {
+  if [[ -z "${TWITTER_BIN_CACHE}" ]]; then
+    TWITTER_BIN_CACHE="$(resolve_twitter_bin)"
+  fi
+
+  "${TWITTER_BIN_CACHE}" "$@"
+}
+
 ensure_dependencies() {
   require_command python3
-  require_command twitter
   require_yaml_support
+  resolve_twitter_bin >/dev/null
 }
 
 ensure_config_file() {
@@ -58,7 +98,7 @@ ensure_output_layout() {
 }
 
 ensure_twitter_auth() {
-  twitter status --yaml >/dev/null 2>&1 || die "twitter-cli authentication required. Run 'twitter whoami' locally or set TWITTER_AUTH_TOKEN/TWITTER_CT0."
+  twitter_cmd status --yaml >/dev/null 2>&1 || die "twitter-cli authentication required. Run 'twitter whoami' locally or set TWITTER_AUTH_TOKEN/TWITTER_CT0."
 }
 
 normalize_bool() {
@@ -173,8 +213,11 @@ for item in sources:
         query = " ".join(str(item.get("query") or "").split())
         if not query:
             raise SystemExit(f"{source_id}: query is required for search source")
+        timeline = str(item.get("timeline") or defaults.get("timeline") or "latest").strip().lower()
+        if timeline not in {"top", "latest", "photos", "videos"}:
+            raise SystemExit(f"{source_id}: unsupported timeline '{timeline}'")
         payload["query"] = query
-        payload["timeline"] = str(item.get("timeline") or defaults.get("timeline") or "Latest")
+        payload["timeline"] = timeline
     else:
         raise SystemExit(f"unsupported source type: {source_type}")
 
