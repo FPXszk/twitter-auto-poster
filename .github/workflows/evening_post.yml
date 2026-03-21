@@ -19,6 +19,14 @@ on:
         options:
           - "false"
           - "true"
+      ignore_market_day:
+        description: Allow workflow_dispatch preview even when JPX is closed
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     - cron: "0 9 * * 1-5"
 
@@ -36,6 +44,7 @@ jobs:
     env:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       FORCE_REPOST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_repost || 'false' }}
+      IGNORE_MARKET_DAY: ${{ github.event_name == 'workflow_dispatch' && inputs.ignore_market_day || 'false' }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -50,29 +59,29 @@ jobs:
         run: python python/check_jpx_business_day.py --github-output
 
       - name: Log skip reason
-        if: steps.market_day.outputs.should_run != 'true'
+        if: steps.market_day.outputs.should_run != 'true' && env.IGNORE_MARKET_DAY != 'true'
         run: echo "Skipping evening stock post on ${{ steps.market_day.outputs.target_date }} (${{ steps.market_day.outputs.reason }})"
 
       - name: Install runtime dependencies
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install yfinance pandas twitter-cli pyyaml
 
       - name: Run runtime diagnostics
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         run: |
           python/.venv/bin/python python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/evening-runtime.json
 
       - name: Prepare runtime files
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         run: |
           mkdir -p tmp
           touch tmp/posted_ids.txt
 
       - name: Restore post state
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         uses: actions/cache/restore@v4
         with:
           path: tmp/posted_ids.txt
@@ -81,7 +90,7 @@ jobs:
             ${{ runner.os }}-evening-stock-state-
 
       - name: Restore stock cache
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -139,11 +148,14 @@ jobs:
           PY
 
       - name: Run evening summary
-        if: steps.market_day.outputs.should_run == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
         run: |
           EXTRA_ARGS=""
           if [ "${FORCE_REPOST}" = "true" ]; then
             EXTRA_ARGS="--force-repost"
+          fi
+          if [ "${IGNORE_MARKET_DAY}" = "true" ]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --ignore-market-day"
           fi
           if [ "${DRY_RUN}" = "true" ]; then
             python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json ${EXTRA_ARGS}
@@ -157,6 +169,7 @@ jobs:
           SHOULD_RUN: ${{ steps.market_day.outputs.should_run }}
           TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
           SKIP_REASON: ${{ steps.market_day.outputs.reason }}
+          IGNORE_MARKET_DAY: ${{ env.IGNORE_MARKET_DAY }}
         run: |
           python - <<'PY'
           import json
@@ -167,7 +180,7 @@ jobs:
           run_path = Path("tmp/evening_summary.json")
           lines = ["## Evening stock summary", ""]
 
-          if os.environ.get("SHOULD_RUN") != "true":
+          if os.environ.get("SHOULD_RUN") != "true" and os.environ.get("IGNORE_MARKET_DAY") != "true":
               lines.extend(
                   [
                       "- Status: `skipped`",
@@ -219,14 +232,14 @@ jobs:
           PY
 
       - name: Save post state
-        if: always() && steps.market_day.outputs.should_run == 'true'
+        if: always() && (steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true')
         uses: actions/cache/save@v4
         with:
           path: tmp/posted_ids.txt
           key: ${{ runner.os }}-evening-stock-state-${{ github.run_id }}
 
       - name: Upload run artifacts
-        if: always() && steps.market_day.outputs.should_run == 'true'
+        if: always() && (steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: evening-stock-run

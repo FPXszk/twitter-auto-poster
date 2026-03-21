@@ -3,6 +3,22 @@ name: Twitter account diagnostic
 on:
   workflow_dispatch:
     inputs:
+      assume_premium:
+        description: Assume the account has Premium boost enabled
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      recent_posts_max:
+        description: Number of recent posts to inspect for score prediction
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "10"
+          - "20"
       tweet_id_1:
         description: First tweet ID to verify
         required: false
@@ -13,6 +29,8 @@ on:
         required: false
         default: ""
         type: string
+  schedule:
+    - cron: "0 19 * * *"
 
 permissions:
   contents: read
@@ -25,6 +43,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
+      ASSUME_PREMIUM: ${{ github.event_name == 'workflow_dispatch' && inputs.assume_premium || 'true' }}
+      RECENT_POSTS_MAX: ${{ github.event_name == 'workflow_dispatch' && inputs.recent_posts_max || '10' }}
       TWEET_ID_1: ${{ inputs.tweet_id_1 }}
       TWEET_ID_2: ${{ inputs.tweet_id_2 }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
@@ -47,127 +67,121 @@ jobs:
           mkdir -p tmp/diagnostics
           python/.venv/bin/python python/check_python_runtime.py --output tmp/diagnostics/runtime.json
 
+      - name: Restore score history
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/diagnostics/account-score-history.jsonl
+          key: ${{ runner.os }}-twitter-account-score-history-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-twitter-account-score-history-
+
       - name: Run Twitter diagnostics
         run: |
           mkdir -p tmp/diagnostics
+          touch tmp/diagnostics/account-score-history.jsonl
+          EXTRA_ARGS=""
+          if [ -n "${TWEET_ID_1}" ]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --tweet-id ${TWEET_ID_1}"
+          fi
+          if [ -n "${TWEET_ID_2}" ]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --tweet-id ${TWEET_ID_2}"
+          fi
+          python/.venv/bin/python python/twitter_account_diagnostic.py --diagnostics-dir tmp/diagnostics --summary-output tmp/diagnostics/account-score.json --history-path tmp/diagnostics/account-score-history.jsonl --recent-post-limit "${RECENT_POSTS_MAX}" --assume-premium "${ASSUME_PREMIUM}" ${EXTRA_ARGS}
+
+      - name: Write diagnostic summary
+        if: always()
+        run: |
           python - <<'PY'
           import json
           import os
-          import subprocess
-          import sys
           from pathlib import Path
 
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
-          diagnostics_dir = Path("tmp/diagnostics")
-          twitter_bin = Path("python/.venv/bin/twitter")
-          tweet_ids = [item.strip() for item in (os.environ.get("TWEET_ID_1", ""), os.environ.get("TWEET_ID_2", "")) if item.strip()]
-
-          def run_json(command: list[str], output_name: str) -> tuple[int, str, str]:
-              result = subprocess.run(command, capture_output=True, text=True, check=False)
-              output_path = diagnostics_dir / output_name
-              payload = {
-                  "command": command,
-                  "returncode": result.returncode,
-                  "stdout": result.stdout,
-                  "stderr": result.stderr,
-              }
-              output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-              return result.returncode, result.stdout, result.stderr
-
+          diagnostic_path = Path("tmp/diagnostics/account-score.json")
           lines = ["## Twitter account diagnostic", ""]
 
-          code, stdout, stderr = run_json([str(twitter_bin), "whoami", "--json"], "whoami.json")
-          if code != 0:
-              lines.extend([
-                  "- `twitter whoami` failed.",
-                  "",
-                  "```text",
-                  stderr.strip() or stdout.strip() or "no output",
-                  "```",
-              ])
-              summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-              sys.exit(code)
-
-          whoami_payload = json.loads(stdout)
-          user = ((whoami_payload.get("data") or {}).get("user") or {})
-          username = str(user.get("username") or "").strip()
-          name = str(user.get("name") or "").strip()
-          user_id = str(user.get("id") or "").strip()
-
-          lines.extend(
-              [
-                  f"- Username: `{username}`",
-                  f"- Name: `{name}`",
-                  f"- User ID: `{user_id}`",
-                  "",
-              ]
-          )
-
-          recent_posts: list[dict[str, object]] = []
-          if username:
-              code, stdout, stderr = run_json(
-                  [str(twitter_bin), "user-posts", username, "--max", "10", "--json"],
-                  "recent-posts.json",
-              )
-              if code == 0:
-                  recent_posts = list((json.loads(stdout).get("data") or []))
-              else:
-                  lines.extend(
-                      [
-                          "- Failed to fetch recent posts.",
-                          "",
-                          "```text",
-                          stderr.strip() or stdout.strip() or "no output",
-                          "```",
-                          "",
-                      ]
-                  )
-
-          if recent_posts:
-              lines.extend(["### Recent posts", "", "| ID | Created | Text |", "| --- | --- | --- |"])
-              for item in recent_posts:
-                  tweet_id = str(item.get("id") or "")
-                  created_at = str(item.get("created_at") or item.get("createdAt") or item.get("time") or "")
-                  text = " ".join(str(item.get("text") or "").split())
-                  snippet = text[:120] + ("…" if len(text) > 120 else "")
-                  escaped = snippet.replace("|", "\\|")
-                  lines.append(f"| `{tweet_id}` | `{created_at}` | {escaped} |")
-              lines.append("")
+          if not diagnostic_path.exists():
+              lines.append("diagnostic summary file was not created.")
           else:
-              lines.extend(["- Recent posts were not returned.", ""])
-
-          if tweet_ids:
-              lines.extend(["### Tweet ID lookup", ""])
-              for tweet_id in tweet_ids:
-                  code, stdout, stderr = run_json(
-                      [str(twitter_bin), "tweet", tweet_id, "--json"],
-                      f"tweet-{tweet_id}.json",
-                  )
-                  if code != 0:
-                      lines.extend(
-                          [
-                              f"- `{tweet_id}` lookup failed.",
-                              "```text",
-                              stderr.strip() or stdout.strip() or "no output",
-                              "```",
-                          ]
-                      )
-                      continue
-
-                  payload = json.loads(stdout)
-                  data = payload.get("data") or []
-                  tweet = data[0] if isinstance(data, list) and data else data
-                  text = " ".join(str((tweet or {}).get("text") or "").split())
+              payload = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+              lines.append(f"- Status: `{payload.get('status', 'unknown')}`")
+              if payload.get("status") != "ok":
+                  if payload.get("error"):
+                      lines.append(f"- Error: `{payload.get('error')}`")
+              else:
+                  score = ((payload.get("score_prediction") or {}).get("score"))
+                  distribution = ((payload.get("score_prediction") or {}).get("distribution"))
+                  components = ((payload.get("score_prediction") or {}).get("components") or {})
+                  metrics = ((payload.get("score_prediction") or {}).get("metrics") or {})
                   lines.extend(
                       [
-                          f"- `{tweet_id}` lookup succeeded.",
-                          f"  - URL: https://x.com/i/status/{tweet_id}",
-                          f"  - Text: {text[:180]}{'…' if len(text) > 180 else ''}",
+                          f"- Username: `{payload.get('username', '')}`",
+                          f"- Name: `{payload.get('name', '')}`",
+                          f"- User ID: `{payload.get('user_id', '')}`",
+                          f"- Run at JST: `{payload.get('run_at_jst', '')}`",
+                          f"- Predicted score: `{score}`",
+                          f"- Distribution: `{distribution}`",
+                          f"- Assume Premium: `{payload.get('assume_premium')}`",
+                          f"- History entries: `{payload.get('history_length', '')}`",
+                          "",
+                          "### Component breakdown",
+                          "",
                       ]
                   )
+                  for key, value in components.items():
+                      lines.append(f"- `{key}`: `{value}`")
+                  lines.extend(
+                      [
+                          "",
+                          "### Metrics",
+                          "",
+                          f"- Followers: `{metrics.get('followers', '')}`",
+                          f"- Following: `{metrics.get('following', '')}`",
+                          f"- Account age days: `{metrics.get('account_age_days', '')}`",
+                          f"- Posts last 24h: `{metrics.get('posts_last_24h', '')}`",
+                          f"- Posts last 7d: `{metrics.get('posts_last_7d', '')}`",
+                          f"- Posts/day (7d avg): `{metrics.get('posts_per_day_7d', '')}`",
+                          f"- Avg views/follower: `{metrics.get('average_view_per_follower', '')}`",
+                          f"- Avg interaction rate: `{metrics.get('average_interaction_rate', '')}`",
+                      ]
+                  )
+                  warnings = (payload.get("score_prediction") or {}).get("warnings") or []
+                  suggestions = (payload.get("score_prediction") or {}).get("suggestions") or []
+                  previews = payload.get("recent_post_preview") or []
+                  lookups = payload.get("tweet_lookups") or []
+                  if warnings:
+                      lines.extend(["", "### Warnings", ""])
+                      for warning in warnings:
+                          lines.append(f"- {warning}")
+                  if suggestions:
+                      lines.extend(["", "### Suggestions", ""])
+                      for suggestion in suggestions:
+                          lines.append(f"- {suggestion}")
+                  if previews:
+                      lines.extend(["", "### Recent posts", "", "| ID | Created | Views | Text |", "| --- | --- | --- | --- |"])
+                      for item in previews:
+                          text = str(item.get("text_snippet") or "").replace("|", "\\|")
+                          lines.append(
+                              f"| `{item.get('id', '')}` | `{item.get('created_at', '')}` | `{item.get('views', '')}` | {text} |"
+                          )
+                  if lookups:
+                      lines.extend(["", "### Tweet ID lookup", ""])
+                      for item in lookups:
+                          lines.append(f"- `{item.get('tweet_id', '')}`: `{'ok' if item.get('ok') else 'failed'}`")
+                          if item.get("text"):
+                              lines.append(f"  - Text: {str(item.get('text'))[:180]}")
+                          if item.get("error"):
+                              lines.append(f"  - Error: {item.get('error')}")
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
+
+      - name: Save score history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tmp/diagnostics/account-score-history.jsonl
+          key: ${{ runner.os }}-twitter-account-score-history-${{ github.run_id }}
 
       - name: Upload diagnostic artifacts
         if: always()

@@ -124,6 +124,25 @@ GitHub Actions の手動実行:
 
 必要なら `config/accounts.yaml` の `filters` / `score_weights` を調整する。
 
+### アカウント診断と日次スコア確認
+
+`twitter_diagnostic.yml` は毎朝 04:00 JST に走り、`docs/POSTING_STRATEGY.md` を元にした推定アカウントスコアを出します。
+
+確認場所:
+
+- workflow の `Job summary`
+- artifact `twitter-diagnostic`
+- `tmp/diagnostics/account-score.json`
+- `tmp/diagnostics/account-score-history.jsonl`
+
+見るポイント:
+
+- `score_prediction.score`
+- `score_prediction.distribution`
+- `score_prediction.components`
+- `score_prediction.warnings`
+- `score_prediction.suggestions`
+
 ### state のリセット
 
 invest:

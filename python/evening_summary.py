@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Post the evening Japanese stock summary.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-repost", action="store_true")
+    parser.add_argument("--ignore-market-day", action="store_true")
     parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
@@ -141,17 +142,24 @@ def main() -> int:
         today = current_jst_date()
         closure_reason = jpx_closure_reason(today)
         if closure_reason is not None:
-            if args.summary_output is not None:
-                write_summary_payload(
-                    args.summary_output,
-                    {
-                        "status": "skipped_market_holiday",
-                        "date": today.isoformat(),
-                        "reason": closure_reason,
-                    },
+            if args.ignore_market_day:
+                LOGGER.warning(
+                    "today is not a JPX business day (%s: %s); continuing due to --ignore-market-day",
+                    today,
+                    closure_reason,
                 )
-            LOGGER.info("today is not a JPX business day (%s: %s); skipping evening post", today, closure_reason)
-            return 0
+            else:
+                if args.summary_output is not None:
+                    write_summary_payload(
+                        args.summary_output,
+                        {
+                            "status": "skipped_market_holiday",
+                            "date": today.isoformat(),
+                            "reason": closure_reason,
+                        },
+                    )
+                LOGGER.info("today is not a JPX business day (%s: %s); skipping evening post", today, closure_reason)
+                return 0
 
         if args.cache_path is not None:
             bundle = load_stock_cache_bundle(args.cache_path)

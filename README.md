@@ -98,6 +98,8 @@
   - 日本株の朝まとめ投稿
 - `evening_post.yml`
   - 日本株の夜総括投稿
+- `twitter_diagnostic.yml`
+  - アカウント診断と日次スコア予測
 - `update_tickers.yml`
   - 日本株サマリー用の `stock-cache` 更新
 - `update_tickers_jp.yml`
@@ -311,10 +313,12 @@ PY
 - `post_invest.yml` は毎時間の候補収集とプレビューを行います（現状は GitHub Actions から実投稿しません）
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
+- `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
 - `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
 - `update_tickers_jp.yml` は `tmp/tickers_jp_update_summary.json` と `GITHUB_STEP_SUMMARY` に件数・差分要約も出力します
 - `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` も `GITHUB_STEP_SUMMARY` に文字数、採用パターン、skip 理由、異常値 skip 要約を出力します
+- `twitter_diagnostic.yml` は `tmp/diagnostics/account-score-history.jsonl` を Actions cache + artifact に保存し、summary へ当日の内訳と改善提案を表示します
 - 主要 workflow は依存インストール後に runtime diagnostics を実行し、使用 Python と import 可否を artifact / summary 用 JSON に残します
 - Python 3.11 をセットアップ
 - `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
