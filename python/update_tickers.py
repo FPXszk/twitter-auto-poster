@@ -4,6 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from jp_market_calendar import current_jst_date, jpx_closure_reason
 from stock_cache import DEFAULT_STOCK_CACHE_PATH, save_stock_cache
 from stock_fetcher import (
     DEFAULT_BATCH_SIZE,
@@ -31,6 +32,12 @@ def main() -> int:
     configure_logging(args.log_level)
 
     try:
+        today = current_jst_date()
+        closure_reason = jpx_closure_reason(today)
+        if closure_reason is not None:
+            LOGGER.info("today is not a JPX business day (%s: %s); skipping stock cache update", today, closure_reason)
+            return 0
+
         snapshots = fetch_stock_snapshots(
             tickers_path=args.tickers,
             batch_size=args.batch_size,

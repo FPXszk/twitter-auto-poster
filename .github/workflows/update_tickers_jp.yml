@@ -3,7 +3,7 @@ name: Update JP tickers
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 21 1 * *"
+    - cron: "0 21 28-31,1-7 * *"
 
 permissions:
   contents: read
@@ -22,17 +22,58 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Check JPX update day
+        id: market_day
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("python").resolve()))
+
+          from jp_market_calendar import current_jst_date, first_jpx_business_day_of_month
+
+          target_date = current_jst_date()
+          first_business_day = first_jpx_business_day_of_month(target_date.year, target_date.month)
+          should_run = target_date == first_business_day
+          reason = "" if should_run else f"not first JPX business day of month (first day: {first_business_day.isoformat()})"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"should_run={'true' if should_run else 'false'}\n")
+              handle.write(f"target_date={target_date.isoformat()}\n")
+              handle.write(f"first_business_day={first_business_day.isoformat()}\n")
+              handle.write(f"reason={reason}\n")
+
+          print(
+              f"target_date={target_date.isoformat()} "
+              f"first_business_day={first_business_day.isoformat()} "
+              f"should_run={should_run}"
+          )
+          PY
+
+      - name: Log skip reason
+        if: steps.market_day.outputs.should_run != 'true'
+        run: echo "Skipping JP ticker update on ${{ steps.market_day.outputs.target_date }} (${{ steps.market_day.outputs.reason }})"
+
       - name: Install runtime dependencies
+        if: steps.market_day.outputs.should_run == 'true'
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install xlrd pyyaml
 
       - name: Update JP ticker CSV
+        if: steps.market_day.outputs.should_run == 'true'
         run: python/.venv/bin/python python/update_tickers_jp.py
 
       - name: Write run summary
         if: always()
+        env:
+          SHOULD_RUN: ${{ steps.market_day.outputs.should_run }}
+          TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
+          SKIP_REASON: ${{ steps.market_day.outputs.reason }}
+          FIRST_BUSINESS_DAY: ${{ steps.market_day.outputs.first_business_day }}
         run: |
           python - <<'PY'
           import json
@@ -43,7 +84,16 @@ jobs:
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
 
           lines = ["## JPX ticker update", ""]
-          if not summary_file.exists():
+          if os.environ.get("SHOULD_RUN") != "true":
+              lines.extend(
+                  [
+                      "- Status: `skipped`",
+                      f"- JST date: `{os.environ.get('TARGET_DATE', '')}`",
+                      f"- First business day: `{os.environ.get('FIRST_BUSINESS_DAY', '')}`",
+                      f"- Reason: `{os.environ.get('SKIP_REASON', 'unknown')}`",
+                  ]
+              )
+          elif not summary_file.exists():
               lines.append("summary file was not created.")
           else:
               payload = json.loads(summary_file.read_text(encoding="utf-8"))
@@ -102,6 +152,7 @@ jobs:
           PY
 
       - name: Upload JP ticker artifacts
+        if: steps.market_day.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tickers-jp-update

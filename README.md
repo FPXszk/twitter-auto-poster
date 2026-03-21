@@ -90,8 +90,13 @@
   - 日本株の朝まとめ投稿
 - `evening_post.yml`
   - 日本株の夜総括投稿
+- `update_tickers.yml`
+  - 日本株サマリー用の `stock-cache` 更新
+- `update_tickers_jp.yml`
+  - JPX XLS ベースの月次銘柄更新
 
 各 workflow は state をキャッシュし、`tmp/` を artifact として保存します。
+日本株系 workflow は JPX 非営業日（土日・祝日・年始年末休場）を自動でスキップします。
 
 ## 必要なもの
 
@@ -209,6 +214,8 @@ python/.venv/bin/python python/update_tickers.py
 python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json
 python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json
 ```
+
+`python/update_tickers.py`、`python/morning_summary.py`、`python/evening_summary.py` は JPX 非営業日だと `0` で終了して処理をスキップします。`update_tickers_jp.yml` は毎月の初営業日だけ実行されるように制御しています。
 
 ## 保守・確認コマンド
 

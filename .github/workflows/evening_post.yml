@@ -45,18 +45,49 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Check JP market day
+        id: market_day
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("python").resolve()))
+
+          from jp_market_calendar import current_jst_date, is_jpx_business_day, jpx_closure_reason
+
+          target_date = current_jst_date()
+          should_run = is_jpx_business_day(target_date)
+          reason = jpx_closure_reason(target_date) or ""
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"should_run={'true' if should_run else 'false'}\n")
+              handle.write(f"target_date={target_date.isoformat()}\n")
+              handle.write(f"reason={reason}\n")
+
+          print(f"target_date={target_date.isoformat()} should_run={should_run} reason={reason or 'business-day'}")
+          PY
+
+      - name: Log skip reason
+        if: steps.market_day.outputs.should_run != 'true'
+        run: echo "Skipping evening stock post on ${{ steps.market_day.outputs.target_date }} (${{ steps.market_day.outputs.reason }})"
+
       - name: Install runtime dependencies
+        if: steps.market_day.outputs.should_run == 'true'
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install yfinance pandas twitter-cli
 
       - name: Prepare runtime files
+        if: steps.market_day.outputs.should_run == 'true'
         run: |
           mkdir -p tmp
           touch tmp/posted_ids.txt
 
       - name: Restore post state
+        if: steps.market_day.outputs.should_run == 'true'
         uses: actions/cache/restore@v4
         with:
           path: tmp/posted_ids.txt
@@ -65,6 +96,7 @@ jobs:
             ${{ runner.os }}-evening-stock-state-
 
       - name: Restore stock cache
+        if: steps.market_day.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -122,6 +154,7 @@ jobs:
           PY
 
       - name: Run evening summary
+        if: steps.market_day.outputs.should_run == 'true'
         run: |
           EXTRA_ARGS=""
           if [ "${FORCE_REPOST}" = "true" ]; then
@@ -134,14 +167,14 @@ jobs:
           fi
 
       - name: Save post state
-        if: always()
+        if: always() && steps.market_day.outputs.should_run == 'true'
         uses: actions/cache/save@v4
         with:
           path: tmp/posted_ids.txt
           key: ${{ runner.os }}-evening-stock-state-${{ github.run_id }}
 
       - name: Upload run artifacts
-        if: always()
+        if: always() && steps.market_day.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: evening-stock-run

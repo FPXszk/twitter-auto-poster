@@ -6,13 +6,12 @@ import logging
 import re
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Sequence
-from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
+from jp_market_calendar import current_jst_date, jpx_closure_reason
 from stock_cache import load_stock_cache
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
 
@@ -84,10 +83,6 @@ def format_price(value: float) -> str:
 
 def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
     return max(snapshot.latest_date for snapshot in snapshots)
-
-
-def current_jst_date() -> str:
-    return datetime.now(ZoneInfo("Asia/Tokyo")).date().isoformat()
 
 
 def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
@@ -263,6 +258,12 @@ def main() -> int:
     configure_logging(args.log_level)
 
     try:
+        today = current_jst_date()
+        closure_reason = jpx_closure_reason(today)
+        if closure_reason is not None:
+            LOGGER.info("today is not a JPX business day (%s: %s); skipping evening post", today, closure_reason)
+            return 0
+
         if args.cache_path is not None:
             snapshots = load_stock_cache(args.cache_path)
             LOGGER.info("loaded %s stock snapshots from cache: %s", len(snapshots), args.cache_path)
@@ -276,7 +277,7 @@ def main() -> int:
             return 1
 
         trade_date, tweet_text = build_post_text(snapshots)
-        summary_key = f"stock-evening:{current_jst_date()}"
+        summary_key = f"stock-evening:{today.isoformat()}"
         state_entries = load_state_entries()
         if summary_key in state_entries:
             if args.force_repost:
