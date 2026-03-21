@@ -7,11 +7,13 @@ readonly PROJECT_ROOT="$(cd "${COMMON_DIR}/../.." && pwd)"
 readonly DEFAULT_SOURCES_CONFIG="${PROJECT_ROOT}/config/sources.yaml"
 readonly DEFAULT_ACCOUNTS_CONFIG="${PROJECT_ROOT}/config/accounts.yaml"
 readonly DEFAULT_TMP_DIR="${PROJECT_ROOT}/tmp"
+readonly DEFAULT_PYTHON_BIN="${PROJECT_ROOT}/python/.venv/bin/python3"
 readonly DEFAULT_TWITTER_BIN="${PROJECT_ROOT}/python/.venv/bin/twitter"
 readonly DEFAULT_RETRY_ATTEMPTS="${TWITTER_RETRY_ATTEMPTS:-3}"
 readonly DEFAULT_RETRY_DELAY_SECONDS="${TWITTER_RETRY_DELAY_SECONDS:-2}"
 
 TWITTER_BIN_CACHE=""
+PYTHON_BIN_CACHE=""
 
 log() {
   local level="$1"
@@ -39,9 +41,46 @@ require_command() {
 }
 
 require_yaml_support() {
-  python3 - <<'PY' >/dev/null 2>&1 || die "python3 package 'pyyaml' is required"
+  python_cmd - <<'PY' >/dev/null 2>&1 || die "python package 'pyyaml' is required"
 import yaml  # noqa: F401
 PY
+}
+
+resolve_python_bin() {
+  local configured_bin="${PYTHON_BIN:-}"
+
+  if [[ -n "${configured_bin}" ]]; then
+    if [[ "${configured_bin}" == */* ]]; then
+      [[ -x "${configured_bin}" ]] || die "python executable not found: ${configured_bin}"
+      printf '%s\n' "${configured_bin}"
+      return
+    fi
+
+    command -v "${configured_bin}" >/dev/null 2>&1 || die "required command not found: ${configured_bin}"
+    command -v "${configured_bin}"
+    return
+  fi
+
+  if [[ -x "${DEFAULT_PYTHON_BIN}" ]]; then
+    printf '%s\n' "${DEFAULT_PYTHON_BIN}"
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    warn "falling back to python3 from PATH; expected ${DEFAULT_PYTHON_BIN}"
+    command -v python3
+    return
+  fi
+
+  die "python interpreter not found. expected ${DEFAULT_PYTHON_BIN} or a PYTHON_BIN override"
+}
+
+python_cmd() {
+  if [[ -z "${PYTHON_BIN_CACHE}" ]]; then
+    PYTHON_BIN_CACHE="$(resolve_python_bin)"
+  fi
+
+  "${PYTHON_BIN_CACHE}" "$@"
 }
 
 resolve_twitter_bin() {
@@ -82,7 +121,7 @@ twitter_cmd() {
 }
 
 ensure_dependencies() {
-  require_command python3
+  resolve_python_bin >/dev/null
   require_yaml_support
   resolve_twitter_bin >/dev/null
 }
@@ -185,7 +224,7 @@ assert_structured_success() {
   local payload_path="$1"
   local label="$2"
 
-  python3 - "${payload_path}" "${label}" <<'PY'
+  python_cmd - "${payload_path}" "${label}" <<'PY'
 import json
 import pathlib
 import sys
@@ -205,7 +244,7 @@ PY
 filter_retweets_inplace() {
   local payload_path="$1"
 
-  python3 - "${payload_path}" <<'PY'
+  python_cmd - "${payload_path}" <<'PY'
 import json
 import pathlib
 import sys
@@ -221,7 +260,7 @@ PY
 validate_sources_config() {
   local sources_config="$1"
 
-  python3 - "${sources_config}" <<'PY'
+  python_cmd - "${sources_config}" <<'PY'
 import pathlib
 import sys
 
@@ -280,7 +319,7 @@ PY
 validate_accounts_config() {
   local accounts_config="$1"
 
-  python3 - "${accounts_config}" <<'PY'
+  python_cmd - "${accounts_config}" <<'PY'
 import pathlib
 import sys
 
@@ -349,7 +388,7 @@ sources_jsonl() {
   local category="$2"
   local source_type="$3"
 
-  python3 - "${sources_config}" "${category}" "${source_type}" <<'PY'
+  python_cmd - "${sources_config}" "${category}" "${source_type}" <<'PY'
 import json
 import pathlib
 import sys
@@ -411,7 +450,7 @@ account_config_json() {
   local accounts_config="$1"
   local category="$2"
 
-  python3 - "${accounts_config}" "${category}" <<'PY'
+  python_cmd - "${accounts_config}" "${category}" <<'PY'
 import json
 import pathlib
 import sys
