@@ -26,6 +26,24 @@ GitHub Actions で必要な Secrets は次の 2 つです。
 
 ## 2. ローカル → 手動実行 → 定期実行の流れ
 
+### JPX 銘柄更新
+
+JPX 銘柄更新 workflow (`update_tickers_jp.yml`) には Secrets は不要です。
+
+ローカル確認:
+
+1. `python/.venv/bin/pip install xlrd pyyaml` を実行する
+2. `python/.venv/bin/python python/update_tickers_jp.py` を実行する
+3. `config/tickers_jp.csv` と `config/tickers_jp.csv.bak` を確認する
+4. `tmp/tickers_jp_update_summary.json` の件数・差分要約を確認する
+
+GitHub Actions の手動実行:
+
+1. Actions で `Update JP tickers` を開く
+2. `Run workflow` から実行する
+3. `Job summary` の件数・追加/削除/業種変更を確認する
+4. artifact `tickers-jp-update` から `config/tickers_jp.csv` と `tmp/tickers_jp_update_summary.json` を確認する
+
 ### ローカル確認
 
 1. `python/.venv/bin/twitter status --yaml` で認証確認
@@ -47,6 +65,20 @@ GitHub Actions で必要な Secrets は次の 2 つです。
 3. 問題がなければ schedule に任せる
 
 ## 3. 障害時の復旧手順
+
+### JPX XLS の列構成変更
+
+症状:
+
+- `update_tickers_jp.py` が header mismatch で失敗する
+- Actions の `Job summary` に missing columns が表示される
+
+対応:
+
+1. artifact の `tmp/tickers_jp_update_summary.json` を開く
+2. `error` の missing columns と sheet 名を確認する
+3. JPX の XLS 列名変更であれば `config/tickers_jp_rules.yaml` と `python/update_tickers_jp.py` の想定を更新する
+4. 既存の `config/tickers_jp.csv` は維持されていることを確認してから再実行する
 
 ### 認証エラー
 

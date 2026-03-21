@@ -26,14 +26,86 @@ jobs:
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install xlrd
+          python/.venv/bin/pip install xlrd pyyaml
 
       - name: Update JP ticker CSV
         run: python/.venv/bin/python python/update_tickers_jp.py
 
-      - name: Upload JP ticker CSV artifact
+      - name: Write run summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_file = Path("tmp/tickers_jp_update_summary.json")
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+
+          lines = ["## JPX ticker update", ""]
+          if not summary_file.exists():
+              lines.append("summary file was not created.")
+          else:
+              payload = json.loads(summary_file.read_text(encoding="utf-8"))
+              lines.extend(
+                  [
+                      f"- Status: `{payload.get('status', 'unknown')}`",
+                      f"- Source: `{payload.get('source_url', '')}`",
+                  ]
+              )
+
+              if payload.get("status") != "success":
+                  lines.append(f"- Error: `{payload.get('error', 'unknown error')}`")
+              else:
+                  diff = payload.get("diff") or {}
+                  lines.extend(
+                      [
+                          f"- Sheet: `{payload.get('sheet_name', '')}`",
+                          f"- Selected tickers: `{payload.get('selected_count', 0)}`",
+                          f"- Added / Removed / Sector changed: `{diff.get('added_count', 0)} / {diff.get('removed_count', 0)} / {diff.get('sector_changed_count', 0)}`",
+                          f"- Backup created: `{payload.get('backup_created', False)}`",
+                      ]
+                  )
+
+                  warnings = payload.get("warnings") or []
+                  if warnings:
+                      lines.extend(["", "### Warnings", ""])
+                      lines.extend(f"- {warning}" for warning in warnings)
+
+                  def render_rows(title: str, rows: list[dict], formatter) -> None:
+                      if not rows:
+                          return
+                      lines.extend(["", f"### {title}", ""])
+                      lines.extend(formatter(row) for row in rows)
+
+                  render_rows(
+                      "Added (sample)",
+                      diff.get("added") or [],
+                      lambda row: f"- `{row.get('ticker', '')}` {row.get('name', '')} / {row.get('sector', '')}",
+                  )
+                  render_rows(
+                      "Removed (sample)",
+                      diff.get("removed") or [],
+                      lambda row: f"- `{row.get('ticker', '')}` {row.get('name', '')} / {row.get('sector', '')}",
+                  )
+                  render_rows(
+                      "Sector changed (sample)",
+                      diff.get("sector_changed") or [],
+                      lambda row: f"- `{row.get('ticker', '')}` {row.get('name', '')}: `{row.get('old_sector', '')}` -> `{row.get('new_sector', '')}`",
+                  )
+
+                  detail_limit = diff.get("detail_limit", 0)
+                  if detail_limit:
+                      lines.extend(["", f"- Detail lists are capped at `{detail_limit}` rows in the summary artifact."])
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload JP ticker artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tickers-jp-csv
-          path: config/tickers_jp.csv
+          name: tickers-jp-update
+          path: |
+            config/tickers_jp.csv
+            tmp/tickers_jp_update_summary.json
           if-no-files-found: error

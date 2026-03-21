@@ -161,6 +161,7 @@ ticker,name,sector
 - 対象: `市場・商品区分` が `東証プライム（内国株式）` / `プライム（内国株式）`
 - `33業種区分` を `sector` に使う
 - `ETF` / `REIT` / `優先株` は除外する
+- 抽出ルールは `config/tickers_jp_rules.yaml` で管理する
 
 ---
 

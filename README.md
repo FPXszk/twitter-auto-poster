@@ -24,6 +24,7 @@
 ├── config/
 │   ├── accounts.yaml
 │   ├── sources.yaml
+│   ├── tickers_jp_rules.yaml
 │   └── tickers_jp.csv
 ├── python/
 │   ├── stock_fetcher.py
@@ -76,6 +77,8 @@
   - `dry_run`
   - `post_prefix`
   - `max_candidates`
+- `config/tickers_jp_rules.yaml`
+  - JPX XLS から `tickers_jp.csv` を作るときの市場ラベルと除外キーワード
 
 ### `.github/workflows/`
 
@@ -191,7 +194,7 @@ bash scripts/fetch_and_post.sh --category invest --post
 ```bash
 python3 -m venv python/.venv
 python/.venv/bin/pip install --upgrade pip
-python/.venv/bin/pip install pandas yfinance twitter-cli xlrd
+python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml
 python/.venv/bin/python python/update_tickers_jp.py
 python/.venv/bin/python python/update_tickers.py
 python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json
@@ -218,6 +221,7 @@ just stop
 twitter status --yaml
 git --no-pager status --short
 python/.venv/bin/python -m py_compile python/stock_fetcher.py python/stock_cache.py python/update_tickers.py python/update_tickers_jp.py python/morning_summary.py python/evening_summary.py
+python/.venv/bin/python -m unittest discover -s tests
 ```
 
 README や workflow を触ったときの軽い確認例:
@@ -277,6 +281,7 @@ PY
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
 - `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
+- `update_tickers_jp.yml` は `tmp/tickers_jp_update_summary.json` と `GITHUB_STEP_SUMMARY` に件数・差分要約も出力します
 - Python 3.11 をセットアップ
 - `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
 - state を cache restore/save
@@ -291,6 +296,12 @@ PY
 - `TWITTER_CT0`
 
 `update_tickers_jp.yml` ではこれらの Secrets は不要です。
+
+### JPX 銘柄更新ルール
+
+- `config/tickers_jp_rules.yaml` に対象市場ラベルと除外キーワードを定義します
+- 現状は東証プライム系ラベルのみを対象にし、`ETF` / `REIT` / `投資法人` / `優先株` を除外します
+- `python/update_tickers_jp.py` 実行後は `tmp/tickers_jp_update_summary.json` に件数と差分要約が出力されます
 
 ### 使い方
 

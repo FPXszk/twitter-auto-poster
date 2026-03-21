@@ -1,0 +1,14 @@
+# JPX 公式 XLS から config/tickers_jp.csv を生成するときの抽出ルール
+
+target_markets:
+  - 東証プライム（内国株式）
+  - プライム（内国株式）
+
+exclude_name_keywords:
+  - ETF
+  - ＥＴＦ
+  - REIT
+  - ＲＥＩＴ
+  - 投資法人
+  - 優先株
+  - 優先
