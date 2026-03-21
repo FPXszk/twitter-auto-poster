@@ -187,6 +187,18 @@ def _build_snapshot(
         return None
     average_volume_5d = float(volume_baseline.tail(5).mean())
     pct_change = ((current_close - previous_close) / previous_close) * 100.0
+    if (
+        previous_close < current_close * 0.5
+        or previous_close > current_close * 2.0
+        or pct_change < -50.0
+        or pct_change > 50.0
+    ):
+        LOGGER.warning(
+            "skipping %s due to abnormal pct_change: %.1f%%",
+            record.ticker,
+            pct_change,
+        )
+        return None
     latest_date = pd.Timestamp(numeric_frame.index[-1]).date().isoformat()
 
     return StockSnapshot(
