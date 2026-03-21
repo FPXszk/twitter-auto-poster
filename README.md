@@ -104,6 +104,13 @@
 各 workflow は state をキャッシュし、`tmp/` を artifact として保存します。
 日本株系 workflow は JPX 非営業日（土日・祝日・年始年末休場）を自動でスキップします。
 
+### `docs/`
+
+- `docs/POSTING_STRATEGY.md`
+  - 投稿文・要約文を考えるときの基準
+- `docs/RUNBOOK.md`
+  - 運用手順と復旧手順
+
 ## 必要なもの
 
 - `python3`
@@ -375,4 +382,6 @@ PY
 ## 今の前提
 
 この README は **現在の実装状態** に合わせて書いています。
+
+今後の投稿文・要約文の作成方針は `docs/POSTING_STRATEGY.md` を基準にしてください。
 将来的に候補選定ロジック、投稿文整形、state 永続化の方式、workflow の運用方針を変えた場合は README も一緒に更新してください。
