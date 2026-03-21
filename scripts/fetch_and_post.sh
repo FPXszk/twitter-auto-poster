@@ -5,6 +5,8 @@ set -Eeuo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=scripts/lib/post_publish.sh
+source "${SCRIPT_DIR}/lib/post_publish.sh"
 
 usage() {
   cat <<'EOF'
@@ -92,6 +94,24 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
+update_candidate_result() {
+  local candidate_file="$1"
+  local result_mode="$2"
+  local post_result_file="${3:-}"
+
+  python_cmd - "${candidate_file}" "${result_mode}" "${post_result_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload_path = pathlib.Path(sys.argv[1])
+payload = json.loads(payload_path.read_text(encoding="utf-8"))
+payload["result_mode"] = sys.argv[2]
+payload["post_result_file"] = sys.argv[3] or None
+payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 main() {
   local category=""
   local sources_config="${DEFAULT_SOURCES_CONFIG}"
@@ -107,10 +127,11 @@ main() {
   local source_root=""
   local payload_count=""
   local selected_count=""
-  local posted_id=""
+  local selected_tweet_id=""
   local summary_warnings=""
-  local state_path_config=""
   local collection_status_json=""
+  local source_config_json=""
+  local requested_mode="live"
 
   while (($# > 0)); do
     case "$1" in
@@ -164,6 +185,7 @@ main() {
   ensure_twitter_auth
 
   account_json="$(account_config_json "${accounts_config}" "${category}")"
+  source_config_json="$(category_sources_json "${sources_config}" "${category}")"
   dry_run="$(python_cmd - "${account_json}" <<'PY'
 import json
 import sys
@@ -175,6 +197,9 @@ PY
 
   if [[ -n "${dry_run_override}" ]]; then
     dry_run="${dry_run_override}"
+  fi
+  if [[ "${dry_run}" == "true" ]]; then
+    requested_mode="preview"
   fi
 
   if ! bash "${SCRIPT_DIR}/fetch_user.sh" --category "${category}" --sources "${sources_config}" --output-dir "${output_dir}"; then
@@ -202,20 +227,22 @@ PY
   touch "${state_file}"
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${account_json}" "${collection_status_json}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
 import sys
-from post_filters import candidate_rejection_reasons
+from post_filters import candidate_rejection_reasons, merge_filters
 from post_scoring import calculate_score, extract_candidate_metrics
 from post_summary import build_summary, clean_source_text
 
 category = sys.argv[1]
 state_file = pathlib.Path(sys.argv[2])
 account = json.loads(sys.argv[3])
-collection = json.loads(sys.argv[4])
-payload_files = [pathlib.Path(item) for item in sys.argv[5:]]
+source_configs = json.loads(sys.argv[4])
+collection = json.loads(sys.argv[5])
+requested_mode = sys.argv[6]
+payload_files = [pathlib.Path(item) for item in sys.argv[7:]]
 
 posted_ids = {line.strip() for line in state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
@@ -228,11 +255,14 @@ summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix")
 summary_language = str(account.get("summary_language") or "ja")
 summary_max_length = int(account.get("summary_max_length") or 140)
 score_weights = account.get("score_weights") or {}
-filters = account.get("filters") or {}
+account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
 
 
 for payload_path in payload_files:
+    source_id = payload_path.stem
+    source_filters = (source_configs.get(source_id) or {}).get("filters") or {}
+    effective_filters = merge_filters(account_filters, source_filters)
     try:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -258,9 +288,9 @@ for payload_path in payload_files:
             continue
 
         created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
-        rejection_reasons = candidate_rejection_reasons(text=text, created_at=created_at, raw_filters=filters)
+        rejection_reasons = candidate_rejection_reasons(text=text, created_at=created_at, raw_filters=effective_filters)
         if rejection_reasons:
-            skipped_candidates.append({"id": tweet_id, "text": text[:120], "reasons": rejection_reasons})
+            skipped_candidates.append({"id": tweet_id, "source_id": source_id, "text": text[:120], "reasons": rejection_reasons})
             continue
 
         author = item.get("author") or {}
@@ -270,6 +300,7 @@ for payload_path in payload_files:
         candidates.append(
             {
                 "id": tweet_id,
+                "source_id": source_id,
                 "text": text,
                 "screen_name": str(author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
@@ -309,6 +340,8 @@ if selected:
 
 payload = {
     "category": category,
+    "requested_mode": requested_mode,
+    "result_mode": "candidate_ready",
     "payload_count": len(payload_files),
     "collection": collection,
     "post_text": post_text,
@@ -316,6 +349,7 @@ payload = {
     "selected_candidates": selected_candidates,
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
+    "post_result_file": None,
 }
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
@@ -339,6 +373,7 @@ PY
   )"
 
   if [[ "${selected_count}" -eq 0 ]]; then
+    update_candidate_result "${candidate_file}" "no_candidate"
     info "no eligible candidates found for category '${category}'"
     exit 0
   fi
@@ -352,7 +387,7 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(payload["post_text"])
 PY
   )"
-  posted_id="$(python_cmd - "${candidate_file}" <<'PY'
+  selected_tweet_id="$(python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -367,43 +402,17 @@ PY
   printf '%s\n' "${post_text}"
 
   if [[ "${dry_run}" == "true" ]]; then
+    update_candidate_result "${candidate_file}" "preview"
     info "dry-run enabled; skipping twitter post"
     exit 0
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! retry_to_file "${post_result_file}" "${DEFAULT_RETRY_ATTEMPTS}" "${DEFAULT_RETRY_DELAY_SECONDS}" twitter_cmd post "${post_text}" --json; then
-    warn "twitter post failed for '${category}'"
+  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${state_file}" "${post_result_file}"; then
+    update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}"
     exit 0
   fi
-
-  if ! assert_structured_success "${post_result_file}" "post:${category}"; then
-    warn "twitter post response validation failed for '${category}'"
-    exit 0
-  fi
-
-  if ! python_cmd - "${posted_id}" "${state_file}" <<'PY'
-import pathlib
-import sys
-
-tweet_id = sys.argv[1].strip()
-state_file = pathlib.Path(sys.argv[2])
-existing = {
-    line.strip()
-    for line in state_file.read_text(encoding="utf-8").splitlines()
-    if line.strip()
-}
-
-if tweet_id and tweet_id not in existing:
-    with state_file.open("a", encoding="utf-8") as handle:
-        handle.write(f"{tweet_id}\n")
-PY
-  then
-    warn "posted '${category}' but failed to update ${state_file}"
-    exit 0
-  fi
-
-  info "posted category '${category}' and updated ${state_file}"
+  update_candidate_result "${candidate_file}" "posted" "${post_result_file}"
 }
 
 main "$@"

@@ -266,6 +266,25 @@ import sys
 
 import yaml
 
+
+def ensure_string_list(label, value):
+    if value is None:
+        return
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+        raise SystemExit(f"{label} must be a list of non-empty strings")
+
+
+def validate_filters(label, value):
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise SystemExit(f"{label} must be a mapping")
+    if "max_age_hours" in value and value["max_age_hours"] is not None and float(value["max_age_hours"]) <= 0:
+        raise SystemExit(f"{label}.max_age_hours must be > 0")
+    ensure_string_list(f"{label}.required_terms", value.get("required_terms"))
+    ensure_string_list(f"{label}.exclude_keywords", value.get("exclude_keywords"))
+
+
 config_path = pathlib.Path(sys.argv[1])
 raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
@@ -301,6 +320,8 @@ for index, item in enumerate(sources, start=1):
 
     if "max_results" in item and int(item["max_results"]) <= 0:
         raise SystemExit(f"{source_id}: max_results must be > 0")
+
+    validate_filters(f"{source_id}.filters", item.get("filters"))
 
     if source_type == "user":
         username = str(item.get("username") or "").strip().lstrip("@")
@@ -345,6 +366,14 @@ def ensure_number_mapping(label, value):
             raise SystemExit(f"{label}.{key} must be numeric") from exc
 
 
+def parse_bool(label, value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    raise SystemExit(f"{label} must be a boolean")
+
+
 config_path = pathlib.Path(sys.argv[1])
 raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
@@ -369,6 +398,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         raise SystemExit(f"{label}.summary_max_length must be > 0")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
+    if "dry_run" in block:
+        parse_bool(f"{label}.dry_run", block["dry_run"])
 
     ensure_number_mapping(f"{label}.score_weights", block.get("score_weights"))
 
@@ -446,6 +477,48 @@ for item in sources:
 PY
 }
 
+category_sources_json() {
+  local sources_config="$1"
+  local category="$2"
+
+  python_cmd - "${sources_config}" "${category}" <<'PY'
+import json
+import pathlib
+import sys
+
+import yaml
+
+sources_config = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+
+raw = yaml.safe_load(sources_config.read_text(encoding="utf-8")) or {}
+sources = raw.get("sources") or []
+payload = {}
+
+for item in sources:
+    if not isinstance(item, dict):
+        raise SystemExit("each source entry must be a mapping")
+
+    if not item.get("enabled", True):
+        continue
+
+    if item.get("category") != category:
+        continue
+
+    source_id = str(item.get("id") or "").strip()
+    if not source_id:
+        raise SystemExit("source entry is missing id")
+
+    payload[source_id] = {
+        "id": source_id,
+        "type": str(item.get("type") or "").strip(),
+        "filters": item.get("filters") or {},
+    }
+
+print(json.dumps(payload, ensure_ascii=True))
+PY
+}
+
 account_config_json() {
   local accounts_config="$1"
   local category="$2"
@@ -456,6 +529,14 @@ import pathlib
 import sys
 
 import yaml
+
+
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    raise SystemExit("dry_run must be a boolean")
 
 accounts_config = pathlib.Path(sys.argv[1])
 category = sys.argv[2]
@@ -471,7 +552,7 @@ default_filters = defaults.get("filters") or {}
 account_filters = account.get("filters") or {}
 
 payload = {
-    "dry_run": bool(account.get("dry_run", defaults.get("dry_run", True))),
+    "dry_run": parse_bool(account.get("dry_run", defaults.get("dry_run", True))),
     "post_prefix": str(account.get("post_prefix") or defaults.get("post_prefix") or "Update:"),
     "max_candidates": int(account.get("max_candidates") or defaults.get("max_candidates") or 1),
     "summary_prefix": str(

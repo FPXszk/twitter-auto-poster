@@ -15,6 +15,19 @@ DEFAULT_NOISE_KEYWORDS = [
     "dm me",
 ]
 
+FILTER_KEYS = ("max_age_hours", "required_terms", "exclude_keywords")
+
+
+def merge_filters(base_filters: Mapping[str, Any] | None, override_filters: Mapping[str, Any] | None) -> dict[str, Any]:
+    payload = dict(base_filters or {})
+    if not override_filters:
+        return payload
+
+    for key in FILTER_KEYS:
+        if key in override_filters:
+            payload[key] = override_filters[key]
+    return payload
+
 
 def normalize_filters(raw_filters: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = {

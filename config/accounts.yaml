@@ -1,4 +1,5 @@
 # Account-specific posting policy.
+# - dry_run: post_news / post_invest workflow とローカル実行の既定モードの設定元
 # - state_file: 空文字なら `tmp/state/<category>-posted.txt`、相対パスなら output-dir 配下に解決
 # - summary_*: 候補本文を作るときの接頭辞・言語・最大文字数
 # - filters / score_weights: 候補選定ロジックの調整点
@@ -21,23 +22,15 @@ defaults:
 
 accounts:
   invest:
+    dry_run: true
     post_prefix: "Market watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
     # invest は stock summary と同じ `tmp/posted_ids.txt` を共有する
     state_file: "posted_ids.txt"
-    filters:
-      max_age_hours: 24
-      required_terms:
-        - "$MU"
-        - "Micron"
-      exclude_keywords:
-        - "earn money"
-        - "join now"
-        - "whatsapp"
-        - "referral"
 
   news:
+    dry_run: true
     post_prefix: "News watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "

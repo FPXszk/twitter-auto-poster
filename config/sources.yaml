@@ -12,6 +12,16 @@ sources:
     query: "$MU lang:en"
     timeline: top
     max_results: 5
+    filters:
+      max_age_hours: 24
+      required_terms:
+        - "$MU"
+        - "Micron"
+      exclude_keywords:
+        - "earn money"
+        - "join now"
+        - "whatsapp"
+        - "referral"
 
   - id: invest-watchlist-user
     category: invest

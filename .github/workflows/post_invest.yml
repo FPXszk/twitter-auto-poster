@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATEGORY: invest
-      DRY_RUN: "true"
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -33,6 +32,32 @@ jobs:
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install pyyaml twitter-cli
 
+      - name: Load account mode
+        id: account_mode
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+          
+          def parse_bool(value):
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+                  return value.strip().lower() == "true"
+              raise SystemExit("dry_run must be a boolean")
+          
+          category = os.environ["CATEGORY"]
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          defaults = raw.get("defaults") or {}
+          accounts = raw.get("accounts") or {}
+          account = accounts.get(category) or {}
+          dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
+          
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"dry_run={str(dry_run).lower()}\n")
+          PY
+
       - name: Run runtime diagnostics
         run: |
           mkdir -p tmp
@@ -42,9 +67,9 @@ jobs:
         run: |
           chmod +x scripts/*.sh scripts/lib/common.sh
           mkdir -p tmp
-          touch tmp/posted_ids.txt
 
       - name: Restore post state
+        if: steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/restore@v4
         with:
           path: tmp/posted_ids.txt
@@ -52,8 +77,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-post-invest-state-
 
-      - name: Fetch and preview
-        run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${DRY_RUN}"
+      - name: Fetch candidates and process mode
+        run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
 
       - name: Write run summary
         if: always()
@@ -75,6 +100,8 @@ jobs:
               collection = payload.get("collection") or {}
               lines.extend(
                   [
+                      f"- Requested mode: `{payload.get('requested_mode', 'unknown')}`",
+                      f"- Result mode: `{payload.get('result_mode', 'unknown')}`",
                       f"- Payload files: `{payload.get('payload_count', 0)}`",
                       f"- User fetch status: `{collection.get('user', {})}`",
                       f"- Search fetch status: `{collection.get('search', {})}`",
@@ -88,6 +115,7 @@ jobs:
                   author = selected.get("screen_name") or selected.get("author_name") or "unknown"
                   lines.extend(
                       [
+                          f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
                           f"- Selected tweet ID: `{selected.get('id', '')}`",
                           f"- Author: `{author}`",
                           f"- Score: `{selected.get('score', 0)}`",
@@ -104,11 +132,14 @@ jobs:
               skipped = payload.get("skipped_candidates") or []
               if skipped:
                   lines.extend(["", f"- Skipped candidates logged: `{len(skipped)}`"])
+              if payload.get("post_result_file"):
+                  lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
 
       - name: Save post state
+        if: steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/save@v4
         with:
           path: tmp/posted_ids.txt

@@ -58,6 +58,8 @@
   - 認証確認
   - `tmp/` 出力ディレクトリ管理
   - YAML 読み出し補助
+- `scripts/lib/post_publish.sh`
+  - 実投稿と投稿済み state 更新
 - `scripts/fetch_user.sh`
   - `type: user` の source を読み、`twitter user-posts` を実行
 - `scripts/fetch_search.sh`
@@ -71,9 +73,9 @@
   - 収集対象の一覧
   - `news` / `invest`
   - `user` / `search`
-  - クエリ、ユーザー名、取得件数など
+   - クエリ、ユーザー名、取得件数、optional な source 単位 `filters`
 - `config/accounts.yaml`
-  - カテゴリ別の投稿ポリシー
+   - カテゴリ別の投稿ポリシーと workflow 実行モードの設定元
   - `dry_run`
   - `post_prefix`
   - `max_candidates`
@@ -293,7 +295,8 @@ PY
 
 - `workflow_dispatch` 対応
 - `schedule` 対応
-- `workflow_dispatch` では手動実行できますが、`post_news.yml` / `post_invest.yml` は現状 dry-run 固定です
+- `workflow_dispatch` では手動実行できます
+- `post_news.yml` / `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
 - `post_invest.yml` は毎時間の候補収集とプレビューを行います（現状は GitHub Actions から実投稿しません）
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
@@ -325,7 +328,7 @@ PY
 
 ### 使い方
 
-`post_news.yml` / `post_invest.yml` は現状 **常時 dry-run** です。手動実行しても GitHub Actions から実投稿は行いません。
+現状の `config/accounts.yaml` では `post_news.yml` / `post_invest.yml` は **dry-run** です。将来 live-post を再開する場合も workflow ではなく config 側を変更します。
 
 ## 設定ファイルの見方
 
@@ -342,6 +345,7 @@ PY
 - `timeline`
 - `max_results`
 - `exclude_retweets`
+- `filters`
 
 ### `config/accounts.yaml`
 
@@ -357,11 +361,13 @@ PY
 - `score_weights`
 - `filters`
 
+`post_news.yml` / `post_invest.yml` はこの `dry_run` を読んで実行モードを決めます。
+
 ## 運用上の注意
 
 - 既定は `dry-run` です
 - ローカルの `scripts/fetch_and_post.sh` では `--post` または `--dry-run false` を明示したときだけ投稿します
-- GitHub Actions の `post_news.yml` / `post_invest.yml` は現状 `DRY_RUN=true` 固定です
+- GitHub Actions の `post_news.yml` / `post_invest.yml` は `config/accounts.yaml` の `dry_run` を参照します
 - GitHub Actions 上では環境変数認証のみだと 226 エラーが出る可能性があります
 - `twitter-cli` の write 系は Cookie ベース認証のほうが安定します
 - state は重複投稿防止のために使います
