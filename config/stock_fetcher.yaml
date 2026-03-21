@@ -1,0 +1,6 @@
+abnormal_thresholds:
+  previous_close_ratio_min: 0.5
+  previous_close_ratio_max: 2.0
+  pct_change_min: -50.0
+  pct_change_max: 50.0
+summary_detail_limit: 10

@@ -47,27 +47,7 @@ jobs:
 
       - name: Check JP market day
         id: market_day
-        run: |
-          python - <<'PY'
-          import os
-          import sys
-          from pathlib import Path
-
-          sys.path.insert(0, str(Path("python").resolve()))
-
-          from jp_market_calendar import current_jst_date, is_jpx_business_day, jpx_closure_reason
-
-          target_date = current_jst_date()
-          should_run = is_jpx_business_day(target_date)
-          reason = jpx_closure_reason(target_date) or ""
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"should_run={'true' if should_run else 'false'}\n")
-              handle.write(f"target_date={target_date.isoformat()}\n")
-              handle.write(f"reason={reason}\n")
-
-          print(f"target_date={target_date.isoformat()} should_run={should_run} reason={reason or 'business-day'}")
-          PY
+        run: python python/check_jpx_business_day.py --github-output
 
       - name: Log skip reason
         if: steps.market_day.outputs.should_run != 'true'
@@ -78,7 +58,12 @@ jobs:
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install yfinance pandas twitter-cli
+          python/.venv/bin/pip install yfinance pandas twitter-cli pyyaml
+
+      - name: Run runtime diagnostics
+        if: steps.market_day.outputs.should_run == 'true'
+        run: |
+          python/.venv/bin/python python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/evening-runtime.json
 
       - name: Prepare runtime files
         if: steps.market_day.outputs.should_run == 'true'
@@ -161,10 +146,64 @@ jobs:
             EXTRA_ARGS="--force-repost"
           fi
           if [ "${DRY_RUN}" = "true" ]; then
-            python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json ${EXTRA_ARGS}
+            python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json ${EXTRA_ARGS}
           else
-            python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json ${EXTRA_ARGS}
+            python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json ${EXTRA_ARGS}
           fi
+
+      - name: Write run summary
+        if: always()
+        env:
+          SHOULD_RUN: ${{ steps.market_day.outputs.should_run }}
+          TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
+          SKIP_REASON: ${{ steps.market_day.outputs.reason }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          run_path = Path("tmp/evening_summary.json")
+          lines = ["## Evening stock summary", ""]
+
+          if os.environ.get("SHOULD_RUN") != "true":
+              lines.extend(
+                  [
+                      "- Status: `skipped`",
+                      f"- JST date: `{os.environ.get('TARGET_DATE', '')}`",
+                      f"- Reason: `{os.environ.get('SKIP_REASON', '')}`",
+                  ]
+              )
+          elif not run_path.exists():
+              lines.append("summary file was not created.")
+          else:
+              payload = json.loads(run_path.read_text(encoding="utf-8"))
+              lines.extend(
+                  [
+                      f"- Status: `{payload.get('status', 'unknown')}`",
+                      f"- JST date: `{payload.get('date', '')}`",
+                      f"- Trade date: `{payload.get('trade_date', '')}`",
+                      f"- Variant: `{payload.get('variant', '')}`",
+                      f"- Text length: `{payload.get('text_length', '')}`",
+                  ]
+              )
+              if payload.get("reason"):
+                  lines.append(f"- Reason: `{payload.get('reason')}`")
+              if payload.get("expected_trade_date"):
+                  lines.append(f"- Expected trade date: `{payload.get('expected_trade_date')}`")
+              if payload.get("tweet_id"):
+                  lines.append(f"- Tweet ID: `{payload.get('tweet_id')}`")
+              if payload.get("tweet_text"):
+                  lines.extend(["", "### Text", "", payload["tweet_text"]])
+              cache_metadata = payload.get("cache_metadata") or {}
+              fetch_report = cache_metadata.get("fetch_report") or {}
+              skipped_reasons = fetch_report.get("skipped_reasons") or {}
+              if skipped_reasons:
+                  lines.extend(["", f"- Fetch skipped reasons: `{skipped_reasons}`"])
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
 
       - name: Save post state
         if: always() && steps.market_day.outputs.should_run == 'true'

@@ -3,15 +3,25 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import re
-import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from jp_market_calendar import current_jst_date, jpx_closure_reason
-from stock_cache import load_stock_cache
+from stock_cache import load_stock_cache, load_stock_cache_bundle
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
+from summary_common import (
+    SummaryBuildResult,
+    append_state_entries,
+    build_variants,
+    code_of,
+    format_signed_pct,
+    latest_trade_date,
+    load_state_entries,
+    pick_fitting_variant,
+    post_summary,
+    short_name,
+)
 
 LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -34,48 +44,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
+    parser.add_argument("--summary-output", type=Path)
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
-
-
-def ensure_state_file(path: Path = POSTED_IDS_PATH) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch(exist_ok=True)
-    return path
-
-
-def load_state_entries(path: Path = POSTED_IDS_PATH) -> set[str]:
-    return {
-        line.strip()
-        for line in ensure_state_file(path).read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    }
-
-
-def append_state_entries(entries: Iterable[str], path: Path = POSTED_IDS_PATH) -> None:
-    existing = load_state_entries(path)
-    with ensure_state_file(path).open("a", encoding="utf-8") as handle:
-        for entry in entries:
-            normalized = entry.strip()
-            if normalized and normalized not in existing:
-                handle.write(f"{normalized}\n")
-                existing.add(normalized)
-
-
-def short_name(name: str, limit: int) -> str:
-    return name if len(name) <= limit else name[:limit]
-
-
-def code_of(ticker: str) -> str:
-    return ticker.removesuffix(".T")
-
-
-def format_signed_pct(value: float) -> str:
-    return f"{value:+.1f}"
-
-
-def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
-    return max(snapshot.latest_date for snapshot in snapshots)
 
 
 def compute_rankings(
@@ -127,95 +98,55 @@ def render_post_text(
     )
 
 
-def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
+def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
     gainers, losers = compute_rankings(snapshots)
-    trade_date = latest_trade_date(snapshots)
-
-    tweet_text = render_post_text(trade_date, gainers, losers)
-    if len(tweet_text) <= MAX_POST_LENGTH:
-        return trade_date, tweet_text
-
-    tweet_text = render_post_text(trade_date, gainers, losers, name_limit=6)
-    if len(tweet_text) <= MAX_POST_LENGTH:
-        return trade_date, tweet_text
-
+    trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
+    variant_specs: list[dict[str, object]] = [
+        {
+            "label": "full-auto",
+            "kwargs": {
+                "trade_date": trade_date,
+                "gainers": gainers,
+                "losers": losers,
+            },
+        },
+        {
+            "label": "name-limit-6",
+            "kwargs": {
+                "trade_date": trade_date,
+                "gainers": gainers,
+                "losers": losers,
+                "name_limit": 6,
+            },
+        },
+    ]
     count_options = ((3, 2), (2, 3), (2, 2), (3, 1), (1, 3), (2, 1), (1, 2), (1, 1))
     for gainer_count, loser_count in count_options:
-        tweet_text = render_post_text(
-            trade_date,
-            gainers[:gainer_count],
-            losers[:loser_count],
-            name_limit=6,
+        variant_specs.append(
+            {
+                "label": f"{gainer_count}up_{loser_count}down",
+                "kwargs": {
+                    "trade_date": trade_date,
+                    "gainers": gainers[:gainer_count],
+                    "losers": losers[:loser_count],
+                    "name_limit": 6,
+                },
+            }
         )
-        if len(tweet_text) <= MAX_POST_LENGTH:
-            return trade_date, tweet_text
-
-    raise ValueError("could not fit evening summary within 140 characters")
+    return pick_fitting_variant(trade_date, build_variants(render_post_text, variant_specs), MAX_POST_LENGTH)
 
 
-def extract_tweet_id(payload: object) -> str:
-    def walk(node: object) -> str:
-        if isinstance(node, dict):
-            for key in ("id", "rest_id", "tweet_id"):
-                value = node.get(key)
-                if isinstance(value, str) and value.isdigit():
-                    return value
-                if isinstance(value, int):
-                    return str(value)
-            for value in node.values():
-                candidate = walk(value)
-                if candidate:
-                    return candidate
-        elif isinstance(node, list):
-            for item in node:
-                candidate = walk(item)
-                if candidate:
-                    return candidate
-        return ""
-
-    return walk(payload)
+def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
+    result = build_post_result(snapshots)
+    return result.trade_date, result.text
 
 
-def post_summary(tweet_text: str) -> str:
-    if not TWITTER_BIN.is_file():
-        raise FileNotFoundError(f"twitter-cli executable not found: {TWITTER_BIN}")
-
-    auth_result = subprocess.run(
-        [str(TWITTER_BIN), "status", "--yaml"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if auth_result.returncode != 0:
-        raise RuntimeError("twitter-cli authentication required before posting")
-
-    post_result = subprocess.run(
-        [str(TWITTER_BIN), "post", tweet_text, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if post_result.returncode != 0:
-        raise RuntimeError(post_result.stderr.strip() or "twitter post command failed")
-
-    try:
-        payload = json.loads(post_result.stdout)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"twitter-cli returned invalid JSON: {error}") from error
-    if payload.get("ok") is not True:
-        raise RuntimeError("twitter post response did not indicate success")
-
-    tweet_id = extract_tweet_id(payload.get("data") or payload)
-    if not tweet_id:
-        match = re.search(r"/status/(\d+)", post_result.stdout)
-        if match:
-            tweet_id = match.group(1)
-    if not tweet_id:
-        raise RuntimeError("could not extract posted tweet ID")
-    return tweet_id
+def write_summary_payload(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -226,41 +157,129 @@ def main() -> int:
         today = current_jst_date()
         closure_reason = jpx_closure_reason(today)
         if closure_reason is not None:
+            if args.summary_output is not None:
+                write_summary_payload(
+                    args.summary_output,
+                    {
+                        "status": "skipped_market_holiday",
+                        "date": today.isoformat(),
+                        "reason": closure_reason,
+                    },
+                )
             LOGGER.info("today is not a JPX business day (%s: %s); skipping evening post", today, closure_reason)
             return 0
 
         if args.cache_path is not None:
-            snapshots = load_stock_cache(args.cache_path)
+            bundle = load_stock_cache_bundle(args.cache_path)
+            snapshots = bundle.snapshots
             LOGGER.info("loaded %s stock snapshots from cache: %s", len(snapshots), args.cache_path)
         else:
+            bundle = None
             snapshots = fetch_stock_snapshots(
                 batch_size=args.batch_size,
                 sleep_seconds=args.sleep_seconds,
             )
         if not snapshots:
+            if args.summary_output is not None:
+                write_summary_payload(
+                    args.summary_output,
+                    {
+                        "status": "failed_no_stock_data",
+                        "date": today.isoformat(),
+                    },
+                )
             LOGGER.error("no stock data available; skipping evening post")
             return 1
 
-        trade_date, tweet_text = build_post_text(snapshots)
+        build_result = build_post_result(snapshots)
+        trade_date = build_result.trade_date
+        tweet_text = build_result.text
+        expected_date = today.isoformat()
+        if trade_date != expected_date:
+            if args.summary_output is not None:
+                write_summary_payload(
+                    args.summary_output,
+                    {
+                        "status": "skipped_stale_trade_date",
+                        "date": today.isoformat(),
+                        "trade_date": trade_date,
+                        "expected_trade_date": expected_date,
+                        "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                    },
+                )
+            LOGGER.warning(
+                "evening summary trade_date=%s does not match expected business day=%s; skipping",
+                trade_date,
+                expected_date,
+            )
+            return 0
         summary_key = f"stock-evening:{today.isoformat()}"
-        state_entries = load_state_entries()
+        state_entries = load_state_entries(POSTED_IDS_PATH)
         if summary_key in state_entries:
             if args.force_repost:
                 LOGGER.warning("evening summary already posted for %s; continuing due to --force-repost", trade_date)
             else:
+                if args.summary_output is not None:
+                    write_summary_payload(
+                        args.summary_output,
+                        {
+                            "status": "skipped_duplicate",
+                            "date": today.isoformat(),
+                            "trade_date": trade_date,
+                            "variant": build_result.variant_label,
+                            "text_length": build_result.text_length,
+                            "tweet_text": tweet_text,
+                            "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                        },
+                    )
                 LOGGER.warning("evening summary already posted for %s; skipping", trade_date)
                 return 0
 
         LOGGER.info("prepared evening summary: %s", tweet_text.replace("\n", " | "))
         if args.dry_run:
+            if args.summary_output is not None:
+                write_summary_payload(
+                    args.summary_output,
+                    {
+                        "status": "dry_run",
+                        "date": today.isoformat(),
+                        "trade_date": trade_date,
+                        "variant": build_result.variant_label,
+                        "text_length": build_result.text_length,
+                        "tweet_text": tweet_text,
+                        "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                    },
+                )
             sys.stdout.write(f"{tweet_text}\n")
             return 0
 
-        tweet_id = post_summary(tweet_text)
-        append_state_entries((summary_key, tweet_id))
+        tweet_id = post_summary(tweet_text, TWITTER_BIN)
+        append_state_entries((summary_key, tweet_id), POSTED_IDS_PATH)
+        if args.summary_output is not None:
+            write_summary_payload(
+                args.summary_output,
+                {
+                    "status": "posted",
+                    "date": today.isoformat(),
+                    "trade_date": trade_date,
+                    "variant": build_result.variant_label,
+                    "text_length": build_result.text_length,
+                    "tweet_text": tweet_text,
+                    "tweet_id": tweet_id,
+                    "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                },
+            )
         LOGGER.info("posted evening summary tweet_id=%s", tweet_id)
         return 0
     except Exception:
+        if args.summary_output is not None:
+            write_summary_payload(
+                args.summary_output,
+                {
+                    "status": "failed_exception",
+                    "date": current_jst_date().isoformat(),
+                },
+            )
         LOGGER.exception("evening summary failed")
         return 1
 

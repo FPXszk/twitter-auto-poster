@@ -26,7 +26,7 @@ resolve_state_file() {
   local category="$2"
   local account_json="$3"
 
-  python3 - "${output_dir}" "${category}" "${account_json}" <<'PY'
+  python_cmd - "${output_dir}" "${category}" "${account_json}" <<'PY'
 import json
 import pathlib
 import sys
@@ -50,7 +50,7 @@ PY
 emit_candidate_warnings() {
   local candidate_file="$1"
 
-  python3 - "${candidate_file}" <<'PY'
+  python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -58,6 +58,37 @@ import sys
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 for item in payload.get("warnings") or []:
     print(item)
+PY
+}
+
+load_collection_status() {
+  local output_dir="$1"
+  local category="$2"
+
+  python_cmd - "${output_dir}" "${category}" <<'PY'
+import json
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+runs_dir = output_dir / "runs"
+
+payload = {
+    "user": {"total_sources": 0, "successful_sources": 0, "failed_sources": 0},
+    "search": {"total_sources": 0, "successful_sources": 0, "failed_sources": 0},
+}
+for source_type in ("user", "search"):
+    path = runs_dir / f"fetch-{source_type}-{category}.json"
+    if path.is_file():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        payload[source_type] = {
+            "total_sources": int(data.get("total_sources", 0)),
+            "successful_sources": int(data.get("successful_sources", 0)),
+            "failed_sources": int(data.get("failed_sources", 0)),
+        }
+
+print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
@@ -79,6 +110,7 @@ main() {
   local posted_id=""
   local summary_warnings=""
   local state_path_config=""
+  local collection_status_json=""
 
   while (($# > 0)); do
     case "$1" in
@@ -132,7 +164,7 @@ main() {
   ensure_twitter_auth
 
   account_json="$(account_config_json "${accounts_config}" "${category}")"
-  dry_run="$(python3 - "${account_json}" <<'PY'
+  dry_run="$(python_cmd - "${account_json}" <<'PY'
 import json
 import sys
 
@@ -159,6 +191,7 @@ PY
   mapfile -t payload_files < <(find "${source_root}" -maxdepth 1 -type f -name '*.json' | sort)
 
   payload_count="${#payload_files[@]}"
+  collection_status_json="$(load_collection_status "${output_dir}" "${category}")"
   if [[ "${payload_count}" -eq 0 ]]; then
     warn "no payload files found for category '${category}'"
     exit 0
@@ -169,7 +202,7 @@ PY
   touch "${state_file}"
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python3 - "${category}" "${state_file}" "${account_json}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${account_json}" "${collection_status_json}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
@@ -181,7 +214,8 @@ from post_summary import build_summary, clean_source_text
 category = sys.argv[1]
 state_file = pathlib.Path(sys.argv[2])
 account = json.loads(sys.argv[3])
-payload_files = [pathlib.Path(item) for item in sys.argv[4:]]
+collection = json.loads(sys.argv[4])
+payload_files = [pathlib.Path(item) for item in sys.argv[5:]]
 
 posted_ids = {line.strip() for line in state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
@@ -275,6 +309,8 @@ if selected:
 
 payload = {
     "category": category,
+    "payload_count": len(payload_files),
+    "collection": collection,
     "post_text": post_text,
     "selected": selected,
     "selected_candidates": selected_candidates,
@@ -284,7 +320,7 @@ payload = {
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
 
-  summary_warnings="$(emit_candidate_warnings "${candidate_file}")"
+summary_warnings="$(emit_candidate_warnings "${candidate_file}")"
 
   if [[ -n "${summary_warnings}" ]]; then
     while IFS= read -r summary_warning; do
@@ -292,7 +328,7 @@ PY
     done <<<"${summary_warnings}"
   fi
 
-  selected_count="$(python3 - "${candidate_file}" <<'PY'
+  selected_count="$(python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -307,7 +343,7 @@ PY
     exit 0
   fi
 
-  post_text="$(python3 - "${candidate_file}" <<'PY'
+  post_text="$(python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -316,7 +352,7 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(payload["post_text"])
 PY
   )"
-  posted_id="$(python3 - "${candidate_file}" <<'PY'
+  posted_id="$(python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -346,7 +382,7 @@ PY
     exit 0
   fi
 
-  if ! python3 - "${posted_id}" "${state_file}" <<'PY'
+  if ! python_cmd - "${posted_id}" "${state_file}" <<'PY'
 import pathlib
 import sys
 

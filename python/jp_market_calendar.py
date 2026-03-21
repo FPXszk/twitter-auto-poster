@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import json
+from functools import lru_cache
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CALENDAR_CONFIG_PATH = PROJECT_ROOT / "config" / "jpx_calendar.json"
 
 
 def current_jst_date() -> date:
     return datetime.now(JST).date()
+
+
+@lru_cache(maxsize=1)
+def load_calendar_overrides(path: Path = DEFAULT_CALENDAR_CONFIG_PATH) -> tuple[set[date], set[date]]:
+    if not path.is_file():
+        return set(), set()
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    extra_closed = {date.fromisoformat(value) for value in payload.get("extra_closed_dates", [])}
+    extra_business = {date.fromisoformat(value) for value in payload.get("extra_business_dates", [])}
+    return extra_closed, extra_business
 
 
 def nth_weekday_of_month(year: int, month: int, weekday: int, occurrence: int) -> date:
@@ -114,6 +130,11 @@ def japanese_holidays(year: int) -> dict[date, str]:
 
 
 def jpx_closure_reason(target_date: date) -> str | None:
+    extra_closed, extra_business = load_calendar_overrides()
+    if target_date in extra_business:
+        return None
+    if target_date in extra_closed:
+        return "configured JPX closure"
     if target_date.weekday() >= 5:
         return "weekend"
     if (target_date.month, target_date.day) in {(1, 2), (1, 3), (12, 31)}:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime
+import hashlib
 import json
 import logging
 import re
@@ -14,6 +16,7 @@ from urllib.request import urlopen
 
 import xlrd
 import yaml
+from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +28,8 @@ DEFAULT_SUMMARY_PATH = PROJECT_ROOT / "tmp" / "tickers_jp_update_summary.json"
 REQUIRED_COLUMNS = ("コード", "銘柄名", "市場・商品区分", "33業種区分")
 OUTPUT_FIELDS = ("ticker", "name", "sector")
 DIFF_DETAIL_LIMIT = 10
+DIFF_ALERT_THRESHOLD = 50
+JST = ZoneInfo("Asia/Tokyo")
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,10 @@ def parse_args() -> argparse.Namespace:
 
 def load_rules(rules_path: Path) -> TickerRules:
     payload = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or {}
+    allowed_keys = {"target_markets", "exclude_name_keywords"}
+    unexpected_keys = sorted(set(payload) - allowed_keys)
+    if unexpected_keys:
+        raise ValueError(f"{rules_path} contains unsupported keys: {', '.join(unexpected_keys)}")
     target_market_values = payload.get("target_markets", []) or []
     exclude_keyword_values = payload.get("exclude_name_keywords", []) or []
 
@@ -233,9 +242,19 @@ def build_diff_summary(
     removed = [existing_by_ticker[ticker] for ticker in sorted(set(existing_by_ticker) - set(next_by_ticker))]
 
     sector_changed = []
+    name_changed = []
     for ticker in sorted(set(existing_by_ticker) & set(next_by_ticker)):
         previous = existing_by_ticker[ticker]
         current = next_by_ticker[ticker]
+        if previous["name"] != current["name"]:
+            name_changed.append(
+                {
+                    "ticker": ticker,
+                    "old_name": previous["name"],
+                    "new_name": current["name"],
+                    "sector": current["sector"],
+                }
+            )
         if previous["sector"] != current["sector"]:
             sector_changed.append(
                 {
@@ -251,16 +270,19 @@ def build_diff_summary(
         "next_count": len(next_rows),
         "added_count": len(added),
         "removed_count": len(removed),
+        "name_changed_count": len(name_changed),
         "sector_changed_count": len(sector_changed),
         "added": limit_details(added),
         "removed": limit_details(removed),
+        "name_changed": limit_details(name_changed),
         "sector_changed": limit_details(sector_changed),
         "detail_limit": DIFF_DETAIL_LIMIT,
     }
     LOGGER.info(
-        "JPX ticker diff: added=%s removed=%s sector_changed=%s",
+        "JPX ticker diff: added=%s removed=%s name_changed=%s sector_changed=%s",
         summary["added_count"],
         summary["removed_count"],
+        summary["name_changed_count"],
         summary["sector_changed_count"],
     )
     return summary
@@ -319,18 +341,34 @@ def update_tickers(
         existing_rows = []
 
     diff_summary = build_diff_summary(existing_rows, next_rows)
+    total_changes = (
+        int(diff_summary["added_count"])
+        + int(diff_summary["removed_count"])
+        + int(diff_summary["name_changed_count"])
+        + int(diff_summary["sector_changed_count"])
+    )
+    if total_changes >= DIFF_ALERT_THRESHOLD:
+        warning = f"JPX diff is large ({total_changes} changes >= {DIFF_ALERT_THRESHOLD}); review the monthly update carefully"
+        warnings.append(warning)
+        LOGGER.warning(warning)
     backup_created = write_rows(next_rows, output_path, backup_path)
+    generated_at = datetime.now(JST).isoformat()
+    rules_hash = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+    previous_updated_at = datetime.fromtimestamp(output_path.stat().st_mtime, JST).isoformat() if output_path.exists() else ""
 
     return {
         "status": "success",
+        "generated_at_jst": generated_at,
         "source_url": source_url,
         "rules_path": str(rules_path),
+        "rules_sha256": rules_hash,
         "sheet_name": sheet_name,
         "selected_count": len(next_rows),
         "market_counts": market_counts,
         "backup_created": backup_created,
         "output_path": str(output_path),
         "backup_path": str(backup_path),
+        "previous_output_updated_at_jst": previous_updated_at,
         "diff": diff_summary,
         "warnings": warnings,
     }
@@ -345,6 +383,7 @@ def build_failure_summary(
 ) -> dict[str, object]:
     return {
         "status": "failure",
+        "generated_at_jst": datetime.now(JST).isoformat(),
         "source_url": source_url,
         "rules_path": str(rules_path),
         "output_path": str(output_path),

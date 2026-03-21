@@ -24,33 +24,7 @@ jobs:
 
       - name: Check JPX update day
         id: market_day
-        run: |
-          python - <<'PY'
-          import os
-          import sys
-          from pathlib import Path
-
-          sys.path.insert(0, str(Path("python").resolve()))
-
-          from jp_market_calendar import current_jst_date, first_jpx_business_day_of_month
-
-          target_date = current_jst_date()
-          first_business_day = first_jpx_business_day_of_month(target_date.year, target_date.month)
-          should_run = target_date == first_business_day
-          reason = "" if should_run else f"not first JPX business day of month (first day: {first_business_day.isoformat()})"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"should_run={'true' if should_run else 'false'}\n")
-              handle.write(f"target_date={target_date.isoformat()}\n")
-              handle.write(f"first_business_day={first_business_day.isoformat()}\n")
-              handle.write(f"reason={reason}\n")
-
-          print(
-              f"target_date={target_date.isoformat()} "
-              f"first_business_day={first_business_day.isoformat()} "
-              f"should_run={should_run}"
-          )
-          PY
+        run: python python/check_jpx_business_day.py --mode first-business-day-of-month --github-output
 
       - name: Log skip reason
         if: steps.market_day.outputs.should_run != 'true'
@@ -62,6 +36,11 @@ jobs:
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install xlrd pyyaml
+
+      - name: Run runtime diagnostics
+        if: steps.market_day.outputs.should_run == 'true'
+        run: |
+          python/.venv/bin/python python/check_python_runtime.py --module xlrd --module yaml --output tmp/update-tickers-jp-runtime.json
 
       - name: Update JP ticker CSV
         if: steps.market_day.outputs.should_run == 'true'
@@ -101,6 +80,8 @@ jobs:
                   [
                       f"- Status: `{payload.get('status', 'unknown')}`",
                       f"- Source: `{payload.get('source_url', '')}`",
+                      f"- Generated at JST: `{payload.get('generated_at_jst', '')}`",
+                      f"- Rules SHA256: `{payload.get('rules_sha256', '')}`",
                   ]
               )
 
@@ -112,7 +93,7 @@ jobs:
                       [
                           f"- Sheet: `{payload.get('sheet_name', '')}`",
                           f"- Selected tickers: `{payload.get('selected_count', 0)}`",
-                          f"- Added / Removed / Sector changed: `{diff.get('added_count', 0)} / {diff.get('removed_count', 0)} / {diff.get('sector_changed_count', 0)}`",
+                          f"- Added / Removed / Name changed / Sector changed: `{diff.get('added_count', 0)} / {diff.get('removed_count', 0)} / {diff.get('name_changed_count', 0)} / {diff.get('sector_changed_count', 0)}`",
                           f"- Backup created: `{payload.get('backup_created', False)}`",
                       ]
                   )
@@ -139,6 +120,11 @@ jobs:
                       lambda row: f"- `{row.get('ticker', '')}` {row.get('name', '')} / {row.get('sector', '')}",
                   )
                   render_rows(
+                      "Name changed (sample)",
+                      diff.get("name_changed") or [],
+                      lambda row: f"- `{row.get('ticker', '')}` `{row.get('old_name', '')}` -> `{row.get('new_name', '')}` / {row.get('sector', '')}",
+                  )
+                  render_rows(
                       "Sector changed (sample)",
                       diff.get("sector_changed") or [],
                       lambda row: f"- `{row.get('ticker', '')}` {row.get('name', '')}: `{row.get('old_sector', '')}` -> `{row.get('new_sector', '')}`",
@@ -156,6 +142,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tickers-jp-update
+          retention-days: 30
           path: |
             config/tickers_jp.csv
             tmp/tickers_jp_update_summary.json

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +11,28 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STOCK_CACHE_PATH = PROJECT_ROOT / "tmp" / "stock_cache.json"
 
 
+@dataclass(frozen=True)
+class StockCacheBundle:
+    metadata: dict[str, Any]
+    snapshots: list[StockSnapshot]
+
+
 def save_stock_cache(
     snapshots: list[StockSnapshot],
     path: Path = DEFAULT_STOCK_CACHE_PATH,
+    metadata: dict[str, Any] | None = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload: Any
+    if metadata is None:
+        payload = snapshots_to_dicts(snapshots)
+    else:
+        payload = {
+            "metadata": metadata,
+            "snapshots": snapshots_to_dicts(snapshots),
+        }
     path.write_text(
-        json.dumps(snapshots_to_dicts(snapshots), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     return path
@@ -66,17 +82,29 @@ def _snapshot_from_dict(row: dict[str, Any]) -> StockSnapshot:
     )
 
 
-def load_stock_cache(path: Path = DEFAULT_STOCK_CACHE_PATH) -> list[StockSnapshot]:
+def load_stock_cache_bundle(path: Path = DEFAULT_STOCK_CACHE_PATH) -> StockCacheBundle:
     if not path.is_file():
         raise FileNotFoundError(f"stock cache not found: {path}")
 
     raw_data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw_data, list):
-        raise ValueError(f"stock cache must contain a JSON list: {path}")
+    metadata: dict[str, Any] = {}
+    if isinstance(raw_data, list):
+        rows = raw_data
+    elif isinstance(raw_data, dict):
+        metadata = raw_data.get("metadata") or {}
+        rows = raw_data.get("snapshots")
+        if not isinstance(rows, list):
+            raise ValueError(f"stock cache 'snapshots' must contain a JSON list: {path}")
+    else:
+        raise ValueError(f"stock cache must contain a JSON list or object: {path}")
 
     snapshots: list[StockSnapshot] = []
-    for index, row in enumerate(raw_data, start=1):
+    for index, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             raise ValueError(f"stock cache row {index} must be an object")
         snapshots.append(_snapshot_from_dict(row))
-    return snapshots
+    return StockCacheBundle(metadata=metadata, snapshots=snapshots)
+
+
+def load_stock_cache(path: Path = DEFAULT_STOCK_CACHE_PATH) -> list[StockSnapshot]:
+    return load_stock_cache_bundle(path).snapshots

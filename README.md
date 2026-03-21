@@ -79,6 +79,10 @@
   - `max_candidates`
 - `config/tickers_jp_rules.yaml`
   - JPX XLS から `tickers_jp.csv` を作るときの市場ラベルと除外キーワード
+- `config/stock_fetcher.yaml`
+  - 異常騰落率フィルタの閾値と summary 詳細件数
+- `config/jpx_calendar.json`
+  - JPX の追加休場日 / 追加営業日を例外設定する
 
 ### `.github/workflows/`
 
@@ -127,6 +131,8 @@ twitter whoami
 ```
 
 これが失敗する場合、各スクリプトも失敗します。
+
+シェルスクリプトは既定で `python/.venv/bin/python3` を優先し、必要なら `PYTHON_BIN` で override できます。
 
 ## ローカル起動コマンド
 
@@ -201,21 +207,23 @@ python3 -m venv python/.venv
 python/.venv/bin/pip install --upgrade pip
 python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml
 python/.venv/bin/python python/update_tickers_jp.py
-python/.venv/bin/python python/update_tickers.py
-python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json
-python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json
+python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
+python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
+python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json
 ```
 
 ### 日本株サマリーを実投稿する
 
 ```bash
 python/.venv/bin/python python/update_tickers_jp.py
-python/.venv/bin/python python/update_tickers.py
-python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json
-python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json
+python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
+python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
+python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json
 ```
 
 `python/update_tickers.py`、`python/morning_summary.py`、`python/evening_summary.py` は JPX 非営業日だと `0` で終了して処理をスキップします。`update_tickers_jp.yml` は毎月の初営業日だけ実行されるように制御しています。
+
+`tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
 
 ## 保守・確認コマンド
 
@@ -253,10 +261,13 @@ PY
   - 取得した JSON レスポンス
 - `tmp/runs/`
   - 投稿候補や投稿結果の一時ファイル
+  - `fetch-user-*.json` / `fetch-search-*.json` に収集成否サマリーも保存される
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
 - `tmp/posted_ids.txt`
   - `post_invest.yml` と日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
+- `tmp/*_summary.json`
+  - stock cache / morning / evening の実行結果サマリー
 
 ## ドキュメント
 
@@ -289,6 +300,8 @@ PY
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
 - `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
 - `update_tickers_jp.yml` は `tmp/tickers_jp_update_summary.json` と `GITHUB_STEP_SUMMARY` に件数・差分要約も出力します
+- `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` も `GITHUB_STEP_SUMMARY` に文字数、採用パターン、skip 理由、異常値 skip 要約を出力します
+- 主要 workflow は依存インストール後に runtime diagnostics を実行し、使用 Python と import 可否を artifact / summary 用 JSON に残します
 - Python 3.11 をセットアップ
 - `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
 - state を cache restore/save

@@ -25,27 +25,7 @@ jobs:
 
       - name: Check JP market day
         id: market_day
-        run: |
-          python - <<'PY'
-          import os
-          import sys
-          from pathlib import Path
-
-          sys.path.insert(0, str(Path("python").resolve()))
-
-          from jp_market_calendar import current_jst_date, is_jpx_business_day, jpx_closure_reason
-
-          target_date = current_jst_date()
-          should_run = is_jpx_business_day(target_date)
-          reason = jpx_closure_reason(target_date) or ""
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"should_run={'true' if should_run else 'false'}\n")
-              handle.write(f"target_date={target_date.isoformat()}\n")
-              handle.write(f"reason={reason}\n")
-
-          print(f"target_date={target_date.isoformat()} should_run={should_run} reason={reason or 'business-day'}")
-          PY
+        run: python python/check_jpx_business_day.py --github-output
 
       - name: Log skip reason
         if: steps.market_day.outputs.should_run != 'true'
@@ -56,7 +36,12 @@ jobs:
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install yfinance pandas
+          python/.venv/bin/pip install yfinance pandas pyyaml
+
+      - name: Run runtime diagnostics
+        if: steps.market_day.outputs.should_run == 'true'
+        run: |
+          python/.venv/bin/python python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/update-tickers-runtime.json
 
       - name: Prepare runtime files
         if: steps.market_day.outputs.should_run == 'true'
@@ -64,12 +49,62 @@ jobs:
 
       - name: Build stock cache
         if: steps.market_day.outputs.should_run == 'true'
-        run: python/.venv/bin/python python/update_tickers.py
+        run: python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
+
+      - name: Write run summary
+        if: always()
+        env:
+          SHOULD_RUN: ${{ steps.market_day.outputs.should_run }}
+          TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
+          SKIP_REASON: ${{ steps.market_day.outputs.reason }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          run_path = Path("tmp/stock_cache_summary.json")
+          lines = ["## Stock cache update", ""]
+
+          if os.environ.get("SHOULD_RUN") != "true":
+              lines.extend(
+                  [
+                      "- Status: `skipped`",
+                      f"- JST date: `{os.environ.get('TARGET_DATE', '')}`",
+                      f"- Reason: `{os.environ.get('SKIP_REASON', '')}`",
+                  ]
+              )
+          elif not run_path.exists():
+              lines.append("summary file was not created.")
+          else:
+              payload = json.loads(run_path.read_text(encoding="utf-8"))
+              lines.extend(
+                  [
+                      f"- Status: `{payload.get('status', 'unknown')}`",
+                      f"- JST date: `{payload.get('date', '')}`",
+                      f"- Trade date: `{payload.get('trade_date', '')}`",
+                  ]
+              )
+              if payload.get("reason"):
+                  lines.append(f"- Reason: `{payload.get('reason')}`")
+              fetch_report = payload.get("fetch_report") or {}
+              if fetch_report:
+                  lines.extend(
+                      [
+                          f"- Snapshots: `{fetch_report.get('snapshot_count', 0)}` / `{fetch_report.get('total_records', 0)}`",
+                          f"- Skipped reasons: `{fetch_report.get('skipped_reasons', {})}`",
+                      ]
+                  )
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
 
       - name: Upload stock cache artifact
         if: steps.market_day.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stock-cache
-          path: tmp/stock_cache.json
+          path: |
+            tmp/stock_cache.json
+            tmp/stock_cache_summary.json
           if-no-files-found: error

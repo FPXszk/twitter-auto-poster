@@ -42,6 +42,11 @@ jobs:
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install twitter-cli
 
+      - name: Run runtime diagnostics
+        run: |
+          mkdir -p tmp/diagnostics
+          python/.venv/bin/python python/check_python_runtime.py --output tmp/diagnostics/runtime.json
+
       - name: Run Twitter diagnostics
         run: |
           mkdir -p tmp/diagnostics

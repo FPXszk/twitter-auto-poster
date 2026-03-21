@@ -42,6 +42,11 @@ jobs:
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install pyyaml twitter-cli
 
+      - name: Run runtime diagnostics
+        run: |
+          mkdir -p tmp
+          python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/invest-runtime.json
+
       - name: Prepare scripts
         run: |
           chmod +x scripts/*.sh scripts/lib/common.sh
@@ -76,6 +81,14 @@ jobs:
               lines.append("candidate file was not created.")
           else:
               payload = json.loads(candidate_files[-1].read_text(encoding="utf-8"))
+              collection = payload.get("collection") or {}
+              lines.extend(
+                  [
+                      f"- Payload files: `{payload.get('payload_count', 0)}`",
+                      f"- User fetch status: `{collection.get('user', {})}`",
+                      f"- Search fetch status: `{collection.get('search', {})}`",
+                  ]
+              )
               selected = payload.get("selected")
               if not selected:
                   lines.append("no eligible candidate was selected.")

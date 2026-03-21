@@ -70,6 +70,17 @@ class UpdateTickersJPTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing target_markets"):
                 load_rules(rules_path)
 
+    def test_load_rules_rejects_unsupported_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rules_path = Path(tmpdir) / "rules.yaml"
+            rules_path.write_text(
+                "target_markets:\n  - プライム（内国株式）\nexclude_name_keywords:\n  - ETF\nunexpected: true\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "unsupported keys: unexpected"):
+                load_rules(rules_path)
+
     def test_load_source_rows_finds_header_in_fixture(self) -> None:
         fixture_path = (FIXTURE_DIR / "jpx_sample.xls").resolve()
         rows, sheet_name = load_source_rows(fixture_path.as_uri())
@@ -132,6 +143,15 @@ class UpdateTickersJPTests(unittest.TestCase):
         self.assertEqual(summary["sector_changed_count"], 1)
         self.assertEqual(summary["sector_changed"][0]["old_sector"], "輸送用機器")
         self.assertEqual(summary["sector_changed"][0]["new_sector"], "機械")
+
+    def test_build_diff_summary_detects_name_change(self) -> None:
+        summary = build_diff_summary(
+            existing_rows=[{"ticker": "7203.T", "name": "旧トヨタ", "sector": "輸送用機器"}],
+            next_rows=[{"ticker": "7203.T", "name": "トヨタ自動車", "sector": "輸送用機器"}],
+        )
+        self.assertEqual(summary["name_changed_count"], 1)
+        self.assertEqual(summary["name_changed"][0]["old_name"], "旧トヨタ")
+        self.assertEqual(summary["name_changed"][0]["new_name"], "トヨタ自動車")
 
     def test_write_rows_creates_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
