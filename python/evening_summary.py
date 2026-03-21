@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Iterable, Sequence
 
-import yfinance as yf
-
 from jp_market_calendar import current_jst_date, jpx_closure_reason
 from stock_cache import load_stock_cache
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
@@ -20,7 +18,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 MAX_POST_LENGTH = 140
-NIKKEI_TICKER = "^N225"
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -77,34 +74,8 @@ def format_signed_pct(value: float) -> str:
     return f"{value:+.1f}"
 
 
-def format_price(value: float) -> str:
-    return f"{value:,.0f}"
-
-
 def latest_trade_date(snapshots: Sequence[StockSnapshot]) -> str:
     return max(snapshot.latest_date for snapshot in snapshots)
-
-
-def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
-    try:
-        history = yf.Ticker(ticker).history(period="5d", interval="1d", auto_adjust=False)
-    except Exception as error:
-        raise RuntimeError(f"failed to download market data for {ticker}") from error
-
-    if history.empty or "Close" not in history.columns:
-        raise ValueError(f"no market close data returned for {ticker}")
-
-    closes = history["Close"].dropna()
-    if len(closes.index) < 2:
-        raise ValueError(f"insufficient market close history for {ticker}")
-
-    previous_close = float(closes.iloc[-2])
-    current_close = float(closes.iloc[-1])
-    if previous_close == 0:
-        raise ValueError(f"previous market close is zero for {ticker}")
-
-    pct_change = ((current_close - previous_close) / previous_close) * 100.0
-    return current_close, pct_change
 
 
 def compute_rankings(
@@ -137,8 +108,6 @@ def format_loser_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
 
 def render_post_text(
     trade_date: str,
-    nikkei_price: float,
-    nikkei_change: float,
     gainers: Sequence[StockSnapshot],
     losers: Sequence[StockSnapshot],
     name_limit: int | None = None,
@@ -151,10 +120,9 @@ def render_post_text(
         resolved_name_limit = max((len(name) for name in candidate_names), default=1)
     return (
         f"【🌆 本日の市場総括】{date_label}\n"
-        f"🗾 日経平均 ¥{format_price(nikkei_price)} {format_signed_pct(nikkei_change)}%\n"
-        f"値上がり率TOP3\n"
+        f"上昇\n"
         f"{format_gainer_lines(gainers, resolved_name_limit)}\n"
-        f"値下がり率TOP3\n"
+        f"下落\n"
         f"{format_loser_lines(losers, resolved_name_limit)}"
     )
 
@@ -165,22 +133,19 @@ def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
 
     gainers, losers = compute_rankings(snapshots)
     trade_date = latest_trade_date(snapshots)
-    nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_TICKER)
 
-    tweet_text = render_post_text(trade_date, nikkei_price, nikkei_change, gainers, losers)
+    tweet_text = render_post_text(trade_date, gainers, losers)
     if len(tweet_text) <= MAX_POST_LENGTH:
         return trade_date, tweet_text
 
-    tweet_text = render_post_text(trade_date, nikkei_price, nikkei_change, gainers, losers, name_limit=6)
+    tweet_text = render_post_text(trade_date, gainers, losers, name_limit=6)
     if len(tweet_text) <= MAX_POST_LENGTH:
         return trade_date, tweet_text
 
-    count_options = ((3, 2), (2, 2), (2, 1), (1, 1))
+    count_options = ((3, 2), (2, 3), (2, 2), (3, 1), (1, 3), (2, 1), (1, 2), (1, 1))
     for gainer_count, loser_count in count_options:
         tweet_text = render_post_text(
             trade_date,
-            nikkei_price,
-            nikkei_change,
             gainers[:gainer_count],
             losers[:loser_count],
             name_limit=6,
