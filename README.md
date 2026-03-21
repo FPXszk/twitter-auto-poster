@@ -293,8 +293,8 @@ PY
 
 - `workflow_dispatch` 対応
 - `schedule` 対応
-- `dry_run` 入力あり
-- `post_invest.yml` は `python/.venv/bin/twitter` を使い、毎時間の自動投稿を行います
+- `workflow_dispatch` では手動実行できますが、`post_news.yml` / `post_invest.yml` は現状 dry-run 固定です
+- `post_invest.yml` は毎時間の候補収集とプレビューを行います（現状は GitHub Actions から実投稿しません）
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
@@ -325,7 +325,7 @@ PY
 
 ### 使い方
 
-まずは **手動実行 + `dry_run=true`** で試すのがおすすめです。
+`post_news.yml` / `post_invest.yml` は現状 **常時 dry-run** です。手動実行しても GitHub Actions から実投稿は行いません。
 
 ## 設定ファイルの見方
 
@@ -360,7 +360,8 @@ PY
 ## 運用上の注意
 
 - 既定は `dry-run` です
-- 投稿を有効にするのは `--post` または `--dry-run false` を明示したときだけです
+- ローカルの `scripts/fetch_and_post.sh` では `--post` または `--dry-run false` を明示したときだけ投稿します
+- GitHub Actions の `post_news.yml` / `post_invest.yml` は現状 `DRY_RUN=true` 固定です
 - GitHub Actions 上では環境変数認証のみだと 226 エラーが出る可能性があります
 - `twitter-cli` の write 系は Cookie ベース認証のほうが安定します
 - state は重複投稿防止のために使います

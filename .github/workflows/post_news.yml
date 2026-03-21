@@ -2,15 +2,6 @@ name: Post news
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Skip the final twitter post step
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
   schedule:
     - cron: "0 */6 * * *"
 
@@ -26,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATEGORY: news
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'true' }}
+      DRY_RUN: "true"
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -60,7 +51,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-post-news-state-
 
-      - name: Fetch and post
+      - name: Fetch and preview
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${DRY_RUN}"
 
       - name: Write run summary
