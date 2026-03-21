@@ -188,23 +188,30 @@ def main() -> int:
         tweet_text = build_result.text
         expected_date = today.isoformat()
         if trade_date != expected_date:
-            if args.summary_output is not None:
-                write_summary_payload(
-                    args.summary_output,
-                    {
-                        "status": "skipped_stale_trade_date",
-                        "date": today.isoformat(),
-                        "trade_date": trade_date,
-                        "expected_trade_date": expected_date,
-                        "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
-                    },
+            if args.ignore_market_day:
+                LOGGER.warning(
+                    "evening summary trade_date=%s does not match expected business day=%s; continuing due to --ignore-market-day",
+                    trade_date,
+                    expected_date,
                 )
-            LOGGER.warning(
-                "evening summary trade_date=%s does not match expected business day=%s; skipping",
-                trade_date,
-                expected_date,
-            )
-            return 0
+            else:
+                if args.summary_output is not None:
+                    write_summary_payload(
+                        args.summary_output,
+                        {
+                            "status": "skipped_stale_trade_date",
+                            "date": today.isoformat(),
+                            "trade_date": trade_date,
+                            "expected_trade_date": expected_date,
+                            "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                        },
+                    )
+                LOGGER.warning(
+                    "evening summary trade_date=%s does not match expected business day=%s; skipping",
+                    trade_date,
+                    expected_date,
+                )
+                return 0
         summary_key = f"stock-evening:{today.isoformat()}"
         state_entries = load_state_entries(POSTED_IDS_PATH)
         if summary_key in state_entries:
