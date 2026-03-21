@@ -40,7 +40,8 @@
 │       ├── evening_post.yml
 │       ├── morning_post.yml
 │       ├── post_invest.yml
-│       └── post_news.yml
+│       ├── post_news.yml
+│       └── update_tickers_jp.yml
 ├── devinit.sh
 ├── justfile
 └── twitter-auto-poster.log
@@ -264,6 +265,7 @@ PY
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
+- `.github/workflows/update_tickers_jp.yml`
 
 ### 挙動
 
@@ -274,6 +276,7 @@ PY
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
+- `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
 - Python 3.11 をセットアップ
 - `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
 - state を cache restore/save
@@ -282,10 +285,12 @@ PY
 - `tmp/` を artifact 保存
 - `post_news.yml` / `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
 
-### 必要な Secrets
+### 投稿系 workflow に必要な Secrets
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
+
+`update_tickers_jp.yml` ではこれらの Secrets は不要です。
 
 ### 使い方
 

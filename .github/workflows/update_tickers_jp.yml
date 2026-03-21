@@ -1,0 +1,39 @@
+name: Update JP tickers
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 21 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-jp-tickers
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install xlrd
+
+      - name: Update JP ticker CSV
+        run: python/.venv/bin/python python/update_tickers_jp.py
+
+      - name: Upload JP ticker CSV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tickers-jp-csv
+          path: config/tickers_jp.csv
+          if-no-files-found: error

@@ -158,7 +158,7 @@ ticker,name,sector
 ```
 
 - ソース: `https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls`
-- 対象: `市場・商品区分` が `東証プライム（内国株式）` / `プライム（内国株式）` / `名証プレミア（内国株式）` / `プレミア（内国株式）`
+- 対象: `市場・商品区分` が `東証プライム（内国株式）` / `プライム（内国株式）`
 - `33業種区分` を `sector` に使う
 - `ETF` / `REIT` / `優先株` は除外する
 

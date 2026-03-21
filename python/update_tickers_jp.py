@@ -5,9 +5,11 @@ import csv
 import logging
 import re
 import shutil
+from collections import Counter
 from pathlib import Path
+from urllib.request import urlopen
 
-import pandas as pd
+import xlrd
 
 LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -17,10 +19,8 @@ DEFAULT_BACKUP_PATH = PROJECT_ROOT / "config" / "tickers_jp.csv.bak"
 TARGET_MARKETS = {
     "東証プライム（内国株式）",
     "プライム（内国株式）",
-    "名証プレミア（内国株式）",
-    "プレミア（内国株式）",
 }
-EXCLUDED_NAME_PATTERN = re.compile(r"ETF|ＥＴＦ|ETN|ＥＴＮ|REIT|ＲＥＩＴ|投資法人|優先")
+EXCLUDED_NAME_PATTERN = re.compile(r"ETF|ＥＴＦ|REIT|ＲＥＩＴ|投資法人|優先株|優先")
 REQUIRED_COLUMNS = ("コード", "銘柄名", "市場・商品区分", "33業種区分")
 
 
@@ -40,46 +40,89 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_source_frame(source_url: str) -> pd.DataFrame:
-    frame = pd.read_excel(source_url, dtype=str, engine="xlrd")
-    frame.columns = [str(column).strip() for column in frame.columns]
-
-    missing_columns = [column for column in REQUIRED_COLUMNS if column not in frame.columns]
-    if missing_columns:
-        raise ValueError(f"JPX source is missing columns: {', '.join(missing_columns)}")
-    return frame
+def download_source_bytes(source_url: str) -> bytes:
+    with urlopen(source_url, timeout=60) as response:
+        return response.read()
 
 
-def build_output_rows(frame: pd.DataFrame) -> list[dict[str, str]]:
-    market = frame["市場・商品区分"].fillna("").str.strip()
-    code = frame["コード"].fillna("").str.strip()
-    name = frame["銘柄名"].fillna("").str.strip()
-    sector = frame["33業種区分"].fillna("").str.strip()
+def cell_to_text(cell: xlrd.sheet.Cell) -> str:
+    value = cell.value
+    if value in ("", None):
+        return ""
 
-    target_mask = (
-        market.isin(TARGET_MARKETS)
-        & code.str.fullmatch(r"\d{4}")
-        & sector.ne("")
-        & sector.ne("-")
-        & ~name.str.contains(EXCLUDED_NAME_PATTERN)
-    )
-    filtered = frame.loc[target_mask, list(REQUIRED_COLUMNS)].copy()
-    filtered = filtered.drop_duplicates(subset=["コード"], keep="first")
-    filtered = filtered.sort_values(by="コード")
+    if cell.ctype == xlrd.XL_CELL_NUMBER:
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
 
-    market_counts = filtered["市場・商品区分"].value_counts().to_dict()
-    LOGGER.info("selected %s JPX rows by market: %s", len(filtered), market_counts)
-    if not any("プレミア" in market_name for market_name in market_counts):
-        LOGGER.warning("JPX source did not contain 名証プレミア rows for the configured market labels")
+    return str(value).strip()
 
-    rows = [
-        {
-            "ticker": f"{record['コード']}.T",
-            "name": record["銘柄名"],
-            "sector": record["33業種区分"],
+
+def load_source_rows(source_url: str) -> list[dict[str, str]]:
+    workbook = xlrd.open_workbook(file_contents=download_source_bytes(source_url))
+    sheet = workbook.sheet_by_index(0)
+
+    header_row_index: int | None = None
+    header_indexes: dict[str, int] = {}
+    for row_index in range(sheet.nrows):
+        row_values = [cell_to_text(sheet.cell(row_index, column_index)) for column_index in range(sheet.ncols)]
+        candidate_indexes = {column: row_values.index(column) for column in REQUIRED_COLUMNS if column in row_values}
+        if len(candidate_indexes) == len(REQUIRED_COLUMNS):
+            header_row_index = row_index
+            header_indexes = candidate_indexes
+            break
+
+    if header_row_index is None:
+        raise ValueError(f"JPX source is missing columns: {', '.join(REQUIRED_COLUMNS)}")
+
+    rows: list[dict[str, str]] = []
+    for row_index in range(header_row_index + 1, sheet.nrows):
+        row = {
+            column: cell_to_text(sheet.cell(row_index, column_index))
+            for column, column_index in header_indexes.items()
         }
-        for record in filtered.to_dict(orient="records")
-    ]
+        if any(row.values()):
+            rows.append(row)
+
+    if not rows:
+        raise ValueError("JPX source did not contain any data rows")
+    return rows
+
+
+def build_output_rows(records: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen_codes: set[str] = set()
+    selected_rows: list[dict[str, str]] = []
+    market_counts: Counter[str] = Counter()
+
+    for record in records:
+        market = record["市場・商品区分"].strip()
+        code = record["コード"].strip()
+        name = record["銘柄名"].strip()
+        sector = record["33業種区分"].strip()
+
+        if market not in TARGET_MARKETS:
+            continue
+        if not re.fullmatch(r"\d{4}", code):
+            continue
+        if sector in ("", "-"):
+            continue
+        if EXCLUDED_NAME_PATTERN.search(name):
+            continue
+        if code in seen_codes:
+            continue
+
+        seen_codes.add(code)
+        market_counts[market] += 1
+        selected_rows.append(
+            {
+                "ticker": f"{code}.T",
+                "name": name,
+                "sector": sector,
+            }
+        )
+
+    rows = sorted(selected_rows, key=lambda row: row["ticker"])
+    LOGGER.info("selected %s JPX rows by market: %s", len(rows), dict(market_counts))
     if not rows:
         raise ValueError("no tickers matched the configured JPX filters")
     return rows
@@ -112,8 +155,8 @@ def main() -> int:
     configure_logging(args.log_level)
 
     try:
-        frame = load_source_frame(args.source_url)
-        rows = build_output_rows(frame)
+        source_rows = load_source_rows(args.source_url)
+        rows = build_output_rows(source_rows)
         write_rows(rows, args.output, args.backup)
         return 0
     except Exception:
