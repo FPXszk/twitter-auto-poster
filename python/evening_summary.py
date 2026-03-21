@@ -8,17 +8,17 @@ from pathlib import Path
 from typing import Sequence
 
 from jp_market_calendar import current_jst_date, jpx_closure_reason
-from stock_cache import load_stock_cache, load_stock_cache_bundle
+from market_snapshot import fetch_market_snapshot
+from stock_cache import load_stock_cache_bundle
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
 from summary_common import (
     SummaryBuildResult,
     append_state_entries,
-    build_variants,
     code_of,
+    format_price,
     format_signed_pct,
     latest_trade_date,
     load_state_entries,
-    pick_fitting_variant,
     post_summary,
     short_name,
 )
@@ -27,7 +27,7 @@ LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
-MAX_POST_LENGTH = 140
+NIKKEI_CLOSE_TICKER = "^N225"
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -79,6 +79,8 @@ def format_loser_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
 
 def render_post_text(
     trade_date: str,
+    nikkei_price: float,
+    nikkei_change: float,
     gainers: Sequence[StockSnapshot],
     losers: Sequence[StockSnapshot],
     name_limit: int | None = None,
@@ -90,10 +92,11 @@ def render_post_text(
     else:
         resolved_name_limit = max((len(name) for name in candidate_names), default=1)
     return (
-        f"【🌆 本日の市場総括】{date_label}\n"
-        f"上昇\n"
+        f"【🌆 本日の市場総括】{date_label}\n\n"
+        f"🗾 日経平均 ¥{format_price(nikkei_price)} {format_signed_pct(nikkei_change)}%\n\n"
+        "値上がり率TOP3\n"
         f"{format_gainer_lines(gainers, resolved_name_limit)}\n"
-        f"下落\n"
+        "\n値下がり率TOP3\n"
         f"{format_loser_lines(losers, resolved_name_limit)}"
     )
 
@@ -104,39 +107,20 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
 
     gainers, losers = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
-    variant_specs: list[dict[str, object]] = [
-        {
-            "label": "full-auto",
-            "kwargs": {
-                "trade_date": trade_date,
-                "gainers": gainers,
-                "losers": losers,
-            },
-        },
-        {
-            "label": "name-limit-6",
-            "kwargs": {
-                "trade_date": trade_date,
-                "gainers": gainers,
-                "losers": losers,
-                "name_limit": 6,
-            },
-        },
-    ]
-    count_options = ((3, 2), (2, 3), (2, 2), (3, 1), (1, 3), (2, 1), (1, 2), (1, 1))
-    for gainer_count, loser_count in count_options:
-        variant_specs.append(
-            {
-                "label": f"{gainer_count}up_{loser_count}down",
-                "kwargs": {
-                    "trade_date": trade_date,
-                    "gainers": gainers[:gainer_count],
-                    "losers": losers[:loser_count],
-                    "name_limit": 6,
-                },
-            }
-        )
-    return pick_fitting_variant(trade_date, build_variants(render_post_text, variant_specs), MAX_POST_LENGTH)
+    nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_CLOSE_TICKER)
+    text = render_post_text(
+        trade_date=trade_date,
+        nikkei_price=nikkei_price,
+        nikkei_change=nikkei_change,
+        gainers=gainers,
+        losers=losers,
+    )
+    return SummaryBuildResult(
+        trade_date=trade_date,
+        text=text,
+        variant_label="posting-strategy-template",
+        text_length=len(text),
+    )
 
 
 def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:

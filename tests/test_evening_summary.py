@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parent.parent / "python").resolve()))
 
@@ -28,7 +29,8 @@ def snapshot(ticker: str, name: str, pct_change: float) -> StockSnapshot:
 
 
 class EveningSummaryTests(unittest.TestCase):
-    def test_build_post_text_prefers_three_gainers_two_losers(self) -> None:
+    @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
+    def test_build_post_text_matches_strategy_template(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
             snapshot("1111.T", "ベイカレント", 2.7),
             snapshot("2222.T", "古河電気工業", 2.4),
@@ -40,29 +42,23 @@ class EveningSummaryTests(unittest.TestCase):
 
         _, text = build_post_text(snapshots)
 
-        self.assertLessEqual(len(text), 140)
-        self.assertNotIn("日経平均", text)
+        self.assertIn("【🌆 本日の市場総括】03/19", text)
+        self.assertIn("🗾 日経平均 ¥38,123 -1.2%", text)
+        self.assertIn("値上がり率TOP3", text)
+        self.assertIn("値下がり率TOP3", text)
         self.assertIn("3. ＩＮＰＥＸ(3333) +0.5%", text)
-        self.assertIn("2. 太平洋セメン(5555) -8.7%", text)
-        self.assertNotIn("3. 東京電力ホー(6666) -8.4%", text)
+        self.assertIn("3. 東京電力ホールディングス(6666) -8.4%", text)
 
-    def test_build_post_text_falls_back_to_two_by_two_when_pct_values_are_wide(self) -> None:
+    @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
+    def test_build_post_text_falls_back_to_none_when_one_side_is_empty(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
-            snapshot("1111.T", "ベイカレント", 1000.0),
-            snapshot("2222.T", "古河電気工業", 999.0),
-            snapshot("3333.T", "ＩＮＰＥＸ", 998.0),
-            snapshot("4444.T", "住友金属鉱山", -1000.0),
-            snapshot("5555.T", "太平洋セメント", -999.0),
-            snapshot("6666.T", "東京電力ホールディングス", -998.0),
+            snapshot("1111.T", "ベイカレント", 2.7),
+            snapshot("2222.T", "古河電気工業", 2.4),
         ]
 
         _, text = build_post_text(snapshots)
 
-        self.assertLessEqual(len(text), 140)
-        self.assertIn("2. 古河電気工業(2222) +999.0%", text)
-        self.assertIn("2. 太平洋セメン(5555) -999.0%", text)
-        self.assertNotIn("3. ＩＮＰＥＸ(3333) +998.0%", text)
-        self.assertNotIn("3. 東京電力ホー(6666) -998.0%", text)
+        self.assertIn("値下がり率TOP3\n1. なし", text)
 
 
 if __name__ == "__main__":

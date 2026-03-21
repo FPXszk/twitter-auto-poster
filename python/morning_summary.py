@@ -8,21 +8,18 @@ from datetime import date
 from pathlib import Path
 from typing import Sequence
 
-import yfinance as yf
-
 from jp_market_calendar import current_jst_date, jpx_closure_reason, previous_jpx_business_day
-from stock_cache import load_stock_cache, load_stock_cache_bundle
+from market_snapshot import fetch_market_snapshot
+from stock_cache import load_stock_cache_bundle
 from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapshot, fetch_stock_snapshots
 from summary_common import (
     SummaryBuildResult,
     append_state_entries,
-    build_variants,
     code_of,
     format_price,
     format_signed_pct,
     latest_trade_date,
     load_state_entries,
-    pick_fitting_variant,
     post_summary,
     short_name,
 )
@@ -31,7 +28,6 @@ LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
-MAX_POST_LENGTH = 140
 NIKKEI_FUTURES_TICKER = "NKD=F"
 
 
@@ -54,35 +50,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_market_snapshot(ticker: str) -> tuple[float, float]:
-    try:
-        history = yf.Ticker(ticker).history(period="5d", interval="1d", auto_adjust=False)
-    except Exception as error:
-        raise RuntimeError(f"failed to download market data for {ticker}") from error
-
-    if history.empty or "Close" not in history.columns:
-        raise ValueError(f"no market close data returned for {ticker}")
-
-    closes = history["Close"].dropna()
-    if len(closes.index) < 2:
-        raise ValueError(f"insufficient market close history for {ticker}")
-
-    previous_close = float(closes.iloc[-2])
-    current_close = float(closes.iloc[-1])
-    if previous_close == 0:
-        raise ValueError(f"previous market close is zero for {ticker}")
-
-    pct_change = ((current_close - previous_close) / previous_close) * 100.0
-    return current_close, pct_change
-
-
 def compute_rankings(snapshots: Sequence[StockSnapshot]) -> list[StockSnapshot]:
     high_breakouts = [
         snapshot
         for snapshot in snapshots
         if snapshot.high_price >= snapshot.fifty_two_week_high
     ]
-    return sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:5]
+    return sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:8]
 
 
 def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
@@ -111,9 +85,9 @@ def render_post_text(
     else:
         resolved_name_limit = 1
     return (
-        f"【🌅 本日の注目銘柄】{date_label}\n"
-        f"🌙 日経平均先物(夜間) ¥{format_price(futures_price)} {format_signed_pct(futures_change)}%\n"
-        f"52週高値更新中\n"
+        f"【🌅 本日の注目銘柄】{date_label}\n\n"
+        f"🌙 日経平均先物(夜間) ¥{format_price(futures_price)} {format_signed_pct(futures_change)}%\n\n"
+        "52週高値更新中\n"
         f"{format_breakout_lines(breakout_items, resolved_name_limit)}"
     )
 
@@ -125,41 +99,18 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     breakout_top = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
     futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
-    variant_specs: list[dict[str, object]] = [
-        {
-            "label": "full-auto",
-            "kwargs": {
-                "trade_date": trade_date,
-                "futures_price": futures_price,
-                "futures_change": futures_change,
-                "breakout_items": breakout_top,
-            },
-        },
-        {
-            "label": "name-limit-6",
-            "kwargs": {
-                "trade_date": trade_date,
-                "futures_price": futures_price,
-                "futures_change": futures_change,
-                "breakout_items": breakout_top,
-                "name_limit": 6,
-            },
-        },
-    ]
-    for item_count in range(len(breakout_top) - 1, 0, -1):
-        variant_specs.append(
-            {
-                "label": f"top-{item_count}",
-                "kwargs": {
-                    "trade_date": trade_date,
-                    "futures_price": futures_price,
-                    "futures_change": futures_change,
-                    "breakout_items": breakout_top[:item_count],
-                    "name_limit": 6,
-                },
-            }
-        )
-    return pick_fitting_variant(trade_date, build_variants(render_post_text, variant_specs), MAX_POST_LENGTH)
+    text = render_post_text(
+        trade_date=trade_date,
+        futures_price=futures_price,
+        futures_change=futures_change,
+        breakout_items=breakout_top,
+    )
+    return SummaryBuildResult(
+        trade_date=trade_date,
+        text=text,
+        variant_label="posting-strategy-template",
+        text_length=len(text),
+    )
 
 
 def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:

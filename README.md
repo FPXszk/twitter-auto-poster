@@ -15,6 +15,8 @@
 5. 明示的に投稿モードにしたときだけ `twitter post` を実行する
 6. 日本株サマリーでは `yfinance` で東証プライム銘柄を集計し、朝夕の要約を投稿する
 
+朝夕の投稿文面は `docs/POSTING_STRATEGY.md` を主基準とし、X Premium 前提で全文を組み立てつつ、タイムラインで見える冒頭140字のフックを重視します。
+
 ## ディレクトリ構成
 
 ```text
@@ -107,7 +109,7 @@
 ### `docs/`
 
 - `docs/POSTING_STRATEGY.md`
-  - 投稿文・要約文を考えるときの基準
+  - 投稿文・要約文の主基準（single source of truth）
 - `docs/RUNBOOK.md`
   - 運用手順と復旧手順
 
@@ -233,6 +235,8 @@ python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.j
 `python/update_tickers.py`、`python/morning_summary.py`、`python/evening_summary.py` は JPX 非営業日だと `0` で終了して処理をスキップします。`update_tickers_jp.yml` は毎月の初営業日だけ実行されるように制御しています。
 
 `tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
+
+朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP3` / `値下がり率TOP3` を出力します。GitHub Actions の summary では全文に加えて先頭140文字の preview も確認できます。
 
 ## 保守・確認コマンド
 

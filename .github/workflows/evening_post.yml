@@ -195,7 +195,20 @@ jobs:
               if payload.get("tweet_id"):
                   lines.append(f"- Tweet ID: `{payload.get('tweet_id')}`")
               if payload.get("tweet_text"):
-                  lines.extend(["", "### Text", "", payload["tweet_text"]])
+                  timeline_preview = payload["tweet_text"][:140]
+                  lines.extend(
+                      [
+                          f"- Timeline preview length: `{len(timeline_preview)}`",
+                          "",
+                          "### Timeline preview (first 140 chars)",
+                          "",
+                          timeline_preview,
+                          "",
+                          "### Full text",
+                          "",
+                          payload["tweet_text"],
+                      ]
+                  )
               cache_metadata = payload.get("cache_metadata") or {}
               fetch_report = cache_metadata.get("fetch_report") or {}
               skipped_reasons = fetch_report.get("skipped_reasons") or {}
