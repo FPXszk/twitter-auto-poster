@@ -69,8 +69,8 @@ GitHub Actions の手動実行:
 ### 定期実行へ移る前
 
 1. まず `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にして preview 実行する
-2. 問題がなければ `accounts.invest.dry_run` を `false` に戻して `workflow_dispatch` を 1 回だけ実行する
-3. 実際の投稿内容と `tmp/state/invest-posted.txt` / `tmp/state/invest-round-robin.txt` の更新を確認
+2. 問題がなければ `accounts.invest.dry_run` を `false` に戻すか、`workflow_dispatch` の `dry_run=false` で 1 回だけ実行する
+3. 実際の投稿内容と `tmp/state/invest-posted.txt` / `tmp/state/invest-robin.txt` の更新を確認
 4. 問題がなければ schedule に任せる
 
 ## 3. 障害時の復旧手順
@@ -149,7 +149,7 @@ GitHub Actions の手動実行:
 invest:
 
 ```bash
-rm -f tmp/state/invest-posted.txt tmp/state/invest-round-robin.txt
+rm -f tmp/state/invest-posted.txt tmp/state/invest-robin.txt
 ```
 
 news:

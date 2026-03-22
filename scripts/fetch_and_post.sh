@@ -73,7 +73,7 @@ elif configured:
         state_path = output_dir / state_path
     print(state_path)
 else:
-    print(output_dir / "state" / f"{category}-rotation.txt")
+    print(output_dir / "state" / f"{category}-robin.txt")
 PY
 }
 
@@ -142,17 +142,17 @@ PY
 
 update_rotation_state() {
   local rotation_state_file="$1"
-  local next_index="$2"
+  local selected_source="$2"
 
   [[ -n "${rotation_state_file}" ]] || return 0
-  python_cmd - "${rotation_state_file}" "${next_index}" <<'PY'
+  python_cmd - "${rotation_state_file}" "${selected_source}" <<'PY'
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
-next_index = int(sys.argv[2])
+selected_source = sys.argv[2].strip()
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text(f"{next_index}\n", encoding="utf-8")
+path.write_text(f"{selected_source}\n", encoding="utf-8")
 PY
 }
 
@@ -170,7 +170,7 @@ main() {
   local post_result_file=""
   local rotation_state_file=""
   local selection_mode=""
-  local next_rotation_index=""
+  local selected_source_name=""
   local source_root=""
   local payload_count=""
   local selected_count=""
@@ -285,7 +285,7 @@ import pathlib
 import re
 import sys
 from post_filters import candidate_rejection_reasons, merge_filters
-from post_selection import normalize_rotation_index, select_candidates
+from post_selection import normalize_rotation_source, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
 from post_summary import build_summary, clean_source_text
 
@@ -312,11 +312,11 @@ selection_mode = str(account.get("selection_mode") or "score")
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
-source_order = list(source_configs.keys())
+source_order = [str((source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()]
 rotation_raw = ""
 if rotation_state_file is not None:
     rotation_raw = rotation_state_file.read_text(encoding="utf-8").strip()
-rotation_index = normalize_rotation_index(rotation_raw, len(source_order))
+previous_source, _ = normalize_rotation_source(rotation_raw, source_order)
 
 
 for payload_path in payload_files:
@@ -325,6 +325,7 @@ for payload_path in payload_files:
     source_filters = source_config.get("filters") or {}
     source_type = str(source_config.get("type") or "")
     source_score_boost = float(source_config.get("score_boost") or 0)
+    source_username = str(source_config.get("username") or "")
     effective_filters = merge_filters(account_filters, source_filters)
     try:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -371,6 +372,8 @@ for payload_path in payload_files:
                 "id": tweet_id,
                 "source_id": source_id,
                 "source_type": source_type,
+                "source_key": source_username or source_id,
+                "source_username": source_username,
                 "text": text,
                 "screen_name": str(author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
@@ -391,7 +394,7 @@ selected_candidates, rotation = select_candidates(
     source_order=source_order,
     max_candidates=max_candidates,
     selection_mode=selection_mode,
-    rotation_index=rotation_index,
+    previous_source=previous_source,
 )
 selected = selected_candidates[0] if selected_candidates else None
 post_text = ""
@@ -474,14 +477,14 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(payload.get("selection_mode", "score"))
 PY
   )"
-  next_rotation_index="$(python_cmd - "${candidate_file}" <<'PY'
+  selected_source_name="$(python_cmd - "${candidate_file}" <<'PY'
 import json
 import pathlib
 import sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 rotation = payload.get("rotation") or {}
-print(rotation.get("next_index", ""))
+print(rotation.get("selected_source", ""))
 PY
   )"
 
@@ -499,8 +502,8 @@ PY
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}"
     exit 0
   fi
-  if [[ "${selection_mode}" == "round_robin" && -n "${next_rotation_index}" ]]; then
-    update_rotation_state "${rotation_state_file}" "${next_rotation_index}"
+  if [[ "${selection_mode}" == "round_robin" && -n "${selected_source_name}" ]]; then
+    update_rotation_state "${rotation_state_file}" "${selected_source_name}"
   fi
   update_candidate_result "${candidate_file}" "posted" "${post_result_file}"
 }

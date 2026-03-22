@@ -117,7 +117,7 @@ accounts:
     dry_run: false
     selection_mode: "round_robin"
     state_file: "state/invest-posted.txt"
-    rotation_state_file: "state/invest-round-robin.txt"
+    rotation_state_file: "state/invest-robin.txt"
     score_weights:
       retweets: 4
       views: 0.02

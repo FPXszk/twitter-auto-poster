@@ -31,7 +31,7 @@ accounts:
     summary_prefix: "Xで反応上位: "
     selection_mode: "round_robin"
     state_file: "state/invest-posted.txt"
-    rotation_state_file: "state/invest-round-robin.txt"
+    rotation_state_file: "state/invest-robin.txt"
     score_weights:
       likes: 1
       retweets: 4

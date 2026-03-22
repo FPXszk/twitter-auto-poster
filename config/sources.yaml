@@ -11,6 +11,7 @@ sources:
     enabled: true
     username: markminervini
     max_results: 5
+    exclude_retweets: false
 
   - id: invest-user-hypertechinvest
     category: invest
@@ -18,6 +19,7 @@ sources:
     enabled: true
     username: hypertechinvest
     max_results: 5
+    exclude_retweets: false
 
   - id: invest-user-stocksavvyshay
     category: invest
@@ -25,6 +27,7 @@ sources:
     enabled: true
     username: stocksavvyshay
     max_results: 5
+    exclude_retweets: false
 
   - id: invest-user-marionawfal
     category: invest
@@ -32,6 +35,7 @@ sources:
     enabled: true
     username: marionawfal
     max_results: 5
+    exclude_retweets: false
 
   - id: invest-user-aleabitoreddit
     category: invest
@@ -39,6 +43,7 @@ sources:
     enabled: true
     username: aleabitoreddit
     max_results: 5
+    exclude_retweets: false
 
   - id: news-breaking-search
     category: news

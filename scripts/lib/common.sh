@@ -519,6 +519,7 @@ for item in sources:
     payload[source_id] = {
         "id": source_id,
         "type": str(item.get("type") or "").strip(),
+        "username": str(item.get("username") or "").strip().lstrip("@"),
         "score_boost": float(item.get("score_boost") or 0),
         "filters": item.get("filters") or {},
     }

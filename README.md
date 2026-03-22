@@ -276,8 +276,8 @@ PY
   - `fetch-user-*.json` / `fetch-search-*.json` に収集成否サマリーも保存される
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
-- `tmp/state/invest-round-robin.txt`
-  - `post_invest.yml` が次に見る source index を保持する round-robin state
+- `tmp/state/invest-robin.txt`
+  - `post_invest.yml` が前回投稿アカウント名を保持する round-robin state
 - `tmp/posted_ids.txt`
   - 日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
 - `tmp/*_summary.json`
@@ -310,8 +310,10 @@ PY
 - `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
 - `post_invest.yml` は JST 02:00〜05:00 を避けて毎時実行します（cron: `0 0-16,21-23 * * *`）
 - `post_invest.yml` は既定で live-post です。preview にしたいときは `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にします
+- `workflow_dispatch` では `dry_run` 入力で preview/live を一時上書きできます
 - `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
-- `post_invest.yml` は source 順の round-robin で候補を選び、選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
+- `post_invest.yml` は source 順の round-robin で候補を選び、`tmp/state/invest-robin.txt` に前回投稿アカウント名を保存します
+- 選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します
@@ -380,7 +382,7 @@ PY
 - `score_weights`
 - `filters`
 
-`post_invest.yml` はこの `dry_run` を読んで実行モードを決め、`selection_mode: round_robin` のときは `rotation_state_file` を使って source の巡回位置を保持します。
+`post_invest.yml` はこの `dry_run` を読んで実行モードを決め、`selection_mode: round_robin` のときは `rotation_state_file` を使って前回投稿アカウント名を保持します。
 
 ## 運用上の注意
 

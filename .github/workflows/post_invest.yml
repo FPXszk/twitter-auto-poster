@@ -2,6 +2,12 @@ name: Post invest
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run in preview mode without posting
+        required: false
+        type: boolean
+        default: true
   schedule:
     - cron: "0 0-16,21-23 * * *"
 
@@ -17,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATEGORY: invest
+      MANUAL_DRY_RUN_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run && 'true' || 'false') || '' }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -52,7 +59,11 @@ jobs:
           defaults = raw.get("defaults") or {}
           accounts = raw.get("accounts") or {}
           account = accounts.get(category) or {}
-          dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
+          manual_override = os.environ.get("MANUAL_DRY_RUN_OVERRIDE", "").strip()
+          if manual_override:
+              dry_run = parse_bool(manual_override)
+          else:
+              dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
           
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"dry_run={str(dry_run).lower()}\n")
@@ -111,8 +122,9 @@ jobs:
               if rotation:
                   lines.extend(
                       [
-                          f"- Rotation start index: `{rotation.get('start_index', 0)}`",
-                          f"- Rotation next index: `{rotation.get('next_index', 0)}`",
+                          f"- Previous account: `{rotation.get('previous_source', '')}`",
+                          f"- Selected account: `{rotation.get('selected_source', '')}`",
+                          f"- Next account: `{rotation.get('next_source', '')}`",
                       ]
                   )
               selected = payload.get("selected")
