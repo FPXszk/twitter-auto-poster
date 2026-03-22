@@ -2,7 +2,7 @@
 
 `twitter-cli` を使って、`news` / `invest` 系の情報収集投稿と、日本株サマリーの定時投稿を行う自動化プロジェクトです。
 
-現状は **`dry-run` 既定の MVP** として構成してあり、ローカル実行と GitHub Actions の両方で同じスクリプトを使います。
+カテゴリごとに `dry_run` / live-post を切り替えられる構成で、ローカル実行と GitHub Actions の両方で同じスクリプトを使います。
 
 ## プロジェクト概要
 
@@ -12,7 +12,7 @@
 2. `twitter-cli` でユーザー投稿または検索結果を取得する
 3. 投稿済み ID を避けながら候補を選ぶ
 4. `dry-run` では候補文だけ表示する
-5. 明示的に投稿モードにしたときだけ `twitter post` を実行する
+5. 対象 category の設定が live-post のときだけ `twitter post` を実行する
 6. 日本株サマリーでは `yfinance` で東証プライム銘柄を集計し、朝夕の要約を投稿する
 
 朝夕の投稿文面は `docs/POSTING_STRATEGY.md` を主基準とし、X Premium 前提で全文を組み立てつつ、タイムラインで見える冒頭140字のフックを重視します。
@@ -43,7 +43,6 @@
 │       ├── evening_post.yml
 │       ├── morning_post.yml
 │       ├── post_invest.yml
-│       ├── post_news.yml
 │       └── update_tickers_jp.yml
 ├── devinit.sh
 ├── justfile
@@ -90,8 +89,6 @@
 
 ### `.github/workflows/`
 
-- `post_news.yml`
-  - `news` 用の定期実行 / 手動実行
 - `post_invest.yml`
   - `invest` 用の定期実行 / 手動実行
 - `morning_post.yml`
@@ -262,7 +259,7 @@ python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py sc
 python3 - <<'PY'
 from pathlib import Path
 import yaml
-for path in [Path('config/sources.yaml'), Path('config/accounts.yaml'), Path('.github/workflows/post_news.yml'), Path('.github/workflows/post_invest.yml')]:
+for path in [Path('config/sources.yaml'), Path('config/accounts.yaml'), Path('.github/workflows/post_invest.yml')]:
     yaml.safe_load(path.read_text(encoding='utf-8'))
 print('OK')
 PY
@@ -279,8 +276,10 @@ PY
   - `fetch-user-*.json` / `fetch-search-*.json` に収集成否サマリーも保存される
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
+- `tmp/state/invest-round-robin.txt`
+  - `post_invest.yml` が次に見る source index を保持する round-robin state
 - `tmp/posted_ids.txt`
-  - `post_invest.yml` と日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
+  - 日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
 - `tmp/*_summary.json`
   - stock cache / morning / evening の実行結果サマリー
 
@@ -297,7 +296,6 @@ PY
 
 ### 対象 workflow
 
-- `.github/workflows/post_news.yml`
 - `.github/workflows/post_invest.yml`
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
@@ -309,8 +307,11 @@ PY
 - `workflow_dispatch` 対応
 - `schedule` 対応
 - `workflow_dispatch` では手動実行できます
-- `post_news.yml` / `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
-- `post_invest.yml` は毎時間の候補収集とプレビューを行います（現状は GitHub Actions から実投稿しません）
+- `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
+- `post_invest.yml` は JST 02:00〜05:00 を避けて毎時実行します（cron: `0 0-16,21-23 * * *`）
+- `post_invest.yml` は既定で live-post です。preview にしたいときは `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にします
+- `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
+- `post_invest.yml` は source 順の round-robin で候補を選び、選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します
@@ -326,7 +327,7 @@ PY
 - 日本株 summary workflow は `update_tickers.yml` が保存した `stock-cache` artifact を復元して使います
 - 初回デプロイ時は先に `update_tickers.yml` を手動実行してください。`stock-cache` artifact を取得できない場合、朝夕 summary workflow は fail-fast します
 - `tmp/` を artifact 保存
-- `post_news.yml` / `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
+- `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
 
 ### 投稿系 workflow に必要な Secrets
 
@@ -343,7 +344,7 @@ PY
 
 ### 使い方
 
-現状の `config/accounts.yaml` では `post_news.yml` / `post_invest.yml` は **dry-run** です。将来 live-post を再開する場合も workflow ではなく config 側を変更します。
+現状の `config/accounts.yaml` では `post_invest.yml` は **live-post** 既定です。preview に戻したい場合も workflow ではなく config 側を変更します。
 
 ## 設定ファイルの見方
 
@@ -360,6 +361,7 @@ PY
 - `timeline`
 - `max_results`
 - `exclude_retweets`
+- `score_boost`
 - `filters`
 
 ### `config/accounts.yaml`
@@ -373,16 +375,18 @@ PY
 - `summary_language`
 - `summary_max_length`
 - `state_file`
+- `selection_mode`
+- `rotation_state_file`
 - `score_weights`
 - `filters`
 
-`post_news.yml` / `post_invest.yml` はこの `dry_run` を読んで実行モードを決めます。
+`post_invest.yml` はこの `dry_run` を読んで実行モードを決め、`selection_mode: round_robin` のときは `rotation_state_file` を使って source の巡回位置を保持します。
 
 ## 運用上の注意
 
-- 既定は `dry-run` です
-- ローカルの `scripts/fetch_and_post.sh` では `--post` または `--dry-run false` を明示したときだけ投稿します
-- GitHub Actions の `post_news.yml` / `post_invest.yml` は `config/accounts.yaml` の `dry_run` を参照します
+- `post_invest` の既定は live-post です
+- ローカルの `scripts/fetch_and_post.sh` は `config/accounts.yaml` の `dry_run` を既定値として読み、`--post` / `--dry-run <bool>` で上書きできます
+- GitHub Actions の `post_invest.yml` は `config/accounts.yaml` の `dry_run` を参照します
 - GitHub Actions 上では環境変数認証のみだと 226 エラーが出る可能性があります
 - `twitter-cli` の write 系は Cookie ベース認証のほうが安定します
 - state は重複投稿防止のために使います

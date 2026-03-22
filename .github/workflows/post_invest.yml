@@ -3,7 +3,7 @@ name: Post invest
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 0-16,21-23 * * *"
 
 permissions:
   contents: read
@@ -66,13 +66,12 @@ jobs:
       - name: Prepare scripts
         run: |
           chmod +x scripts/*.sh scripts/lib/common.sh
-          mkdir -p tmp
+          mkdir -p tmp/state
 
       - name: Restore post state
-        if: steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/restore@v4
         with:
-          path: tmp/posted_ids.txt
+          path: tmp/state
           key: ${{ runner.os }}-post-invest-state-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-post-invest-state-
@@ -98,29 +97,42 @@ jobs:
           else:
               payload = json.loads(candidate_files[-1].read_text(encoding="utf-8"))
               collection = payload.get("collection") or {}
+              rotation = payload.get("rotation") or {}
               lines.extend(
                   [
                       f"- Requested mode: `{payload.get('requested_mode', 'unknown')}`",
                       f"- Result mode: `{payload.get('result_mode', 'unknown')}`",
+                      f"- Selection mode: `{payload.get('selection_mode', 'score')}`",
                       f"- Payload files: `{payload.get('payload_count', 0)}`",
                       f"- User fetch status: `{collection.get('user', {})}`",
                       f"- Search fetch status: `{collection.get('search', {})}`",
                   ]
               )
+              if rotation:
+                  lines.extend(
+                      [
+                          f"- Rotation start index: `{rotation.get('start_index', 0)}`",
+                          f"- Rotation next index: `{rotation.get('next_index', 0)}`",
+                      ]
+                  )
               selected = payload.get("selected")
               if not selected:
                   lines.append("no eligible candidate was selected.")
               else:
                   score_breakdown = selected.get("score_breakdown") or {}
+                  formatted_breakdown = ", ".join(
+                      f"{key}={value}" for key, value in score_breakdown.items()
+                  ) or "n/a"
                   author = selected.get("screen_name") or selected.get("author_name") or "unknown"
                   lines.extend(
                       [
                           f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
+                          f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
                           f"- Selected tweet ID: `{selected.get('id', '')}`",
                           f"- Author: `{author}`",
                           f"- Score: `{selected.get('score', 0)}`",
                           f"- Likes / Retweets / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('views', 0)}`",
-                          f"- Score breakdown: `likes={score_breakdown.get('likes', 0)}, retweets={score_breakdown.get('retweets', 0)}, views={score_breakdown.get('views', 0)}`",
+                          f"- Score breakdown: `{formatted_breakdown}`",
                           f"- Summary: {payload.get('post_text', '')}",
                           "",
                           "### Source snippet",
@@ -142,7 +154,7 @@ jobs:
         if: steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/save@v4
         with:
-          path: tmp/posted_ids.txt
+          path: tmp/state
           key: ${{ runner.os }}-post-invest-state-${{ github.run_id }}
 
       - name: Upload run artifacts

@@ -5,30 +5,40 @@ defaults:
   exclude_retweets: true
 
 sources:
-  - id: invest-mu-top-search
-    category: invest
-    type: search
-    enabled: true
-    query: "$MU lang:en"
-    timeline: top
-    max_results: 5
-    filters:
-      max_age_hours: 24
-      required_terms:
-        - "$MU"
-        - "Micron"
-      exclude_keywords:
-        - "earn money"
-        - "join now"
-        - "whatsapp"
-        - "referral"
-
-  - id: invest-watchlist-user
+  - id: invest-user-markminervini
     category: invest
     type: user
-    enabled: false
-    username: BloombergTV
-    max_results: 4
+    enabled: true
+    username: markminervini
+    max_results: 5
+
+  - id: invest-user-hypertechinvest
+    category: invest
+    type: user
+    enabled: true
+    username: hypertechinvest
+    max_results: 5
+
+  - id: invest-user-stocksavvyshay
+    category: invest
+    type: user
+    enabled: true
+    username: stocksavvyshay
+    max_results: 5
+
+  - id: invest-user-marionawfal
+    category: invest
+    type: user
+    enabled: true
+    username: marionawfal
+    max_results: 5
+
+  - id: invest-user-aleabitoreddit
+    category: invest
+    type: user
+    enabled: true
+    username: aleabitoreddit
+    max_results: 5
 
   - id: news-breaking-search
     category: news

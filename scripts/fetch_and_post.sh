@@ -49,6 +49,34 @@ print(state_path)
 PY
 }
 
+resolve_rotation_state_file() {
+  local output_dir="$1"
+  local category="$2"
+  local account_json="$3"
+
+  python_cmd - "${output_dir}" "${category}" "${account_json}" <<'PY'
+import json
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+account = json.loads(sys.argv[3])
+selection_mode = str(account.get("selection_mode") or "score").strip().lower()
+configured = str(account.get("rotation_state_file") or "").strip()
+
+if selection_mode != "round_robin":
+    print("")
+elif configured:
+    state_path = pathlib.Path(configured)
+    if not state_path.is_absolute():
+        state_path = output_dir / state_path
+    print(state_path)
+else:
+    print(output_dir / "state" / f"{category}-rotation.txt")
+PY
+}
+
 emit_candidate_warnings() {
   local candidate_file="$1"
 
@@ -112,6 +140,22 @@ payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 PY
 }
 
+update_rotation_state() {
+  local rotation_state_file="$1"
+  local next_index="$2"
+
+  [[ -n "${rotation_state_file}" ]] || return 0
+  python_cmd - "${rotation_state_file}" "${next_index}" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+next_index = int(sys.argv[2])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(f"{next_index}\n", encoding="utf-8")
+PY
+}
+
 main() {
   local category=""
   local sources_config="${DEFAULT_SOURCES_CONFIG}"
@@ -124,6 +168,9 @@ main() {
   local candidate_file=""
   local post_text=""
   local post_result_file=""
+  local rotation_state_file=""
+  local selection_mode=""
+  local next_rotation_index=""
   local source_root=""
   local payload_count=""
   local selected_count=""
@@ -225,24 +272,31 @@ PY
   state_file="$(resolve_state_file "${output_dir}" "${category}" "${account_json}")"
   mkdir -p "$(dirname "${state_file}")"
   touch "${state_file}"
+  rotation_state_file="$(resolve_rotation_state_file "${output_dir}" "${category}" "${account_json}")"
+  if [[ -n "${rotation_state_file}" ]]; then
+    mkdir -p "$(dirname "${rotation_state_file}")"
+    touch "${rotation_state_file}"
+  fi
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${rotation_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
 import sys
 from post_filters import candidate_rejection_reasons, merge_filters
+from post_selection import normalize_rotation_index, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
 from post_summary import build_summary, clean_source_text
 
 category = sys.argv[1]
 state_file = pathlib.Path(sys.argv[2])
-account = json.loads(sys.argv[3])
-source_configs = json.loads(sys.argv[4])
-collection = json.loads(sys.argv[5])
-requested_mode = sys.argv[6]
-payload_files = [pathlib.Path(item) for item in sys.argv[7:]]
+rotation_state_file = pathlib.Path(sys.argv[3]) if sys.argv[3] else None
+account = json.loads(sys.argv[4])
+source_configs = json.loads(sys.argv[5])
+collection = json.loads(sys.argv[6])
+requested_mode = sys.argv[7]
+payload_files = [pathlib.Path(item) for item in sys.argv[8:]]
 
 posted_ids = {line.strip() for line in state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
@@ -254,14 +308,23 @@ candidates = []
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
 summary_max_length = int(account.get("summary_max_length") or 140)
+selection_mode = str(account.get("selection_mode") or "score")
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
+source_order = list(source_configs.keys())
+rotation_raw = ""
+if rotation_state_file is not None:
+    rotation_raw = rotation_state_file.read_text(encoding="utf-8").strip()
+rotation_index = normalize_rotation_index(rotation_raw, len(source_order))
 
 
 for payload_path in payload_files:
     source_id = payload_path.stem
-    source_filters = (source_configs.get(source_id) or {}).get("filters") or {}
+    source_config = source_configs.get(source_id) or {}
+    source_filters = source_config.get("filters") or {}
+    source_type = str(source_config.get("type") or "")
+    source_score_boost = float(source_config.get("score_boost") or 0)
     effective_filters = merge_filters(account_filters, source_filters)
     try:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -295,12 +358,19 @@ for payload_path in payload_files:
 
         author = item.get("author") or {}
         metrics = extract_candidate_metrics(item)
-        score, score_breakdown = calculate_score(metrics, score_weights)
+        score, score_breakdown = calculate_score(
+            metrics,
+            score_weights,
+            created_at=created_at,
+            max_age_hours=effective_filters.get("max_age_hours"),
+            source_boost=source_score_boost,
+        )
 
         candidates.append(
             {
                 "id": tweet_id,
                 "source_id": source_id,
+                "source_type": source_type,
                 "text": text,
                 "screen_name": str(author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
@@ -310,23 +380,19 @@ for payload_path in payload_files:
                 "score": round(score, 2),
                 "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
                 "created_at": created_at,
+                "source_score_boost": round(source_score_boost, 2),
             }
         )
         seen_ids.add(tweet_id)
         seen_text.add(normalized_text)
 
-candidates.sort(
-    key=lambda item: (
-        item["score"],
-        item["views"],
-        item["retweets"],
-        item["likes"],
-        item["created_at"],
-    ),
-    reverse=True,
+selected_candidates, rotation = select_candidates(
+    candidates,
+    source_order=source_order,
+    max_candidates=max_candidates,
+    selection_mode=selection_mode,
+    rotation_index=rotation_index,
 )
-
-selected_candidates = candidates[:max_candidates]
 selected = selected_candidates[0] if selected_candidates else None
 post_text = ""
 if selected:
@@ -347,6 +413,8 @@ payload = {
     "post_text": post_text,
     "selected": selected,
     "selected_candidates": selected_candidates,
+    "selection_mode": selection_mode,
+    "rotation": rotation,
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
     "post_result_file": None,
@@ -397,6 +465,25 @@ selected = payload.get("selected") or {}
 print(selected.get("id", ""))
 PY
   )"
+  selection_mode="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(payload.get("selection_mode", "score"))
+PY
+  )"
+  next_rotation_index="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+rotation = payload.get("rotation") or {}
+print(rotation.get("next_index", ""))
+PY
+  )"
 
   info "prepared post candidate for '${category}'"
   printf '%s\n' "${post_text}"
@@ -411,6 +498,9 @@ PY
   if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${state_file}" "${post_result_file}"; then
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}"
     exit 0
+  fi
+  if [[ "${selection_mode}" == "round_robin" && -n "${next_rotation_index}" ]]; then
+    update_rotation_state "${rotation_state_file}" "${next_rotation_index}"
   fi
   update_candidate_result "${candidate_file}" "posted" "${post_result_file}"
 }

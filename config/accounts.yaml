@@ -1,8 +1,8 @@
 # Account-specific posting policy.
-# - dry_run: post_news / post_invest workflow とローカル実行の既定モードの設定元
+# - dry_run: post_invest workflow とローカル実行の既定モードの設定元
 # - state_file: 空文字なら `tmp/state/<category>-posted.txt`、相対パスなら output-dir 配下に解決
 # - summary_*: 候補本文を作るときの接頭辞・言語・最大文字数
-# - filters / score_weights: 候補選定ロジックの調整点
+# - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点）
 defaults:
   dry_run: true
   post_prefix: "Auto update:"
@@ -11,10 +11,13 @@ defaults:
   summary_language: "ja"
   summary_max_length: 140
   state_file: ""
+  selection_mode: "score"
+  rotation_state_file: ""
   score_weights:
     likes: 1
     retweets: 1
     views: 1
+    freshness: 0
   filters:
     max_age_hours: 48
     required_terms: []
@@ -22,12 +25,26 @@ defaults:
 
 accounts:
   invest:
-    dry_run: true
+    dry_run: false
     post_prefix: "Market watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
-    # invest は stock summary と同じ `tmp/posted_ids.txt` を共有する
-    state_file: "posted_ids.txt"
+    selection_mode: "round_robin"
+    state_file: "state/invest-posted.txt"
+    rotation_state_file: "state/invest-round-robin.txt"
+    score_weights:
+      likes: 1
+      retweets: 4
+      views: 0.02
+      freshness: 6
+    filters:
+      max_age_hours: 18
+      exclude_keywords:
+        - "options flow"
+        - "premium members"
+        - "free trial"
+        - "join now"
+        - "whatsapp"
 
   news:
     dry_run: true

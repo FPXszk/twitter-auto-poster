@@ -58,6 +58,17 @@ class PostFiltersTest(unittest.TestCase):
 
         self.assertNotIn("tweet does not include any required_terms", reasons)
 
+    def test_candidate_rejection_ignores_old_tweet_when_age_limit_tightens(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=20)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="Micron demand is improving this quarter.",
+            created_at=created_at,
+            raw_filters={"max_age_hours": 18},
+        )
+
+        self.assertIn("tweet is older than max_age_hours", reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

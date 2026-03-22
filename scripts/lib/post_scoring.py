@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import re
 from typing import Any, Mapping
+
+from post_filters import parse_created_at
 
 DEFAULT_SCORE_WEIGHTS = {
     "likes": 1.0,
     "retweets": 1.0,
     "views": 1.0,
+    "freshness": 0.0,
 }
 
 
@@ -74,12 +78,48 @@ def normalize_score_weights(raw_weights: Mapping[str, Any] | None) -> dict[str, 
     return weights
 
 
-def calculate_score(metrics: Mapping[str, int], raw_weights: Mapping[str, Any] | None = None) -> tuple[float, dict[str, float]]:
+def calculate_freshness_bonus(
+    *,
+    created_at: str,
+    freshness_weight: float,
+    max_age_hours: float | None,
+    now: datetime | None = None,
+) -> float:
+    if freshness_weight <= 0 or max_age_hours is None or max_age_hours <= 0:
+        return 0.0
+
+    parsed = parse_created_at(created_at)
+    if parsed is None:
+        return 0.0
+
+    current = now or datetime.now(timezone.utc)
+    age_hours = max((current - parsed).total_seconds() / 3600, 0.0)
+    remaining_hours = max(max_age_hours - age_hours, 0.0)
+    return remaining_hours * freshness_weight
+
+
+def calculate_score(
+    metrics: Mapping[str, int],
+    raw_weights: Mapping[str, Any] | None = None,
+    *,
+    created_at: str = "",
+    max_age_hours: float | None = None,
+    source_boost: float = 0.0,
+    now: datetime | None = None,
+) -> tuple[float, dict[str, float]]:
     weights = normalize_score_weights(raw_weights)
+    freshness = calculate_freshness_bonus(
+        created_at=created_at,
+        freshness_weight=weights["freshness"],
+        max_age_hours=max_age_hours,
+        now=now,
+    )
     breakdown = {
         "likes": metrics.get("likes", 0) * weights["likes"],
         "retweets": metrics.get("retweets", 0) * weights["retweets"],
         "views": metrics.get("views", 0) * weights["views"],
+        "freshness": freshness,
+        "source_boost": float(source_boost),
     }
-    score = breakdown["likes"] + breakdown["retweets"] + breakdown["views"]
+    score = sum(breakdown.values())
     return score, breakdown

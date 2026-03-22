@@ -320,6 +320,11 @@ for index, item in enumerate(sources, start=1):
 
     if "max_results" in item and int(item["max_results"]) <= 0:
         raise SystemExit(f"{source_id}: max_results must be > 0")
+    if "score_boost" in item:
+        try:
+            float(item["score_boost"])
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(f"{source_id}: score_boost must be numeric") from exc
 
     validate_filters(f"{source_id}.filters", item.get("filters"))
 
@@ -398,6 +403,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         raise SystemExit(f"{label}.summary_max_length must be > 0")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
+    if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
+        raise SystemExit(f"{label}.selection_mode must be 'score' or 'round_robin'")
     if "dry_run" in block:
         parse_bool(f"{label}.dry_run", block["dry_run"])
 
@@ -512,6 +519,7 @@ for item in sources:
     payload[source_id] = {
         "id": source_id,
         "type": str(item.get("type") or "").strip(),
+        "score_boost": float(item.get("score_boost") or 0),
         "filters": item.get("filters") or {},
     }
 
@@ -565,10 +573,13 @@ payload = {
     "summary_language": str(account.get("summary_language") or defaults.get("summary_language") or "ja"),
     "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 140),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
+    "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
+    "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),
     "score_weights": {
         "likes": float(account_score_weights.get("likes", default_score_weights.get("likes", 1))),
         "retweets": float(account_score_weights.get("retweets", default_score_weights.get("retweets", 1))),
         "views": float(account_score_weights.get("views", default_score_weights.get("views", 1))),
+        "freshness": float(account_score_weights.get("freshness", default_score_weights.get("freshness", 0))),
     },
     "filters": {
         "max_age_hours": account_filters.get("max_age_hours", default_filters.get("max_age_hours")),

@@ -29,6 +29,8 @@
 - `enabled`: boolean
 - `max_results`: integer, `> 0`
 - `exclude_retweets`: boolean
+- `score_boost`: number
+- `filters`: mapping
 
 `type: user` のとき必須:
 
@@ -56,7 +58,8 @@ sources:
     type: search
     enabled: true
     query: "$MU lang:en"
-    timeline: top
+    timeline: latest
+    score_boost: 8
 ```
 
 ## `config/accounts.yaml`
@@ -75,6 +78,8 @@ sources:
 - `summary_language`: `ja | raw`
 - `summary_max_length`: integer, `> 0`
 - `state_file`: string
+- `selection_mode`: `score | round_robin`
+- `rotation_state_file`: string
 
 ### `score_weights`
 
@@ -83,6 +88,7 @@ mapping:
 - `likes`: number
 - `retweets`: number
 - `views`: number
+- `freshness`: number
 
 ### `filters`
 
@@ -104,12 +110,20 @@ defaults:
     likes: 1
     retweets: 1
     views: 1
+    freshness: 0
 
 accounts:
   invest:
-    state_file: "posted_ids.txt"
+    dry_run: false
+    selection_mode: "round_robin"
+    state_file: "state/invest-posted.txt"
+    rotation_state_file: "state/invest-round-robin.txt"
+    score_weights:
+      retweets: 4
+      views: 0.02
+      freshness: 6
     filters:
-      max_age_hours: 24
+      max_age_hours: 18
       required_terms:
         - "$MU"
         - "Micron"

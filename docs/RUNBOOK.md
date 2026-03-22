@@ -60,17 +60,18 @@ GitHub Actions の手動実行:
 
 ### GitHub Actions の手動実行
 
-1. Actions で `Post invest` または `Post news` を開く
-2. `Run workflow` から `dry_run=true` を選んで実行
+1. Actions で `Post invest` を開く
+2. `Run workflow` から実行する
 3. `Job summary` で payload 件数と user/search の収集成否を確認
 4. artifact の `tmp/` を確認
-5. summary の候補文と score 内訳が期待どおりなら次へ進む
+5. summary の候補文、score 内訳、rotation index が期待どおりなら次へ進む
 
 ### 定期実行へ移る前
 
-1. `workflow_dispatch` で `dry_run=false` を 1 回だけ実行
-2. 実際の投稿内容と `tmp/posted_ids.txt` / `tmp/state/*.txt` の更新を確認
-3. 問題がなければ schedule に任せる
+1. まず `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にして preview 実行する
+2. 問題がなければ `accounts.invest.dry_run` を `false` に戻して `workflow_dispatch` を 1 回だけ実行する
+3. 実際の投稿内容と `tmp/state/invest-posted.txt` / `tmp/state/invest-round-robin.txt` の更新を確認
+4. 問題がなければ schedule に任せる
 
 ## 3. 障害時の復旧手順
 
@@ -100,7 +101,7 @@ GitHub Actions の手動実行:
 1. ブラウザで X に再ログインする
 2. `auth_token` と `ct0` を再取得する
 3. GitHub Secrets を更新する
-4. `workflow_dispatch` を `dry_run=true` で再実行する
+4. `accounts.invest.dry_run: true` を確認してから `workflow_dispatch` を再実行する
 
 ### 重複候補・不適切候補の調査
 
@@ -122,7 +123,7 @@ GitHub Actions の手動実行:
 - `collection.user`
 - `collection.search`
 
-必要なら `config/accounts.yaml` の `filters` / `score_weights` を調整する。
+必要なら `config/accounts.yaml` の `filters` / `score_weights` / `selection_mode` と `config/sources.yaml` の `score_boost` / source 単位 `filters` を調整する。
 
 ### アカウント診断と日次スコア確認
 
@@ -148,7 +149,7 @@ GitHub Actions の手動実行:
 invest:
 
 ```bash
-rm -f tmp/posted_ids.txt
+rm -f tmp/state/invest-posted.txt tmp/state/invest-round-robin.txt
 ```
 
 news:
@@ -163,8 +164,9 @@ GitHub Actions 上の cache をリセットしたい場合は、新しい run �
 
 - `python/.venv/bin/twitter status --yaml` が成功する
 - 対象 category が正しい
-- 直前に `--dry-run true` または `workflow_dispatch dry_run=true` を確認した
+- 直前に `--dry-run true` または `accounts.invest.dry_run: true` で preview 実行した
 - `Job summary` の score と要約文が妥当
+- `Job summary` の rotation index が意図どおり進んでいる
 - stock workflow では `trade_date`、`variant`、`text_length`、`fetch_report.skipped_reasons` が妥当
 - state ファイルに直近投稿 ID が入っている
 - schedule を有効にする前に手動で 1 回だけ本番投稿を確認した
