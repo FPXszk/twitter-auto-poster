@@ -404,6 +404,9 @@ if selected:
         prefix=summary_prefix,
         language=summary_language,
         max_length=summary_max_length,
+        screen_name=selected["screen_name"],
+        tweet_id=selected["id"],
+        source_username=selected["source_username"],
     )
     selected["summary_text"] = post_text
 

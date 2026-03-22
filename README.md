@@ -215,7 +215,7 @@ bash scripts/fetch_and_post.sh --category invest --post
 ```bash
 python3 -m venv python/.venv
 python/.venv/bin/pip install --upgrade pip
-python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml
+python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml googletrans==4.0.0rc1
 python/.venv/bin/python python/update_tickers_jp.py
 python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
 python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
@@ -255,7 +255,7 @@ README や workflow を触ったときの軽い確認例:
 
 ```bash
 bash -n scripts/lib/common.sh scripts/fetch_user.sh scripts/fetch_search.sh scripts/fetch_and_post.sh
-python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py scripts/lib/post_filters.py
+python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py scripts/lib/post_summary_gemini.py scripts/lib/post_filters.py
 python3 - <<'PY'
 from pathlib import Path
 import yaml

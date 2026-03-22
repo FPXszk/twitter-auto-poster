@@ -29,6 +29,7 @@ accounts:
     post_prefix: "Market watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
+    summary_max_length: 280
     selection_mode: "round_robin"
     state_file: "state/invest-posted.txt"
     rotation_state_file: "state/invest-robin.txt"
