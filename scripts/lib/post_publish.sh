@@ -6,14 +6,35 @@ publish_selected_post() {
   local selected_tweet_id="$3"
   local state_file="$4"
   local post_result_file="$5"
+  local response_preview=""
 
   if ! retry_to_file "${post_result_file}" "${DEFAULT_RETRY_ATTEMPTS}" "${DEFAULT_RETRY_DELAY_SECONDS}" twitter_cmd post "${post_text}" --json; then
-    warn "twitter post failed for '${category}'"
+    warn "twitter post failed for '${category}' after ${DEFAULT_RETRY_ATTEMPTS} attempts"
+    return 1
+  fi
+
+  if [[ ! -f "${post_result_file}" ]]; then
+    warn "twitter post did not create result file for '${category}': ${post_result_file}"
+    return 1
+  fi
+
+  if [[ ! -s "${post_result_file}" ]]; then
+    warn "twitter post created an empty result file for '${category}': ${post_result_file}"
     return 1
   fi
 
   if ! assert_structured_success "${post_result_file}" "post:${category}"; then
+    response_preview="$(python_cmd - "${post_result_file}" <<'PY'
+import pathlib
+import sys
+
+payload_path = pathlib.Path(sys.argv[1])
+text = payload_path.read_text(encoding="utf-8", errors="replace").replace("\n", " ").strip()
+print(text[:400])
+PY
+)"
     warn "twitter post response validation failed for '${category}'"
+    [[ -n "${response_preview}" ]] && warn "twitter post raw response preview: ${response_preview}"
     return 1
   fi
 

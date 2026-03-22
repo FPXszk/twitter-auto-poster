@@ -8,6 +8,8 @@ on:
         required: false
         type: boolean
         default: true
+  schedule:
+    - cron: "0 0-16,21-23 * * *"
 
 permissions:
   contents: read
@@ -18,7 +20,6 @@ concurrency:
 
 jobs:
   run:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     env:
       CATEGORY: invest

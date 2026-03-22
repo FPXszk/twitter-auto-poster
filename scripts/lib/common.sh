@@ -171,9 +171,9 @@ retry_command() {
   while true; do
     if "$@"; then
       return 0
+    else
+      exit_code=$?
     fi
-
-    exit_code=$?
     if (( attempt >= attempts )); then
       return "${exit_code}"
     fi
@@ -198,9 +198,9 @@ retry_to_file() {
   while true; do
     if "$@" > "${output_path}"; then
       return 0
+    else
+      exit_code=$?
     fi
-
-    exit_code=$?
     if (( attempt >= attempts )); then
       rm -f "${output_path}"
       return "${exit_code}"
