@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   run:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     env:
       CATEGORY: invest
