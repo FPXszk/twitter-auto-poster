@@ -194,6 +194,7 @@ main() {
   local rotation_state_file=""
   local selection_mode=""
   local selected_source_name=""
+  local source_reference_mode="url"
   local source_root=""
   local source_url=""
   local payload_count=""
@@ -273,6 +274,14 @@ PY
   if [[ "${dry_run}" == "true" ]]; then
     requested_mode="preview"
   fi
+  source_reference_mode="$(python_cmd - "${account_json}" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(str(payload.get("source_reference_mode") or "url").strip().lower())
+PY
+  )"
 
   if ! bash "${SCRIPT_DIR}/fetch_user.sh" --category "${category}" --sources "${sources_config}" --output-dir "${output_dir}"; then
     warn "user source collection failed for '${category}'; continuing"
@@ -337,6 +346,7 @@ summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix")
 summary_language = str(account.get("summary_language") or "ja")
 summary_max_length = int(account.get("summary_max_length") or 280)
 selection_mode = str(account.get("selection_mode") or "score")
+source_reference_mode = str(account.get("source_reference_mode") or "url").strip().lower()
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
@@ -451,6 +461,7 @@ payload = {
     "selected": selected,
     "selected_candidates": selected_candidates,
     "selection_mode": selection_mode,
+    "source_reference_mode": source_reference_mode,
     "rotation": rotation,
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
@@ -542,7 +553,7 @@ PY
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
+  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
     post_error="$(summarize_post_result_file "${post_result_file}")"
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
     exit 1

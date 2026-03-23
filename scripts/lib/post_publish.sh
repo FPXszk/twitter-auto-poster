@@ -138,15 +138,18 @@ publish_selected_post() {
   local post_text="$2"
   local source_tweet_id="$3"
   local source_url="$4"
-  local state_file="$5"
-  local source_state_file="$6"
-  local post_result_file="$7"
+  local source_reference_mode="${5:-url}"
+  local state_file="$6"
+  local source_state_file="$7"
+  local post_result_file="$8"
   local thread_plan_stdout="${post_result_file}.plan.stdout"
   local thread_plan_stderr="${post_result_file}.plan.stderr"
+  local thread_plan_source_url="${source_url}"
   local thread_posts_json=""
   local thread_count=0
   local current_post_text=""
   local reply_to_id=""
+  local current_quote_tweet_id=""
   local current_output_file=""
   local current_stderr_file=""
   local response_preview=""
@@ -156,8 +159,23 @@ publish_selected_post() {
   local -a posted_tweet_ids=()
   local index=0
 
+  if [[ "${source_reference_mode}" == "quote" && -z "${source_tweet_id}" ]]; then
+    write_post_failure_file \
+      "${post_result_file}" \
+      "quote mode requires a source tweet id" \
+      "1" \
+      "/dev/null" \
+      "/dev/null"
+    warn "quote mode requires a source tweet id for '${category}'"
+    return 1
+  fi
+
+  if [[ "${source_reference_mode}" == "quote" ]]; then
+    thread_plan_source_url=""
+  fi
+
   PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
-    python_cmd - "${post_text}" "${source_url}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
+    python_cmd - "${post_text}" "${thread_plan_source_url}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
 import json
 import sys
 from post_summary import build_thread_posts
@@ -200,6 +218,9 @@ PY
   if (( thread_count > 1 )); then
     action_name="post_thread"
   fi
+  if [[ "${source_reference_mode}" == "quote" ]]; then
+    action_name="${action_name}_quote"
+  fi
 
   for ((index = 0; index < thread_count; index++)); do
     current_post_text="$(python_cmd - "${thread_posts_json}" "${index}" <<'PY'
@@ -213,8 +234,12 @@ PY
     current_output_file="${post_result_file}.segment-${index}.json"
     current_stderr_file="${current_output_file}.stderr"
     rm -f "${current_output_file}" "${current_stderr_file}"
+    current_quote_tweet_id=""
+    if [[ "${source_reference_mode}" == "quote" && "${index}" -eq $((thread_count - 1)) ]]; then
+      current_quote_tweet_id="${source_tweet_id}"
+    fi
 
-    execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_output_file}" "${current_stderr_file}"
+    execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_quote_tweet_id}" "${current_output_file}" "${current_stderr_file}"
     exit_code=$?
     if (( exit_code != 0 )); then
       write_post_failure_file \
@@ -334,13 +359,30 @@ execute_twitter_post() {
   local category="$1"
   local post_text="$2"
   local reply_to_id="${3:-}"
-  local output_file="$4"
-  local stderr_file="$5"
+  local quote_tweet_id="${4:-}"
+  local output_file="$5"
+  local stderr_file="$6"
   local attempt=1
   local exit_code=0
+  local -a quote_command=()
 
   while true; do
-    if [[ -n "${reply_to_id}" ]]; then
+    if [[ -n "${quote_tweet_id}" ]]; then
+      quote_command=(
+        python_cmd
+        "${PROJECT_ROOT}/scripts/lib/post_quote.py"
+        --text "${post_text}"
+        --quote-tweet-id "${quote_tweet_id}"
+      )
+      if [[ -n "${reply_to_id}" ]]; then
+        quote_command+=(--reply-to-id "${reply_to_id}")
+      fi
+      if "${quote_command[@]}" > "${output_file}" 2> "${stderr_file}"; then
+        return 0
+      else
+        exit_code=$?
+      fi
+    elif [[ -n "${reply_to_id}" ]]; then
       if twitter_cmd post "${post_text}" --reply-to "${reply_to_id}" --json > "${output_file}" 2> "${stderr_file}"; then
         return 0
       else
