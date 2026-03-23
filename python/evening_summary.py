@@ -14,11 +14,14 @@ from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapsh
 from summary_common import (
     SummaryBuildResult,
     append_state_entries,
+    build_variants,
     code_of,
+    estimate_x_weighted_length,
     format_price,
     format_signed_pct,
     latest_trade_date,
     load_state_entries,
+    pick_fitting_variant,
     post_summary,
     short_name,
 )
@@ -28,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_CLOSE_TICKER = "^N225"
+MAX_X_WEIGHTED_LENGTH = 280
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -109,18 +113,25 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     gainers, losers = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
     nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_CLOSE_TICKER)
-    text = render_post_text(
-        trade_date=trade_date,
-        nikkei_price=nikkei_price,
-        nikkei_change=nikkei_change,
-        gainers=gainers,
-        losers=losers,
+    variants = build_variants(
+        render=lambda **kwargs: render_post_text(
+            trade_date=trade_date,
+            nikkei_price=nikkei_price,
+            nikkei_change=nikkei_change,
+            **kwargs,
+        ),
+        variant_specs=[
+            {"label": "template-3x3-auto", "kwargs": {"gainers": gainers, "losers": losers}},
+            {"label": "template-3x3-compact", "kwargs": {"gainers": gainers, "losers": losers, "name_limit": 8}},
+            {"label": "template-2x2-compact", "kwargs": {"gainers": gainers[:2], "losers": losers[:2], "name_limit": 6}},
+            {"label": "template-1x1-compact", "kwargs": {"gainers": gainers[:1], "losers": losers[:1], "name_limit": 5}},
+        ],
     )
-    return SummaryBuildResult(
+    return pick_fitting_variant(
         trade_date=trade_date,
-        text=text,
-        variant_label="posting-strategy-template",
-        text_length=len(text),
+        variants=variants,
+        max_length=MAX_X_WEIGHTED_LENGTH,
+        measure_length=estimate_x_weighted_length,
     )
 
 

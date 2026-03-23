@@ -15,11 +15,14 @@ from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapsh
 from summary_common import (
     SummaryBuildResult,
     append_state_entries,
+    build_variants,
     code_of,
+    estimate_x_weighted_length,
     format_price,
     format_signed_pct,
     latest_trade_date,
     load_state_entries,
+    pick_fitting_variant,
     post_summary,
     short_name,
 )
@@ -29,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_FUTURES_TICKER = "NKD=F"
+MAX_X_WEIGHTED_LENGTH = 280
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -100,17 +104,27 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     breakout_top = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
     futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
-    text = render_post_text(
-        trade_date=trade_date,
-        futures_price=futures_price,
-        futures_change=futures_change,
-        breakout_items=breakout_top,
+    variants = build_variants(
+        render=lambda **kwargs: render_post_text(
+            trade_date=trade_date,
+            futures_price=futures_price,
+            futures_change=futures_change,
+            **kwargs,
+        ),
+        variant_specs=[
+            {"label": "template-8-auto", "kwargs": {"breakout_items": breakout_top}},
+            {"label": "template-8-compact", "kwargs": {"breakout_items": breakout_top, "name_limit": 8}},
+            {"label": "template-6-compact", "kwargs": {"breakout_items": breakout_top[:6], "name_limit": 8}},
+            {"label": "template-5-compact", "kwargs": {"breakout_items": breakout_top[:5], "name_limit": 6}},
+            {"label": "template-4-compact", "kwargs": {"breakout_items": breakout_top[:4], "name_limit": 6}},
+            {"label": "template-3-compact", "kwargs": {"breakout_items": breakout_top[:3], "name_limit": 5}},
+        ],
     )
-    return SummaryBuildResult(
+    return pick_fitting_variant(
         trade_date=trade_date,
-        text=text,
-        variant_label="posting-strategy-template",
-        text_length=len(text),
+        variants=variants,
+        max_length=MAX_X_WEIGHTED_LENGTH,
+        measure_length=estimate_x_weighted_length,
     )
 
 

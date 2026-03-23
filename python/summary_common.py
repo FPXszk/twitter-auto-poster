@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import subprocess
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -69,13 +70,26 @@ def latest_trade_date(latest_dates: Sequence[str]) -> str:
     return max(latest_dates)
 
 
+def estimate_x_weighted_length(text: str) -> int:
+    total = 0
+    for character in text:
+        if character == "\n":
+            total += 1
+            continue
+        total += 2 if unicodedata.east_asian_width(character) in {"F", "W", "A"} else 1
+    return total
+
+
 def pick_fitting_variant(
     trade_date: str,
     variants: Sequence[RenderedVariant],
     max_length: int,
+    *,
+    measure_length: Callable[[str], int] | None = None,
 ) -> SummaryBuildResult:
+    resolved_measure_length = measure_length or len
     for variant in variants:
-        if len(variant.text) <= max_length:
+        if resolved_measure_length(variant.text) <= max_length:
             return SummaryBuildResult(
                 trade_date=trade_date,
                 text=variant.text,
