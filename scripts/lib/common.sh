@@ -409,6 +409,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
         raise SystemExit(f"{label}.selection_mode must be 'score' or 'round_robin'")
+    if "source_reference_mode" in block and str(block["source_reference_mode"]).strip() not in {"url", "quote"}:
+        raise SystemExit(f"{label}.source_reference_mode must be 'url' or 'quote'")
     if "dry_run" in block:
         parse_bool(f"{label}.dry_run", block["dry_run"])
 
@@ -579,6 +581,7 @@ payload = {
     "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 280),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
+    "source_reference_mode": str(account.get("source_reference_mode") or defaults.get("source_reference_mode") or "url"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),
     "score_weights": {
         "likes": float(account_score_weights.get("likes", default_score_weights.get("likes", 1))),
