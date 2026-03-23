@@ -17,7 +17,7 @@ MAX_THREAD_TWEETS = 5
 THREAD_CONTINUATION_SUFFIX = " 続きは↓"
 SOURCE_LINK_PREFIX = "\n🔗 "
 SENTENCE_BOUNDARY_CHARS = "。！？!?\n"
-THREAD_BOUNDARY_CHARS = "。！？!?、,\n"
+THREAD_BOUNDARY_CHARS = "。！？!?、\n"
 TRAILING_CLOSERS = "」』）】〉》〕〗〙〛\"'”’ \t\r\n"
 
 
@@ -188,15 +188,26 @@ def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: 
     return f"https://x.com/{normalized_screen_name}/status/{normalized_tweet_id}"
 
 
+def normalize_summary_body(body_text: str) -> str:
+    return body_text.strip()
+
+
+def format_full_translation_post(body_text: str) -> str:
+    header = f"{SUMMARY_HEADER}\n\n"
+    normalized_body = normalize_summary_body(body_text)
+    return f"{header}{normalized_body}".rstrip()
+
+
 def format_translation_post(body_text: str, *, max_length: int) -> str:
     effective_max_length = max(max_length, 0)
     header = f"{SUMMARY_HEADER}\n\n"
+    normalized_body = normalize_summary_body(body_text)
     available_body_length = max(
         effective_max_length - estimate_x_post_length(header),
         0,
     )
     formatted_body = (
-        truncate_text_naturally(body_text, available_body_length, measure_length=estimate_x_text_length)
+        truncate_text_naturally(normalized_body, available_body_length, measure_length=estimate_x_text_length)
         if available_body_length
         else ""
     )
@@ -219,20 +230,53 @@ def _fits_post_text(text: str, max_length: int = MAX_X_POST_LENGTH) -> bool:
     return len(normalized) <= max_length and estimate_x_post_length(normalized) <= max_length
 
 
+def _thread_boundary_positions(text: str) -> list[int]:
+    positions: list[int] = []
+    index = 0
+    while index < len(text):
+        if text.startswith(" • ", index):
+            positions.append(index)
+            index += 3
+            continue
+
+        character = text[index]
+        if character == "\n":
+            positions.append(index + 1)
+            index += 1
+            continue
+
+        if character in THREAD_BOUNDARY_CHARS:
+            end = index + 1
+            while end < len(text) and text[end] in TRAILING_CLOSERS:
+                end += 1
+            positions.append(end)
+        index += 1
+
+    deduped: list[int] = []
+    seen = set()
+    for position in positions:
+        if position <= 0 or position >= len(text):
+            continue
+        if position in seen:
+            continue
+        deduped.append(position)
+        seen.add(position)
+    return deduped
+
+
 def split_thread_text(text: str, *, predicate: Callable[[str], bool]) -> tuple[str, str]:
     normalized = text.strip()
     if not normalized:
         return "", ""
 
     last_boundary_end = -1
-    for index, character in enumerate(normalized):
-        candidate = normalized[: index + 1].rstrip()
+    for boundary_end in _thread_boundary_positions(normalized):
+        candidate = normalized[:boundary_end].rstrip()
         if predicate(candidate):
-            if character in THREAD_BOUNDARY_CHARS:
-                last_boundary_end = index + 1
+            last_boundary_end = boundary_end
             continue
         break
-    else:
+    if last_boundary_end == -1 and predicate(normalized):
         return normalized, ""
 
     if last_boundary_end == -1:
@@ -253,8 +297,7 @@ def split_thread_text_for_final_tail(
     if not normalized:
         return "", ""
 
-    boundary_positions = [index + 1 for index, character in enumerate(normalized) if character in THREAD_BOUNDARY_CHARS]
-    for boundary_end in reversed(boundary_positions):
+    for boundary_end in reversed(_thread_boundary_positions(normalized)):
         head = normalized[:boundary_end].rstrip()
         tail = normalized[boundary_end:].lstrip()
         if not head or not tail:
@@ -354,3 +397,15 @@ def build_summary(
     if not body:
         body = "$MU関連の注目投稿"
     return format_translation_post(body, max_length=max_length)
+
+
+def build_thread_summary(
+    text: str,
+    *,
+    language: str,
+    translator: object | None = None,
+) -> str:
+    body = build_summary_body(text, language=language, translator=translator)
+    if not body:
+        body = "$MU関連の注目投稿"
+    return format_full_translation_post(body)

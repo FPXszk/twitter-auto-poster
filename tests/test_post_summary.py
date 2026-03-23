@@ -167,6 +167,27 @@ class PostSummaryTest(TestCase):
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 170)
         self.assertTrue(summary.endswith("。"))
 
+    def test_build_thread_summary_preserves_full_translated_text(self) -> None:
+        summary = post_summary.build_thread_summary(
+            "Apple stock rises 3% after strong earnings report",
+            language="ja",
+            translator=FakeTranslator(text=("あ" * 320) + "。" + ("い" * 120)),
+        )
+
+        self.assertTrue(summary.startswith("【👀 要約】\n\n"))
+        self.assertIn(("あ" * 320) + "。" + ("い" * 120), summary)
+        self.assertGreater(post_summary.estimate_x_post_length(summary), post_summary.MAX_X_POST_LENGTH)
+
+    def test_build_thread_summary_preserves_inline_bullets(self) -> None:
+        summary = post_summary.build_thread_summary(
+            "ignored",
+            language="ja",
+            translator=FakeTranslator(text="項目A • 項目B • 項目C"),
+        )
+
+        self.assertIn("項目A • 項目B • 項目C", summary)
+        self.assertNotIn("\n• 項目B", summary)
+
     def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
         posts = post_summary.build_thread_posts(
             (
@@ -226,6 +247,34 @@ class PostSummaryTest(TestCase):
         self.assertNotIn("🔗", posts[0])
         self.assertNotIn("🔗", posts[1])
         self.assertTrue(posts[2].endswith("https://x.com/AppleNews/status/1234567890"))
+
+    def test_build_thread_posts_does_not_split_numeric_comma_group(self) -> None:
+        summary = post_summary.build_thread_summary(
+            "ignored",
+            language="ja",
+            translator=FakeTranslator(
+                text=(
+                    "$ONDS 第 4 四半期の収益 • 収益: 予想と比較して 3,000 万ドル2,800 万ドル "
+                    "• EBITDA: (1,000 万ドル) 対予想(900 万ドル) "
+                    "• 予想と比較して粗利益率 42%37% "
+                    "• バックログ: ~6,800 万ドル "
+                    "• キャッシュポジション: ~15 億ドル 2026 年度ガイダンス "
+                    "• 収益: 3 億 7,500 万ドル (Mistral、BIRD、INDO Earth、Rotron を除く) "
+                    "Ondas は、2028 年第 1 四半期までに全社で黒字に達すると予想しています。"
+                )
+            ),
+        )
+
+        posts = post_summary.build_thread_posts(
+            summary,
+            source_url="https://x.com/AppleNews/status/1234567890",
+        )
+
+        self.assertEqual(len(posts), 2)
+        self.assertNotIn("3 億 7,", posts[0])
+        self.assertIn("3 億 7,500 万ドル", posts[1])
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertTrue(posts[1].endswith("https://x.com/AppleNews/status/1234567890"))
 
 
 if __name__ == "__main__":

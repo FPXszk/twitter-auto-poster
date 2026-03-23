@@ -315,7 +315,7 @@ import sys
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_selection import normalize_rotation_source, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
-from post_summary import build_source_tweet_url, build_summary, clean_source_text
+from post_summary import build_source_tweet_url, build_thread_summary, clean_source_text
 
 category = sys.argv[1]
 source_state_file = pathlib.Path(sys.argv[2])
@@ -434,14 +434,9 @@ if selected:
         source_username=selected["source_username"],
     )
     selected["source_url"] = source_url
-    post_text = build_summary(
+    post_text = build_thread_summary(
         selected["text"],
-        prefix=summary_prefix,
         language=summary_language,
-        max_length=summary_max_length,
-        screen_name=selected["screen_name"],
-        tweet_id=selected["id"],
-        source_username=selected["source_username"],
     )
     selected["summary_text"] = post_text
 
