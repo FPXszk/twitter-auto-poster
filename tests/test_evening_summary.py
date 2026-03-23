@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,9 +42,9 @@ class EveningSummaryTests(unittest.TestCase):
             snapshot("6666.T", "東京電力ホールディングス", -8.4),
         ]
 
-        _, text = build_post_text(snapshots)
+        _, text = build_post_text(snapshots, headline_date=date(2026, 3, 23))
 
-        self.assertIn("【🌆 本日の市場総括】03/19", text)
+        self.assertIn("【🌆 本日の市場総括】03/23", text)
         self.assertIn("🗾 日経平均 ¥38,123 -1.2%", text)
         self.assertIn("値上がり率TOP3", text)
         self.assertIn("値下がり率TOP3", text)
@@ -57,7 +58,7 @@ class EveningSummaryTests(unittest.TestCase):
             snapshot("2222.T", "古河電気工業", 2.4),
         ]
 
-        _, text = build_post_text(snapshots)
+        _, text = build_post_text(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertIn("値下がり率TOP3\n1. なし", text)
 
@@ -72,10 +73,11 @@ class EveningSummaryTests(unittest.TestCase):
             snapshot("6666.T", "超長い銘柄名サンプルホールディングス六号", -8.4),
         ]
 
-        result = build_post_result(snapshots)
+        result = build_post_result(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertLessEqual(estimate_x_weighted_length(result.text), 280)
         self.assertNotEqual(result.variant_label, "template-3x3-auto")
+        self.assertIn("【🌆 本日の市場総括】03/23", result.text)
 
 
 if __name__ == "__main__":

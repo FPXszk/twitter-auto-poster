@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Sequence
 
@@ -83,14 +84,14 @@ def format_loser_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
 
 
 def render_post_text(
-    trade_date: str,
+    display_date: str,
     nikkei_price: float,
     nikkei_change: float,
     gainers: Sequence[StockSnapshot],
     losers: Sequence[StockSnapshot],
     name_limit: int | None = None,
 ) -> str:
-    date_label = trade_date[5:].replace("-", "/")
+    date_label = display_date[5:].replace("-", "/")
     candidate_names = [item.name for item in (*gainers, *losers)]
     if name_limit is not None:
         resolved_name_limit = name_limit
@@ -106,16 +107,17 @@ def render_post_text(
     )
 
 
-def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
+def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> SummaryBuildResult:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
     gainers, losers = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
+    display_date = (headline_date or current_jst_date()).isoformat()
     nikkei_price, nikkei_change = fetch_market_snapshot(NIKKEI_CLOSE_TICKER)
     variants = build_variants(
         render=lambda **kwargs: render_post_text(
-            trade_date=trade_date,
+            display_date=display_date,
             nikkei_price=nikkei_price,
             nikkei_change=nikkei_change,
             **kwargs,
@@ -135,8 +137,8 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     )
 
 
-def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
-    result = build_post_result(snapshots)
+def build_post_text(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> tuple[str, str]:
+    result = build_post_result(snapshots, headline_date=headline_date)
     return result.trade_date, result.text
 
 
@@ -194,7 +196,7 @@ def main() -> int:
             LOGGER.error("no stock data available; skipping evening post")
             return 1
 
-        build_result = build_post_result(snapshots)
+        build_result = build_post_result(snapshots, headline_date=today)
         trade_date = build_result.trade_date
         tweet_text = build_result.text
         expected_date = today.isoformat()

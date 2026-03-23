@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,10 +45,10 @@ class MorningSummaryTests(unittest.TestCase):
             snapshot("1009.T", "銘柄九", 9.0),
         ]
 
-        trade_date, text = build_post_text(snapshots)
+        trade_date, text = build_post_text(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertEqual(trade_date, "2026-03-19")
-        self.assertIn("【🌅 本日の注目銘柄】03/19", text)
+        self.assertIn("【🌅 本日の注目銘柄】03/23", text)
         self.assertIn("🌙 日経平均先物(夜間) ¥38,200 +0.8%", text)
         self.assertIn("52週高値更新中", text)
         self.assertIn("1. 銘柄九(1009) +9.0%", text)
@@ -61,7 +62,7 @@ class MorningSummaryTests(unittest.TestCase):
             snapshot("1002.T", "銘柄二", 2.0, breakout=False),
         ]
 
-        _, text = build_post_text(snapshots)
+        _, text = build_post_text(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertTrue(text.endswith("52週高値更新中\n1. なし"))
 
@@ -72,10 +73,11 @@ class MorningSummaryTests(unittest.TestCase):
             for index in range(8)
         ]
 
-        result = build_post_result(snapshots)
+        result = build_post_result(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertLessEqual(estimate_x_weighted_length(result.text), 280)
         self.assertNotEqual(result.variant_label, "template-8-auto")
+        self.assertIn("【🌅 本日の注目銘柄】03/23", result.text)
 
 
 if __name__ == "__main__":

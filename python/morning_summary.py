@@ -76,13 +76,13 @@ def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> st
 
 
 def render_post_text(
-    trade_date: str,
+    display_date: str,
     futures_price: float,
     futures_change: float,
     breakout_items: Sequence[StockSnapshot],
     name_limit: int | None = None,
 ) -> str:
-    date_label = trade_date[5:].replace("-", "/")
+    date_label = display_date[5:].replace("-", "/")
     if name_limit is not None:
         resolved_name_limit = name_limit
     elif breakout_items:
@@ -97,16 +97,17 @@ def render_post_text(
     )
 
 
-def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
+def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> SummaryBuildResult:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
     breakout_top = compute_rankings(snapshots)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
+    display_date = (headline_date or current_jst_date()).isoformat()
     futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
     variants = build_variants(
         render=lambda **kwargs: render_post_text(
-            trade_date=trade_date,
+            display_date=display_date,
             futures_price=futures_price,
             futures_change=futures_change,
             **kwargs,
@@ -128,8 +129,8 @@ def build_post_result(snapshots: Sequence[StockSnapshot]) -> SummaryBuildResult:
     )
 
 
-def build_post_text(snapshots: Sequence[StockSnapshot]) -> tuple[str, str]:
-    result = build_post_result(snapshots)
+def build_post_text(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> tuple[str, str]:
+    result = build_post_result(snapshots, headline_date=headline_date)
     return result.trade_date, result.text
 
 
@@ -191,7 +192,7 @@ def main() -> int:
             LOGGER.error("no stock data available; skipping morning post")
             return 1
 
-        build_result = build_post_result(snapshots)
+        build_result = build_post_result(snapshots, headline_date=today)
         trade_date = build_result.trade_date
         tweet_text = build_result.text
         expected_date = expected_trade_date(today)
