@@ -49,6 +49,26 @@ print(state_path)
 PY
 }
 
+resolve_source_state_file() {
+  local state_file="$1"
+
+  python_cmd - "${state_file}" <<'PY'
+import pathlib
+import sys
+
+state_path = pathlib.Path(sys.argv[1])
+stem = state_path.stem
+suffix = state_path.suffix
+
+if stem.endswith("-posted"):
+    source_name = f"{stem[:-7]}-source-posted{suffix}"
+else:
+    source_name = f"{stem}-source{suffix}"
+
+print(state_path.with_name(source_name))
+PY
+}
+
 resolve_rotation_state_file() {
   local output_dir="$1"
   local category="$2"
@@ -167,6 +187,7 @@ main() {
   local account_json=""
   local dry_run=""
   local state_file=""
+  local source_state_file=""
   local candidate_file=""
   local post_text=""
   local post_result_file=""
@@ -174,6 +195,7 @@ main() {
   local selection_mode=""
   local selected_source_name=""
   local source_root=""
+  local source_url=""
   local payload_count=""
   local selected_count=""
   local selected_tweet_id=""
@@ -275,6 +297,9 @@ PY
   state_file="$(resolve_state_file "${output_dir}" "${category}" "${account_json}")"
   mkdir -p "$(dirname "${state_file}")"
   touch "${state_file}"
+  source_state_file="$(resolve_source_state_file "${state_file}")"
+  mkdir -p "$(dirname "${source_state_file}")"
+  touch "${source_state_file}"
   rotation_state_file="$(resolve_rotation_state_file "${output_dir}" "${category}" "${account_json}")"
   if [[ -n "${rotation_state_file}" ]]; then
     mkdir -p "$(dirname "${rotation_state_file}")"
@@ -282,7 +307,7 @@ PY
   fi
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${state_file}" "${rotation_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
@@ -290,10 +315,10 @@ import sys
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_selection import normalize_rotation_source, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
-from post_summary import build_summary, clean_source_text
+from post_summary import build_source_tweet_url, build_summary, clean_source_text
 
 category = sys.argv[1]
-state_file = pathlib.Path(sys.argv[2])
+source_state_file = pathlib.Path(sys.argv[2])
 rotation_state_file = pathlib.Path(sys.argv[3]) if sys.argv[3] else None
 account = json.loads(sys.argv[4])
 source_configs = json.loads(sys.argv[5])
@@ -301,7 +326,7 @@ collection = json.loads(sys.argv[6])
 requested_mode = sys.argv[7]
 payload_files = [pathlib.Path(item) for item in sys.argv[8:]]
 
-posted_ids = {line.strip() for line in state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
+posted_ids = {line.strip() for line in source_state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
 skipped_candidates = []
 seen_ids = set()
@@ -401,7 +426,14 @@ selected_candidates, rotation = select_candidates(
 )
 selected = selected_candidates[0] if selected_candidates else None
 post_text = ""
+source_url = ""
 if selected:
+    source_url = build_source_tweet_url(
+        selected["screen_name"],
+        selected["id"],
+        source_username=selected["source_username"],
+    )
+    selected["source_url"] = source_url
     post_text = build_summary(
         selected["text"],
         prefix=summary_prefix,
@@ -420,6 +452,7 @@ payload = {
     "payload_count": len(payload_files),
     "collection": collection,
     "post_text": post_text,
+    "source_url": source_url,
     "selected": selected,
     "selected_candidates": selected_candidates,
     "selection_mode": selection_mode,
@@ -494,6 +527,15 @@ rotation = payload.get("rotation") or {}
 print(rotation.get("selected_source", ""))
 PY
   )"
+  source_url="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(payload.get("source_url", ""))
+PY
+  )"
 
   info "prepared post candidate for '${category}'"
   printf '%s\n' "${post_text}"
@@ -505,7 +547,7 @@ PY
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${state_file}" "${post_result_file}"; then
+  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
     post_error="$(summarize_post_result_file "${post_result_file}")"
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
     exit 1

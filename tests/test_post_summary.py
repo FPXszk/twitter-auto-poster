@@ -94,22 +94,20 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(
             summary,
-            "【👀 要約】\n\nアップル株が好決算で3%上昇\n\n---\nhttps://x.com/AppleNews/status/1234567890",
+            "【👀 要約】\n\nアップル株が好決算で3%上昇",
         )
 
-    def test_build_summary_preserves_url_when_truncating(self) -> None:
-        summary = post_summary.build_summary(
-            "Apple stock rises 3% after strong earnings report",
-            prefix="Xで反応上位: ",
-            language="ja",
-            max_length=80,
-            screen_name="AppleNews",
-            tweet_id="1234567890",
-            translator=FakeTranslator(text="あ" * 100),
+    def test_build_thread_posts_single_post_appends_source_url(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "【👀 要約】\n\n短い要約です。",
+            source_url="https://x.com/AppleNews/status/1234567890",
         )
 
-        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 80)
-        self.assertIn("https://x.com/AppleNews/status/1234567890", summary)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(
+            posts[0],
+            "【👀 要約】\n\n短い要約です。\n🔗 https://x.com/AppleNews/status/1234567890",
+        )
 
     def test_build_summary_never_exceeds_max_length(self) -> None:
         summary = post_summary.build_summary(
@@ -123,7 +121,7 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 80)
-        self.assertIn("https://x.com/AppleNews/status/1234567890", summary)
+        self.assertNotIn("https://x.com/AppleNews/status/1234567890", summary)
 
     def test_estimate_x_post_length_counts_urls_as_short_links(self) -> None:
         self.assertEqual(
@@ -131,7 +129,7 @@ class PostSummaryTest(TestCase):
             post_summary.X_SHORT_URL_LENGTH,
         )
 
-    def test_build_summary_caps_length_to_x_limit(self) -> None:
+    def test_build_summary_respects_configured_max_length(self) -> None:
         summary = post_summary.build_summary(
             "Apple stock rises 3% after strong earnings report",
             prefix="Xで反応上位: ",
@@ -142,9 +140,9 @@ class PostSummaryTest(TestCase):
             translator=FakeTranslator(text="あ" * 700),
         )
 
-        self.assertLessEqual(post_summary.estimate_x_post_length(summary), post_summary.MAX_X_POST_LENGTH)
-        self.assertNotIn("あ" * 700, summary)
-        self.assertIn("https://x.com/AppleNews/status/1234567890", summary)
+        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 2000)
+        self.assertIn("あ" * 700, summary)
+        self.assertNotIn("https://x.com/AppleNews/status/1234567890", summary)
 
     def test_truncate_post_text_keeps_url_atomic(self) -> None:
         truncated = post_summary.truncate_post_text(
@@ -167,7 +165,67 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 170)
-        self.assertIn("。\n\n---\nhttps://x.com/AppleNews/status/1234567890", summary)
+        self.assertTrue(summary.endswith("。"))
+
+    def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
+        posts = post_summary.build_thread_posts(
+            (
+                "【👀 要約】\n\n"
+                + ("a" * 120)
+                + "。"
+                + ("b" * 120)
+                + "。"
+                + ("c" * 80)
+                + "。"
+            ),
+            source_url="https://x.com/AppleNews/status/1234567890",
+        )
+
+        self.assertEqual(len(posts), 2)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertNotIn("🔗", posts[0])
+        self.assertTrue(posts[1].endswith("https://x.com/AppleNews/status/1234567890"))
+        for item in posts:
+            self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
+
+    def test_build_thread_posts_raises_when_text_requires_more_than_max_posts(self) -> None:
+        text = "【👀 要約】\n\n" + "".join((char * 260) + "。" for char in "abcdef")
+
+        with self.assertRaises(ValueError):
+            post_summary.build_thread_posts(
+                text,
+                source_url="https://x.com/AppleNews/status/1234567890",
+            )
+
+    def test_build_thread_posts_raises_when_last_segment_cannot_fit_source_url(self) -> None:
+        with self.assertRaises(ValueError):
+            post_summary.build_thread_posts(
+                "【👀 要約】\n\n" + ("a" * 150) + "。" + ("b" * 260) + "。",
+                source_url="https://x.com/AppleNews/status/1234567890",
+            )
+
+    def test_build_thread_posts_reserves_space_for_final_source_url(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "【👀 要約】\n\n" + ("a" * 120) + "。" + ("b" * 120) + "。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+        )
+
+        self.assertEqual(len(posts), 2)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertTrue(posts[-1].endswith("https://x.com/AppleNews/status/1234567890"))
+
+    def test_build_thread_posts_only_first_post_uses_continuation_suffix(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "【👀 要約】\n\n" + ("a" * 150) + "、" + ("b" * 150) + "、" + ("c" * 150) + "。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+        )
+
+        self.assertEqual(len(posts), 3)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertFalse(posts[1].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertNotIn("🔗", posts[0])
+        self.assertNotIn("🔗", posts[1])
+        self.assertTrue(posts[2].endswith("https://x.com/AppleNews/status/1234567890"))
 
 
 if __name__ == "__main__":

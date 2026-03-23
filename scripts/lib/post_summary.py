@@ -12,7 +12,12 @@ SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
 X_SHORT_URL_LENGTH = 23
 MAX_X_POST_LENGTH = 280
+THREAD_BODY_MAX_LENGTH = 275
+MAX_THREAD_TWEETS = 5
+THREAD_CONTINUATION_SUFFIX = " 続きは↓"
+SOURCE_LINK_PREFIX = "\n🔗 "
 SENTENCE_BOUNDARY_CHARS = "。！？!?\n"
+THREAD_BOUNDARY_CHARS = "。！？!?、,\n"
 TRAILING_CLOSERS = "」』）】〉》〕〗〙〛\"'”’ \t\r\n"
 
 
@@ -183,12 +188,11 @@ def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: 
     return f"https://x.com/{normalized_screen_name}/status/{normalized_tweet_id}"
 
 
-def format_translation_post(body_text: str, *, source_url: str, max_length: int) -> str:
-    effective_max_length = max(min(max_length, MAX_X_POST_LENGTH), 0)
+def format_translation_post(body_text: str, *, max_length: int) -> str:
+    effective_max_length = max(max_length, 0)
     header = f"{SUMMARY_HEADER}\n\n"
-    suffix = f"\n\n{SUMMARY_SEPARATOR}\n{source_url}" if source_url else ""
     available_body_length = max(
-        effective_max_length - estimate_x_post_length(header) - estimate_x_post_length(suffix),
+        effective_max_length - estimate_x_post_length(header),
         0,
     )
     formatted_body = (
@@ -196,7 +200,136 @@ def format_translation_post(body_text: str, *, source_url: str, max_length: int)
         if available_body_length
         else ""
     )
-    return truncate_post_text(f"{header}{formatted_body}{suffix}".rstrip(), effective_max_length)
+    return truncate_post_text(f"{header}{formatted_body}".rstrip(), effective_max_length)
+
+
+def compose_source_link_post(body_text: str, *, source_url: str) -> str:
+    if not source_url:
+        return body_text.strip()
+    return f"{body_text.rstrip()}{SOURCE_LINK_PREFIX}{source_url}"
+
+
+def _fits_body_text(text: str, max_length: int) -> bool:
+    normalized = text.strip()
+    return len(normalized) <= max_length and estimate_x_text_length(normalized) <= max_length
+
+
+def _fits_post_text(text: str, max_length: int = MAX_X_POST_LENGTH) -> bool:
+    normalized = text.strip()
+    return len(normalized) <= max_length and estimate_x_post_length(normalized) <= max_length
+
+
+def split_thread_text(text: str, *, predicate: Callable[[str], bool]) -> tuple[str, str]:
+    normalized = text.strip()
+    if not normalized:
+        return "", ""
+
+    last_boundary_end = -1
+    for index, character in enumerate(normalized):
+        candidate = normalized[: index + 1].rstrip()
+        if predicate(candidate):
+            if character in THREAD_BOUNDARY_CHARS:
+                last_boundary_end = index + 1
+            continue
+        break
+    else:
+        return normalized, ""
+
+    if last_boundary_end == -1:
+        raise ValueError("could not split text naturally within tweet limit")
+
+    head = normalized[:last_boundary_end].rstrip()
+    tail = normalized[last_boundary_end:].lstrip()
+    return head, tail
+
+
+def split_thread_text_for_final_tail(
+    text: str,
+    *,
+    predicate: Callable[[str], bool],
+    tail_predicate: Callable[[str], bool],
+) -> tuple[str, str]:
+    normalized = text.strip()
+    if not normalized:
+        return "", ""
+
+    boundary_positions = [index + 1 for index, character in enumerate(normalized) if character in THREAD_BOUNDARY_CHARS]
+    for boundary_end in reversed(boundary_positions):
+        head = normalized[:boundary_end].rstrip()
+        tail = normalized[boundary_end:].lstrip()
+        if not head or not tail:
+            continue
+        if predicate(head) and tail_predicate(tail):
+            return head, tail
+
+    return "", ""
+
+
+def build_thread_posts(
+    text: str,
+    *,
+    source_url: str,
+    max_body_length: int = THREAD_BODY_MAX_LENGTH,
+    max_posts: int = MAX_THREAD_TWEETS,
+) -> list[str]:
+    normalized = text.strip()
+    if not normalized:
+        raise ValueError("thread text is empty")
+
+    single_post = compose_source_link_post(normalized, source_url=source_url)
+    if _fits_body_text(normalized, max_body_length) and _fits_post_text(single_post):
+        return [single_post]
+
+    def first_predicate(candidate: str) -> bool:
+        return _fits_body_text(candidate, max_body_length) and _fits_post_text(
+            f"{candidate.rstrip()}{THREAD_CONTINUATION_SUFFIX}"
+        )
+
+    def middle_predicate(candidate: str) -> bool:
+        return _fits_body_text(candidate, max_body_length) and _fits_post_text(candidate)
+
+    def final_predicate(candidate: str) -> bool:
+        return _fits_body_text(candidate, max_body_length) and _fits_post_text(
+            compose_source_link_post(candidate, source_url=source_url)
+        )
+
+    posts: list[str] = []
+    remaining = normalized
+    while remaining:
+        if posts and final_predicate(remaining):
+            posts.append(compose_source_link_post(remaining, source_url=source_url))
+            break
+
+        if not posts and final_predicate(remaining):
+            posts.append(compose_source_link_post(remaining, source_url=source_url))
+            break
+
+        if len(posts) >= max_posts - 1:
+            raise ValueError(f"text requires more than {max_posts} tweets")
+
+        predicate = first_predicate if not posts else middle_predicate
+        original_remaining = remaining
+        segment, remaining = split_thread_text_for_final_tail(
+            original_remaining,
+            predicate=predicate,
+            tail_predicate=final_predicate,
+        )
+        if not segment:
+            segment, remaining = split_thread_text(original_remaining, predicate=predicate)
+        if not segment:
+            raise ValueError("thread segment is empty")
+        if not remaining:
+            if not final_predicate(segment):
+                raise ValueError("final thread segment could not fit with source URL")
+            posts.append(compose_source_link_post(segment, source_url=source_url))
+            break
+
+        if not posts:
+            posts.append(f"{segment}{THREAD_CONTINUATION_SUFFIX}")
+        else:
+            posts.append(segment)
+
+    return posts
 
 
 def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:
@@ -216,9 +349,8 @@ def build_summary(
     source_username: str = "",
     translator: object | None = None,
 ) -> str:
-    del prefix
+    del prefix, screen_name, tweet_id, source_username
     body = build_summary_body(text, language=language, translator=translator)
     if not body:
         body = "$MU関連の注目投稿"
-    source_url = build_source_tweet_url(screen_name, tweet_id, source_username=source_username)
-    return format_translation_post(body, source_url=source_url, max_length=max_length)
+    return format_translation_post(body, max_length=max_length)

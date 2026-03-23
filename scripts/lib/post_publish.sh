@@ -108,82 +108,293 @@ output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
 PY
 }
 
+append_unique_tweet_id() {
+  local tweet_id="$1"
+  local state_file="$2"
+
+  python_cmd - "${tweet_id}" "${state_file}" <<'PY'
+import pathlib
+import sys
+
+tweet_id = sys.argv[1].strip()
+state_file = pathlib.Path(sys.argv[2])
+state_file.parent.mkdir(parents=True, exist_ok=True)
+existing = set()
+if state_file.exists():
+    existing = {
+        line.strip()
+        for line in state_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+
+if tweet_id and tweet_id not in existing:
+    with state_file.open("a", encoding="utf-8") as handle:
+        handle.write(f"{tweet_id}\n")
+PY
+}
+
 publish_selected_post() {
   local category="$1"
   local post_text="$2"
-  local selected_tweet_id="$3"
-  local state_file="$4"
-  local post_result_file="$5"
+  local source_tweet_id="$3"
+  local source_url="$4"
+  local state_file="$5"
+  local source_state_file="$6"
+  local post_result_file="$7"
+  local thread_plan_stdout="${post_result_file}.plan.stdout"
+  local thread_plan_stderr="${post_result_file}.plan.stderr"
+  local thread_posts_json=""
+  local thread_count=0
+  local current_post_text=""
+  local reply_to_id=""
+  local current_output_file=""
+  local current_stderr_file=""
   local response_preview=""
-  local post_stderr_file="${post_result_file}.stderr"
+  local exit_code=0
+  local current_post_id=""
+  local action_name="post"
+  local -a posted_tweet_ids=()
+  local index=0
+
+  PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${post_text}" "${source_url}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
+import json
+import sys
+from post_summary import build_thread_posts
+
+print(json.dumps(build_thread_posts(sys.argv[1], source_url=sys.argv[2]), ensure_ascii=False))
+PY
+  exit_code=$?
+  if (( exit_code != 0 )); then
+    write_post_failure_file \
+      "${post_result_file}" \
+      "failed to build thread post plan" \
+      "${exit_code}" \
+      "${thread_plan_stdout}" \
+      "${thread_plan_stderr}"
+    response_preview="$(summarize_post_result_file "${post_result_file}")"
+    [[ -n "${response_preview}" ]] && warn "${response_preview}"
+    rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+    return 1
+  fi
+
+  thread_posts_json="$(cat "${thread_plan_stdout}")"
+  rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+  thread_count="$(python_cmd - "${thread_posts_json}" <<'PY'
+import json
+import sys
+
+print(len(json.loads(sys.argv[1])))
+PY
+  )"
+  if (( thread_count <= 0 )); then
+    write_post_failure_file \
+      "${post_result_file}" \
+      "thread plan did not produce any posts" \
+      "1" \
+      "/dev/null" \
+      "/dev/null"
+    warn "thread plan did not produce any posts for '${category}'"
+    return 1
+  fi
+  if (( thread_count > 1 )); then
+    action_name="post_thread"
+  fi
+
+  for ((index = 0; index < thread_count; index++)); do
+    current_post_text="$(python_cmd - "${thread_posts_json}" "${index}" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(payload[int(sys.argv[2])])
+PY
+    )"
+    current_output_file="${post_result_file}.segment-${index}.json"
+    current_stderr_file="${current_output_file}.stderr"
+    rm -f "${current_output_file}" "${current_stderr_file}"
+
+    execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_output_file}" "${current_stderr_file}"
+    exit_code=$?
+    if (( exit_code != 0 )); then
+      write_post_failure_file \
+        "${post_result_file}" \
+        "twitter post command failed for thread segment $((index + 1))" \
+        "${exit_code}" \
+        "${current_output_file}" \
+        "${current_stderr_file}"
+      warn "twitter post failed for '${category}' at thread segment $((index + 1))"
+      response_preview="$(summarize_post_result_file "${post_result_file}")"
+      [[ -n "${response_preview}" ]] && warn "${response_preview}"
+      rm -f "${current_stderr_file}" "${current_output_file}"
+      return 1
+    fi
+
+    if [[ ! -f "${current_output_file}" ]]; then
+      write_post_failure_file \
+        "${post_result_file}" \
+        "twitter post did not create a result file for thread segment $((index + 1))" \
+        "1" \
+        "${current_output_file}" \
+        "${current_stderr_file}"
+      warn "twitter post did not create result file for '${category}': ${current_output_file}"
+      rm -f "${current_stderr_file}" "${current_output_file}"
+      return 1
+    fi
+    if [[ ! -s "${current_output_file}" ]]; then
+      write_post_failure_file \
+        "${post_result_file}" \
+        "twitter post created an empty result file for thread segment $((index + 1))" \
+        "1" \
+        "${current_output_file}" \
+        "${current_stderr_file}"
+      warn "twitter post created an empty result file for '${category}': ${current_output_file}"
+      rm -f "${current_stderr_file}" "${current_output_file}"
+      return 1
+    fi
+    if ! assert_structured_success "${current_output_file}" "post:${category}:segment-$((index + 1))"; then
+      cp "${current_output_file}" "${post_result_file}"
+      response_preview="$(summarize_post_result_file "${post_result_file}")"
+      warn "twitter post response validation failed for '${category}' at thread segment $((index + 1))"
+      [[ -n "${response_preview}" ]] && warn "twitter post raw response preview: ${response_preview}"
+      rm -f "${current_output_file}" "${current_stderr_file}"
+      return 1
+    fi
+
+    if ! current_post_id="$(python_cmd - "${current_output_file}" <<'PY'
+import json
+import sys
+
+payload = json.loads(open(sys.argv[1], encoding="utf-8").read())
+data = payload.get("data") or {}
+tweet_id = str(data.get("id") or "").strip()
+if not tweet_id:
+    raise SystemExit("missing posted tweet id")
+print(tweet_id)
+PY
+    )"; then
+      write_post_failure_file \
+        "${post_result_file}" \
+        "missing posted tweet id for thread segment $((index + 1))" \
+        "1" \
+        "${current_output_file}" \
+        "${current_stderr_file}"
+      rm -f "${current_output_file}" "${current_stderr_file}"
+      return 1
+    fi
+    posted_tweet_ids+=("${current_post_id}")
+    reply_to_id="${current_post_id}"
+
+    if (( index == 0 )); then
+      if ! append_unique_tweet_id "${source_tweet_id}" "${source_state_file}"; then
+        write_post_failure_file \
+          "${post_result_file}" \
+          "failed to update source tweet state file" \
+          "1" \
+          "/dev/null" \
+          "/dev/null"
+        warn "posted '${category}' but failed to update ${source_state_file}"
+        rm -f "${current_output_file}" "${current_stderr_file}"
+        return 1
+      fi
+
+      if ! append_unique_tweet_id "${current_post_id}" "${state_file}"; then
+        write_post_failure_file \
+          "${post_result_file}" \
+          "failed to update posted tweet state file" \
+          "1" \
+          "/dev/null" \
+          "/dev/null"
+        warn "posted '${category}' but failed to update ${state_file}"
+        rm -f "${current_output_file}" "${current_stderr_file}"
+        return 1
+      fi
+    fi
+
+    rm -f "${current_output_file}" "${current_stderr_file}"
+  done
+
+  if [[ -z "${posted_tweet_ids[0]:-}" ]]; then
+    write_post_failure_file \
+      "${post_result_file}" \
+      "missing first posted tweet id" \
+      "1" \
+      "/dev/null" \
+      "/dev/null"
+    warn "posted '${category}' but the first posted tweet id was empty"
+    return 1
+  fi
+
+  write_publish_success_file "${post_result_file}" "${action_name}" "${posted_tweet_ids[@]}"
+
+  info "posted category '${category}' and updated ${state_file} and ${source_state_file}"
+}
+
+execute_twitter_post() {
+  local category="$1"
+  local post_text="$2"
+  local reply_to_id="${3:-}"
+  local output_file="$4"
+  local stderr_file="$5"
   local attempt=1
   local exit_code=0
 
   while true; do
-    if twitter_cmd post "${post_text}" --json > "${post_result_file}" 2> "${post_stderr_file}"; then
-      break
+    if [[ -n "${reply_to_id}" ]]; then
+      if twitter_cmd post "${post_text}" --reply-to "${reply_to_id}" --json > "${output_file}" 2> "${stderr_file}"; then
+        return 0
+      else
+        exit_code=$?
+      fi
     else
-      exit_code=$?
+      if twitter_cmd post "${post_text}" --json > "${output_file}" 2> "${stderr_file}"; then
+        return 0
+      else
+        exit_code=$?
+      fi
     fi
 
     if (( attempt >= DEFAULT_RETRY_ATTEMPTS )); then
-      write_post_failure_file \
-        "${post_result_file}" \
-        "twitter post command failed" \
-        "${exit_code}" \
-        "${post_result_file}" \
-        "${post_stderr_file}"
-      warn "twitter post failed for '${category}' after ${DEFAULT_RETRY_ATTEMPTS} attempts"
-      response_preview="$(summarize_post_result_file "${post_result_file}")"
-      [[ -n "${response_preview}" ]] && warn "${response_preview}"
-      rm -f "${post_stderr_file}"
-      return 1
+      return "${exit_code}"
     fi
 
     warn "twitter post failed for '${category}' (attempt ${attempt}/${DEFAULT_RETRY_ATTEMPTS}); retrying in ${DEFAULT_RETRY_DELAY_SECONDS}s"
     sleep "${DEFAULT_RETRY_DELAY_SECONDS}"
     attempt=$((attempt + 1))
   done
+}
 
-  rm -f "${post_stderr_file}"
+write_publish_success_file() {
+  local output_path="$1"
+  local action_name="$2"
+  shift 2
 
-  if [[ ! -f "${post_result_file}" ]]; then
-    warn "twitter post did not create result file for '${category}': ${post_result_file}"
-    return 1
-  fi
-
-  if [[ ! -s "${post_result_file}" ]]; then
-    warn "twitter post created an empty result file for '${category}': ${post_result_file}"
-    return 1
-  fi
-
-  if ! assert_structured_success "${post_result_file}" "post:${category}"; then
-    response_preview="$(summarize_post_result_file "${post_result_file}")"
-    warn "twitter post response validation failed for '${category}'"
-    [[ -n "${response_preview}" ]] && warn "twitter post raw response preview: ${response_preview}"
-    return 1
-  fi
-
-  if ! python_cmd - "${selected_tweet_id}" "${state_file}" <<'PY'
+  python_cmd - "${output_path}" "${action_name}" "$@" <<'PY'
+import json
 import pathlib
 import sys
 
-tweet_id = sys.argv[1].strip()
-state_file = pathlib.Path(sys.argv[2])
-existing = {
-    line.strip()
-    for line in state_file.read_text(encoding="utf-8").splitlines()
-    if line.strip()
+output_path = pathlib.Path(sys.argv[1])
+action_name = sys.argv[2]
+tweet_ids = [item for item in sys.argv[3:] if item.strip()]
+first_tweet_id = tweet_ids[0] if tweet_ids else ""
+
+payload = {
+    "ok": True,
+    "data": {
+        "success": True,
+        "action": action_name,
+        "id": first_tweet_id,
+        "url": f"https://x.com/i/status/{first_tweet_id}" if first_tweet_id else "",
+        "tweet_ids": tweet_ids,
+        "tweet_count": len(tweet_ids),
+    },
+    "message": (
+        f"posted {len(tweet_ids)} tweet(s) starting at {first_tweet_id}"
+        if first_tweet_id
+        else "posted thread"
+    ),
 }
-
-if tweet_id and tweet_id not in existing:
-    with state_file.open("a", encoding="utf-8") as handle:
-        handle.write(f"{tweet_id}\n")
+output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
-  then
-    warn "posted '${category}' but failed to update ${state_file}"
-    return 1
-  fi
-
-  info "posted category '${category}' and updated ${state_file}"
 }
