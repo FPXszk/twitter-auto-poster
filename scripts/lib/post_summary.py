@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
+from typing import Callable
 
 LOGGER = logging.getLogger(__name__)
 
 TRANSLATION_HEADER = "【🌐 日本語訳】"
 TRANSLATION_SEPARATOR = "---"
+URL_PATTERN = re.compile(r"https?://\S+")
+X_SHORT_URL_LENGTH = 23
 
 
 def clean_source_text(text: str) -> str:
@@ -24,10 +28,90 @@ def load_translator() -> object:
     return Translator()
 
 
-def truncate_text(text: str, max_length: int) -> str:
-    if len(text) <= max_length:
+def estimate_x_text_length(text: str) -> int:
+    total = 0
+    for character in text:
+        if character == "\n":
+            total += 1
+            continue
+        total += 2 if unicodedata.east_asian_width(character) in {"F", "W", "A"} else 1
+    return total
+
+
+def estimate_x_post_length(text: str) -> int:
+    total = 0
+    cursor = 0
+    for match in URL_PATTERN.finditer(text):
+        total += estimate_x_text_length(text[cursor : match.start()])
+        total += X_SHORT_URL_LENGTH
+        cursor = match.end()
+    total += estimate_x_text_length(text[cursor:])
+    return total
+
+
+def truncate_text(text: str, max_length: int, *, measure_length: Callable[[str], int] | None = None) -> str:
+    resolved_measure_length = measure_length or len
+    if resolved_measure_length(text) <= max_length:
         return text
-    return text[: max_length - 1].rstrip(" ,.;:") + "…"
+    if max_length <= 0:
+        return ""
+
+    ellipsis = "…"
+    ellipsis_length = resolved_measure_length(ellipsis)
+    if max_length <= ellipsis_length:
+        return ellipsis if ellipsis_length <= max_length else ""
+
+    budget = max_length - ellipsis_length
+    truncated: list[str] = []
+    current_length = 0
+    for character in text:
+        character_length = resolved_measure_length(character)
+        if current_length + character_length > budget:
+            break
+        truncated.append(character)
+        current_length += character_length
+    return "".join(truncated).rstrip(" ,.;:") + ellipsis
+
+
+def truncate_post_text(text: str, max_length: int) -> str:
+    if estimate_x_post_length(text) <= max_length:
+        return text
+    if max_length <= 0:
+        return ""
+
+    ellipsis = "…"
+    ellipsis_length = estimate_x_text_length(ellipsis)
+    if max_length <= ellipsis_length:
+        return ellipsis if ellipsis_length <= max_length else ""
+
+    budget = max_length - ellipsis_length
+    parts: list[str] = []
+    current_length = 0
+    cursor = 0
+
+    for match in URL_PATTERN.finditer(text):
+        for character in text[cursor : match.start()]:
+            character_length = estimate_x_text_length(character)
+            if current_length + character_length > budget:
+                return "".join(parts).rstrip(" ,.;:") + ellipsis
+            parts.append(character)
+            current_length += character_length
+
+        url = match.group(0)
+        if current_length + X_SHORT_URL_LENGTH > budget:
+            return "".join(parts).rstrip(" ,.;:") + ellipsis
+        parts.append(url)
+        current_length += X_SHORT_URL_LENGTH
+        cursor = match.end()
+
+    for character in text[cursor:]:
+        character_length = estimate_x_text_length(character)
+        if current_length + character_length > budget:
+            break
+        parts.append(character)
+        current_length += character_length
+
+    return "".join(parts).rstrip(" ,.;:") + ellipsis
 
 
 def translate_to_japanese(text: str, *, translator: object | None = None) -> str:
@@ -60,9 +144,16 @@ def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: 
 def format_translation_post(body_text: str, *, source_url: str, max_length: int) -> str:
     header = f"{TRANSLATION_HEADER}\n\n"
     suffix = f"\n\n{TRANSLATION_SEPARATOR}\n{source_url}" if source_url else ""
-    available_body_length = max(max_length - len(header) - len(suffix), 0)
-    formatted_body = truncate_text(body_text, available_body_length) if available_body_length else ""
-    return truncate_text(f"{header}{formatted_body}{suffix}".rstrip(), max_length)
+    available_body_length = max(
+        max_length - estimate_x_post_length(header) - estimate_x_post_length(suffix),
+        0,
+    )
+    formatted_body = (
+        truncate_text(body_text, available_body_length, measure_length=estimate_x_text_length)
+        if available_body_length
+        else ""
+    )
+    return truncate_post_text(f"{header}{formatted_body}{suffix}".rstrip(), max_length)
 
 
 def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:
