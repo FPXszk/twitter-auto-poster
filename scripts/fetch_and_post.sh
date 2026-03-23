@@ -126,8 +126,9 @@ update_candidate_result() {
   local candidate_file="$1"
   local result_mode="$2"
   local post_result_file="${3:-}"
+  local post_error="${4:-}"
 
-  python_cmd - "${candidate_file}" "${result_mode}" "${post_result_file}" <<'PY'
+  python_cmd - "${candidate_file}" "${result_mode}" "${post_result_file}" "${post_error}" <<'PY'
 import json
 import pathlib
 import sys
@@ -136,6 +137,7 @@ payload_path = pathlib.Path(sys.argv[1])
 payload = json.loads(payload_path.read_text(encoding="utf-8"))
 payload["result_mode"] = sys.argv[2]
 payload["post_result_file"] = sys.argv[3] or None
+payload["post_error"] = sys.argv[4] or None
 payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 }
@@ -179,6 +181,7 @@ main() {
   local collection_status_json=""
   local source_config_json=""
   local requested_mode="live"
+  local post_error=""
 
   while (($# > 0)); do
     case "$1" in
@@ -424,6 +427,7 @@ payload = {
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
     "post_result_file": None,
+    "post_error": None,
 }
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
@@ -502,8 +506,9 @@ PY
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
   if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${state_file}" "${post_result_file}"; then
-    update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}"
-    exit 0
+    post_error="$(summarize_post_result_file "${post_result_file}")"
+    update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
+    exit 1
   fi
   if [[ "${selection_mode}" == "round_robin" && -n "${selected_source_name}" ]]; then
     update_rotation_state "${rotation_state_file}" "${selected_source_name}"
