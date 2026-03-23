@@ -52,6 +52,17 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(result, "Apple stock rises 3% after strong earnings report")
 
+    def test_translate_to_japanese_limits_text_at_sentence_boundary(self) -> None:
+        translator = FakeTranslator(text=("あ" * 480) + "。" + ("い" * 100))
+
+        result = post_summary.translate_to_japanese(
+            "Apple stock rises 3% after strong earnings report",
+            translator=translator,
+        )
+
+        self.assertLessEqual(len(result), 500)
+        self.assertTrue(result.endswith("。"))
+
     def test_build_source_tweet_url_prefers_screen_name(self) -> None:
         url = post_summary.build_source_tweet_url(
             "AppleNews",
@@ -84,10 +95,10 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(
             summary,
-            "【🌐 日本語訳】\n\nアップル株が好決算で3%上昇\n\n---\nhttps://x.com/AppleNews/status/1234567890",
+            "【🌐 日本語訳】\n\nアップル株が好決算で3%上昇",
         )
 
-    def test_build_summary_preserves_url_when_truncating(self) -> None:
+    def test_build_summary_does_not_embed_source_url(self) -> None:
         summary = post_summary.build_summary(
             "Apple stock rises 3% after strong earnings report",
             prefix="Xで反応上位: ",
@@ -99,7 +110,7 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 80)
-        self.assertTrue(summary.endswith("https://x.com/AppleNews/status/1234567890"))
+        self.assertNotIn("https://x.com/", summary)
 
     def test_build_summary_never_exceeds_max_length(self) -> None:
         summary = post_summary.build_summary(
@@ -113,6 +124,7 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 30)
+        self.assertNotIn("https://x.com/", summary)
 
     def test_estimate_x_post_length_counts_urls_as_short_links(self) -> None:
         self.assertEqual(
@@ -132,7 +144,7 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertLessEqual(post_summary.estimate_x_post_length(summary), 280)
-        self.assertTrue(summary.endswith("https://x.com/AppleNews/status/1234567890"))
+        self.assertNotIn("https://x.com/", summary)
 
     def test_truncate_post_text_keeps_url_atomic(self) -> None:
         truncated = post_summary.truncate_post_text(
@@ -142,6 +154,12 @@ class PostSummaryTest(TestCase):
 
         self.assertLessEqual(post_summary.estimate_x_post_length(truncated), 30)
         self.assertNotIn("https://example.com mor", truncated)
+
+    def test_limit_translated_text_prefers_sentence_boundary(self) -> None:
+        limited = post_summary.limit_translated_text(("あ" * 320) + "。" + ("い" * 320))
+
+        self.assertLessEqual(len(limited), 500)
+        self.assertTrue(limited.endswith("。"))
 
 
 if __name__ == "__main__":
