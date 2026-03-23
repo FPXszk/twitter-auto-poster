@@ -10,6 +10,11 @@ from zoneinfo import ZoneInfo
 JST = ZoneInfo("Asia/Tokyo")
 CONVERSATION_TERMS = ("？", "?", "注目", "ポイント", "理由", "まとめ", "シナリオ", "見方")
 NEGATIVE_TERMS = ("悲報", "最悪", "クソ", "暴落", "絶望", "死ね")
+LIKE_SIGNAL_WEIGHT = 1.0
+RETWEET_SIGNAL_WEIGHT = 20.0
+REPLY_SIGNAL_WEIGHT = 13.5
+QUOTE_SIGNAL_WEIGHT = 25.0
+BOOKMARK_SIGNAL_WEIGHT = 10.0
 
 
 def current_jst_datetime() -> datetime:
@@ -84,6 +89,21 @@ def _has_external_link(text: str, urls: Sequence[object]) -> bool:
     return "http://" in text or "https://" in text
 
 
+def _engagement_signal(metrics: Mapping[str, object]) -> float:
+    likes = _safe_float(metrics.get("likes"))
+    retweets = _safe_float(metrics.get("retweets"))
+    replies = _safe_float(metrics.get("replies"))
+    quotes = _safe_float(metrics.get("quotes"))
+    bookmarks = _safe_float(metrics.get("bookmarks"))
+    return (
+        likes * LIKE_SIGNAL_WEIGHT
+        + retweets * RETWEET_SIGNAL_WEIGHT
+        + replies * REPLY_SIGNAL_WEIGHT
+        + quotes * QUOTE_SIGNAL_WEIGHT
+        + bookmarks * BOOKMARK_SIGNAL_WEIGHT
+    )
+
+
 def analyze_account_score(
     user: Mapping[str, object],
     recent_posts: Sequence[Mapping[str, object]],
@@ -113,6 +133,7 @@ def analyze_account_score(
     negative_posts = 0
     views_per_follower: list[float] = []
     interaction_rates: list[float] = []
+    engagement_signal_rates: list[float] = []
 
     seven_days_ago = now_jst - timedelta(days=7)
     one_day_ago = now_jst - timedelta(days=1)
@@ -145,8 +166,10 @@ def analyze_account_score(
             + _safe_float(metrics.get("quotes"))
             + _safe_float(metrics.get("bookmarks"))
         )
+        engagement_signal = _engagement_signal(metrics)
         views_per_follower.append(views / max(followers, 1))
         interaction_rates.append(interactions / max(views, 1.0))
+        engagement_signal_rates.append(engagement_signal / max(views, 1.0))
 
         if has_link:
             link_posts += 1
@@ -159,8 +182,6 @@ def analyze_account_score(
         if hook_with_numbers:
             post_score += 5.0
         if has_structure:
-            post_score += 5.0
-        if not has_link:
             post_score += 5.0
         if clean_hashtags:
             post_score += 5.0
@@ -176,6 +197,7 @@ def analyze_account_score(
                 "created_at": created_at.isoformat() if created_at is not None else "",
                 "views": views,
                 "interactions": interactions,
+                "engagement_signal": round(engagement_signal, 1),
                 "score": round(min(post_score, 25.0), 1),
                 "has_number_hook": hook_with_numbers,
                 "has_structure": has_structure,
@@ -205,7 +227,8 @@ def analyze_account_score(
     content_score = _mean([_safe_float(item["score"]) for item in post_analyses])
     average_view_ratio = _mean(views_per_follower)
     average_interaction_rate = _mean(interaction_rates)
-    engagement_score = min(average_view_ratio / 3.0, 1.0) * 10.0 + min(average_interaction_rate / 0.02, 1.0) * 5.0
+    average_engagement_signal_rate = _mean(engagement_signal_rates)
+    engagement_score = min(average_view_ratio / 3.0, 1.0) * 10.0 + min(average_engagement_signal_rate / 0.05, 1.0) * 5.0
     premium_score = 10.0 if assume_premium else 0.0
 
     penalties = 0.0
@@ -218,10 +241,10 @@ def analyze_account_score(
         suggestions.append("フォロー数とフォロー/フォロワー比を見直してください。")
 
     link_rate = link_posts / max(len(post_analyses), 1)
-    if link_rate >= 0.3:
-        penalties += 8.0
-        warnings.append("最近の投稿でリンク比率が高く、本文リンクのリーチ減ペナルティが想定されます。")
-        suggestions.append("リンクは本文ではなく返信側に回してください。")
+    if link_rate >= 0.5 and engagement_score < 7.5:
+        suggestions.append(
+            "本文リンクへの強いアルゴリズム減点は撤廃済みです。ただしリンク投稿はテキスト・画像・動画より相対的に伸びにくい傾向があるため、冒頭の結論や画像を強化してください。"
+        )
 
     hashtag_spam_rate = hashtag_spam_posts / max(len(post_analyses), 1)
     if hashtag_spam_rate >= 0.3:
@@ -281,6 +304,7 @@ def analyze_account_score(
             "posts_per_day_7d": round(posts_per_day, 2),
             "average_view_per_follower": round(average_view_ratio, 2),
             "average_interaction_rate": round(average_interaction_rate, 4),
+            "average_engagement_signal_rate": round(average_engagement_signal_rate, 4),
             "link_rate": round(link_rate, 2),
             "hashtag_spam_rate": round(hashtag_spam_rate, 2),
             "negative_rate": round(negative_rate, 2),

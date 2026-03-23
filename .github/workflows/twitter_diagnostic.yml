@@ -139,12 +139,13 @@ jobs:
                           f"- Following: `{metrics.get('following', '')}`",
                           f"- Account age days: `{metrics.get('account_age_days', '')}`",
                           f"- Posts last 24h: `{metrics.get('posts_last_24h', '')}`",
-                          f"- Posts last 7d: `{metrics.get('posts_last_7d', '')}`",
-                          f"- Posts/day (7d avg): `{metrics.get('posts_per_day_7d', '')}`",
-                          f"- Avg views/follower: `{metrics.get('average_view_per_follower', '')}`",
-                          f"- Avg interaction rate: `{metrics.get('average_interaction_rate', '')}`",
-                      ]
-                  )
+                           f"- Posts last 7d: `{metrics.get('posts_last_7d', '')}`",
+                           f"- Posts/day (7d avg): `{metrics.get('posts_per_day_7d', '')}`",
+                           f"- Avg views/follower: `{metrics.get('average_view_per_follower', '')}`",
+                           f"- Avg interaction rate: `{metrics.get('average_interaction_rate', '')}`",
+                           f"- Avg engagement signal rate: `{metrics.get('average_engagement_signal_rate', '')}`",
+                       ]
+                   )
                   warnings = (payload.get("score_prediction") or {}).get("warnings") or []
                   suggestions = (payload.get("score_prediction") or {}).get("suggestions") or []
                   previews = payload.get("recent_post_preview") or []

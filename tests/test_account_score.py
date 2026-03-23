@@ -79,7 +79,81 @@ class AccountScoreTests(unittest.TestCase):
         self.assertIn(result["distribution"], ("healthy", "strong"))
         self.assertLessEqual(result["components"]["penalties"], 0.0)
 
-    def test_link_heavy_and_negative_profile_gets_penalties(self) -> None:
+    def test_quote_activity_counts_as_strong_positive_signal(self) -> None:
+        user = {
+            "followers": 320,
+            "following": 150,
+            "createdAt": "Wed Jan 01 07:03:40 +0000 2025",
+        }
+        base_posts = [
+            build_post(
+                text="半導体3社の見方を整理しました。来週の注目ポイントは？",
+                created_at_iso="2026-03-21T03:30:00+09:00",
+                views=500,
+                likes=8,
+                replies=1,
+            )
+        ]
+        quoted_posts = [
+            build_post(
+                text="半導体3社の見方を整理しました。来週の注目ポイントは？",
+                created_at_iso="2026-03-21T03:30:00+09:00",
+                views=500,
+                likes=8,
+                replies=1,
+                quotes=1,
+            )
+        ]
+
+        base_result = analyze_account_score(
+            user,
+            base_posts,
+            assume_premium=True,
+            now=datetime(2026, 3, 21, 4, 0, tzinfo=JST),
+        )
+        quoted_result = analyze_account_score(
+            user,
+            quoted_posts,
+            assume_premium=True,
+            now=datetime(2026, 3, 21, 4, 0, tzinfo=JST),
+        )
+
+        self.assertGreater(
+            quoted_result["metrics"]["average_engagement_signal_rate"],
+            base_result["metrics"]["average_engagement_signal_rate"],
+        )
+        self.assertGreater(quoted_result["score"], base_result["score"])
+
+    def test_link_heavy_profile_is_not_flagged_as_link_penalty(self) -> None:
+        user = {
+            "followers": 220,
+            "following": 140,
+            "createdAt": "Wed Jan 01 07:03:40 +0000 2025",
+        }
+        posts = [
+            build_post(
+                text="今朝の市場メモです https://example.com",
+                created_at_iso="2026-03-21T03:30:00+09:00",
+                views=320,
+                likes=6,
+                urls=[{"expanded_url": "https://example.com"}],
+            )
+            for _ in range(5)
+        ]
+
+        result = analyze_account_score(
+            user,
+            posts,
+            assume_premium=True,
+            now=datetime(2026, 3, 21, 4, 0, tzinfo=JST),
+        )
+
+        self.assertEqual(result["metrics"]["link_rate"], 1.0)
+        self.assertEqual(result["components"]["penalties"], 0.0)
+        self.assertFalse(any("リンク比率" in warning for warning in result["warnings"]))
+        self.assertFalse(any("返信側に回してください" in suggestion for suggestion in result["suggestions"]))
+
+    def test_negative_spammy_profile_gets_penalties(self) -> None:
         user = {
             "followers": 90,
             "following": 650,
@@ -106,3 +180,4 @@ class AccountScoreTests(unittest.TestCase):
         self.assertEqual(result["distribution"], "fragile")
         self.assertGreater(result["components"]["penalties"], 0.0)
         self.assertTrue(result["warnings"])
+        self.assertFalse(any("リンク比率" in warning for warning in result["warnings"]))
