@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parent.parent / "python").resolve()))
 
-from python.evening_summary import build_post_result, build_post_text
+from python.evening_summary import MAX_X_WEIGHTED_LENGTH, build_post_result, build_post_text
 from python.summary_common import estimate_x_weighted_length
 from python.stock_fetcher import StockSnapshot
 
@@ -63,7 +63,7 @@ class EveningSummaryTests(unittest.TestCase):
         self.assertIn("値下がり率TOP3\n1. なし", text)
 
     @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
-    def test_build_post_result_uses_shorter_variant_when_names_are_long(self, _fetch_market_snapshot: object) -> None:
+    def test_build_post_result_keeps_full_variant_with_premium_length_limit(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
             snapshot("1111.T", "超長い銘柄名サンプルホールディングス一号", 2.7),
             snapshot("2222.T", "超長い銘柄名サンプルホールディングス二号", 2.4),
@@ -75,8 +75,8 @@ class EveningSummaryTests(unittest.TestCase):
 
         result = build_post_result(snapshots, headline_date=date(2026, 3, 23))
 
-        self.assertLessEqual(estimate_x_weighted_length(result.text), 280)
-        self.assertNotEqual(result.variant_label, "template-3x3-auto")
+        self.assertLessEqual(estimate_x_weighted_length(result.text), MAX_X_WEIGHTED_LENGTH)
+        self.assertEqual(result.variant_label, "template-3x3-auto")
         self.assertIn("【🌆 本日の市場総括】03/23", result.text)
 
 

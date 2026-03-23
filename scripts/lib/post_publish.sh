@@ -11,9 +11,9 @@ import sys
 
 def condense(text: str) -> str:
     normalized = " ".join(text.split())
-    if len(normalized) <= 400:
+    if len(normalized) <= 2000:
         return normalized
-    return normalized[:397] + "..."
+    return normalized[:1997] + "..."
 
 
 path = pathlib.Path(sys.argv[1])
@@ -79,9 +79,9 @@ def read_preview(path_str: str) -> str:
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
     normalized = " ".join(text.split())
-    if len(normalized) <= 400:
+    if len(normalized) <= 2000:
         return normalized
-    return normalized[:397] + "..."
+    return normalized[:1997] + "..."
 
 
 output_path = pathlib.Path(sys.argv[1])

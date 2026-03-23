@@ -105,7 +105,7 @@ defaults:
   dry_run: true
   summary_prefix: "Xで反応上位: "
   summary_language: "ja"
-  summary_max_length: 140
+  summary_max_length: 2000
   score_weights:
     likes: 1
     retweets: 1

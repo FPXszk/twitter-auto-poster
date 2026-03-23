@@ -572,7 +572,7 @@ payload = {
         or "Xで反応上位: "
     ),
     "summary_language": str(account.get("summary_language") or defaults.get("summary_language") or "ja"),
-    "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 140),
+    "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 2000),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),

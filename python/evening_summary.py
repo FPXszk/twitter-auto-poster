@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_CLOSE_TICKER = "^N225"
-MAX_X_WEIGHTED_LENGTH = 280
+MAX_X_WEIGHTED_LENGTH = 2000
 
 
 def configure_logging(level: str = "INFO") -> None:

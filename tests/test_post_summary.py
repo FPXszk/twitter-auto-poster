@@ -136,13 +136,14 @@ class PostSummaryTest(TestCase):
             "Apple stock rises 3% after strong earnings report",
             prefix="Xで反応上位: ",
             language="ja",
-            max_length=280,
+            max_length=2000,
             screen_name="AppleNews",
             tweet_id="1234567890",
-            translator=FakeTranslator(text="あ" * 200),
+            translator=FakeTranslator(text="あ" * 700),
         )
 
-        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 280)
+        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 2000)
+        self.assertIn("あ" * 700, summary)
         self.assertIn("https://x.com/AppleNews/status/1234567890", summary)
 
     def test_truncate_post_text_keeps_url_atomic(self) -> None:

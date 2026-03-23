@@ -310,7 +310,7 @@ candidates = []
 
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
-summary_max_length = int(account.get("summary_max_length") or 140)
+summary_max_length = int(account.get("summary_max_length") or 2000)
 selection_mode = str(account.get("selection_mode") or "score")
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
@@ -357,7 +357,7 @@ for payload_path in payload_files:
         created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
         rejection_reasons = candidate_rejection_reasons(text=text, created_at=created_at, raw_filters=effective_filters)
         if rejection_reasons:
-            skipped_candidates.append({"id": tweet_id, "source_id": source_id, "text": text[:120], "reasons": rejection_reasons})
+            skipped_candidates.append({"id": tweet_id, "source_id": source_id, "text": text[:2000], "reasons": rejection_reasons})
             continue
 
         author = item.get("author") or {}
