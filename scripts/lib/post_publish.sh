@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-TWITTER_POST_HELP_CACHE=""
-
 summarize_post_result_file() {
   local post_result_file="$1"
 
@@ -110,13 +108,6 @@ output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
 PY
 }
 
-twitter_post_supports_quote() {
-  if [[ -z "${TWITTER_POST_HELP_CACHE}" ]]; then
-    TWITTER_POST_HELP_CACHE="$(twitter_cmd post --help 2>&1 || true)"
-  fi
-  [[ "${TWITTER_POST_HELP_CACHE}" == *"--quote"* ]]
-}
-
 publish_selected_post() {
   local category="$1"
   local post_text="$2"
@@ -127,15 +118,9 @@ publish_selected_post() {
   local post_stderr_file="${post_result_file}.stderr"
   local attempt=1
   local exit_code=0
-  local -a post_command
-
-  post_command=(twitter_cmd post "${post_text}" --json)
-  if [[ -n "${selected_tweet_id}" ]] && twitter_post_supports_quote; then
-    post_command=(twitter_cmd post "${post_text}" --quote "${selected_tweet_id}" --json)
-  fi
 
   while true; do
-    if "${post_command[@]}" > "${post_result_file}" 2> "${post_stderr_file}"; then
+    if twitter_cmd post "${post_text}" --json > "${post_result_file}" 2> "${post_stderr_file}"; then
       break
     else
       exit_code=$?

@@ -7,10 +7,10 @@ from typing import Callable
 
 LOGGER = logging.getLogger(__name__)
 
-TRANSLATION_HEADER = "【🌐 日本語訳】"
+SUMMARY_HEADER = "【👀 要約】"
+SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
 X_SHORT_URL_LENGTH = 23
-MAX_TRANSLATED_TEXT_LENGTH = 500
 SENTENCE_BOUNDARY_CHARS = "。！？!?\n"
 TRAILING_CLOSERS = "」』）】〉》〕〗〙〛\"'”’ \t\r\n"
 
@@ -155,10 +155,6 @@ def truncate_text_naturally(
     return truncate_text(normalized, max_length, measure_length=resolved_measure_length)
 
 
-def limit_translated_text(text: str, *, max_length: int = MAX_TRANSLATED_TEXT_LENGTH) -> str:
-    return truncate_text_naturally(text, max_length)
-
-
 def translate_to_japanese(text: str, *, translator: object | None = None) -> str:
     cleaned = clean_source_text(text)
     if not cleaned:
@@ -169,13 +165,13 @@ def translate_to_japanese(text: str, *, translator: object | None = None) -> str
         response = active_translator.translate(cleaned, dest="ja")
     except Exception as exc:
         LOGGER.warning("googletrans failed; falling back to source text: %s", exc)
-        return limit_translated_text(cleaned)
+        return cleaned
 
     translated = str(getattr(response, "text", "") or "").strip()
     if not translated:
         LOGGER.warning("googletrans returned empty text; falling back to source text")
-        return limit_translated_text(cleaned)
-    return limit_translated_text(translated)
+        return cleaned
+    return translated
 
 
 def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: str = "") -> str:
@@ -186,10 +182,11 @@ def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: 
     return f"https://x.com/{normalized_screen_name}/status/{normalized_tweet_id}"
 
 
-def format_translation_post(body_text: str, *, max_length: int) -> str:
-    header = f"{TRANSLATION_HEADER}\n\n"
+def format_translation_post(body_text: str, *, source_url: str, max_length: int) -> str:
+    header = f"{SUMMARY_HEADER}\n\n"
+    suffix = f"\n\n{SUMMARY_SEPARATOR}\n{source_url}" if source_url else ""
     available_body_length = max(
-        max_length - estimate_x_text_length(header),
+        max_length - estimate_x_post_length(header) - estimate_x_post_length(suffix),
         0,
     )
     formatted_body = (
@@ -197,11 +194,7 @@ def format_translation_post(body_text: str, *, max_length: int) -> str:
         if available_body_length
         else ""
     )
-    return truncate_text_naturally(
-        f"{header}{formatted_body}".rstrip(),
-        max_length,
-        measure_length=estimate_x_text_length,
-    )
+    return truncate_post_text(f"{header}{formatted_body}{suffix}".rstrip(), max_length)
 
 
 def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:
@@ -221,8 +214,9 @@ def build_summary(
     source_username: str = "",
     translator: object | None = None,
 ) -> str:
-    del prefix, screen_name, tweet_id, source_username
+    del prefix
     body = build_summary_body(text, language=language, translator=translator)
     if not body:
         body = "$MU関連の注目投稿"
-    return format_translation_post(body, max_length=max_length)
+    source_url = build_source_tweet_url(screen_name, tweet_id, source_username=source_username)
+    return format_translation_post(body, source_url=source_url, max_length=max_length)
