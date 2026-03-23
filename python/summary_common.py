@@ -120,18 +120,36 @@ def extract_tweet_id(payload: object) -> str:
     return walk(payload)
 
 
+def _condense_command_output(text: str, *, max_chars: int = 400) -> str:
+    condensed = " | ".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(condensed) <= max_chars:
+        return condensed
+    return condensed[: max_chars - 3] + "..."
+
+
+def _format_command_failure(command_name: str, result: subprocess.CompletedProcess[str]) -> str:
+    parts = [f"{command_name} failed with exit code {result.returncode}."]
+    stderr = _condense_command_output(result.stderr)
+    stdout = _condense_command_output(result.stdout)
+    if stderr:
+        parts.append(f"stderr: {stderr}")
+    if stdout and stdout != stderr:
+        parts.append(f"stdout: {stdout}")
+    return " ".join(parts)
+
+
 def post_summary(tweet_text: str, twitter_bin: Path) -> str:
     if not twitter_bin.is_file():
         raise FileNotFoundError(f"twitter-cli executable not found: {twitter_bin}")
 
     auth_result = subprocess.run(
-        [str(twitter_bin), "status", "--yaml"],
+        [str(twitter_bin), "whoami", "--json"],
         capture_output=True,
         text=True,
         check=False,
     )
     if auth_result.returncode != 0:
-        raise RuntimeError("twitter-cli authentication required before posting")
+        raise RuntimeError(_format_command_failure("twitter whoami", auth_result))
 
     post_result = subprocess.run(
         [str(twitter_bin), "post", tweet_text, "--json"],
@@ -140,14 +158,15 @@ def post_summary(tweet_text: str, twitter_bin: Path) -> str:
         check=False,
     )
     if post_result.returncode != 0:
-        raise RuntimeError(post_result.stderr.strip() or "twitter post command failed")
+        raise RuntimeError(_format_command_failure("twitter post", post_result))
 
     try:
         payload = json.loads(post_result.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError(f"twitter-cli returned invalid JSON: {error}") from error
     if payload.get("ok") is not True:
-        raise RuntimeError("twitter post response did not indicate success")
+        response_summary = _condense_command_output(post_result.stdout)
+        raise RuntimeError(f"twitter post response did not indicate success: {response_summary}")
 
     tweet_id = extract_tweet_id(payload.get("data") or payload)
     if not tweet_id:

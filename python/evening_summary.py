@@ -270,13 +270,14 @@ def main() -> int:
             )
         LOGGER.info("posted evening summary tweet_id=%s", tweet_id)
         return 0
-    except Exception:
+    except Exception as error:
         if args.summary_output is not None:
             write_summary_payload(
                 args.summary_output,
                 {
                     "status": "failed_exception",
                     "date": current_jst_date().isoformat(),
+                    "error": str(error),
                 },
             )
         LOGGER.exception("evening summary failed")

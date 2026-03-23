@@ -203,6 +203,8 @@ jobs:
               )
               if payload.get("reason"):
                   lines.append(f"- Reason: `{payload.get('reason')}`")
+              if payload.get("error"):
+                  lines.append(f"- Error: `{payload.get('error')}`")
               if payload.get("expected_trade_date"):
                   lines.append(f"- Expected trade date: `{payload.get('expected_trade_date')}`")
               if payload.get("tweet_id"):
