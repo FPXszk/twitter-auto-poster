@@ -133,6 +133,76 @@ if tweet_id and tweet_id not in existing:
 PY
 }
 
+build_thread_plan_json() {
+  local post_text="$1"
+  local source_url="$2"
+  local single_post_max_length="$3"
+  local stdout_path="$4"
+  local stderr_path="$5"
+
+  PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${post_text}" "${source_url}" "${single_post_max_length}" > "${stdout_path}" 2> "${stderr_path}" <<'PY'
+import json
+import sys
+from post_summary import build_thread_posts
+
+print(
+    json.dumps(
+        build_thread_posts(
+            sys.argv[1],
+            source_url=sys.argv[2],
+            single_post_max_length=int(sys.argv[3]),
+        ),
+        ensure_ascii=False,
+    )
+)
+PY
+}
+
+count_thread_posts() {
+  local thread_posts_json="$1"
+
+  python_cmd - "${thread_posts_json}" <<'PY'
+import json
+import sys
+
+print(len(json.loads(sys.argv[1])))
+PY
+}
+
+resolve_publish_action_name() {
+  local thread_count="$1"
+  local source_reference_mode="$2"
+  local action_name="post"
+
+  if (( thread_count > 1 )); then
+    action_name="post_thread"
+  fi
+  if [[ "${source_reference_mode}" == "quote" ]]; then
+    action_name="${action_name}_quote"
+  fi
+  printf '%s\n' "${action_name}"
+}
+
+is_quote_length_error() {
+  local stdout_path="$1"
+  local stderr_path="$2"
+
+  python_cmd - "${stdout_path}" "${stderr_path}" <<'PY'
+import pathlib
+import sys
+
+combined = []
+for raw_path in sys.argv[1:]:
+    path = pathlib.Path(raw_path)
+    if path.exists():
+        combined.append(path.read_text(encoding="utf-8", errors="replace"))
+
+text = "\n".join(combined)
+raise SystemExit(0 if "Tweet needs to be a bit shorter" in text and "(186)" in text else 1)
+PY
+}
+
 publish_selected_post() {
   local category="$1"
   local post_text="$2"
@@ -159,6 +229,8 @@ publish_selected_post() {
   local action_name="post"
   local -a posted_tweet_ids=()
   local index=0
+  local planning_single_post_max_length="${single_post_max_length}"
+  local did_quote_length_fallback="false"
 
   if [[ "${source_reference_mode}" == "quote" && -z "${source_tweet_id}" ]]; then
     write_post_failure_file \
@@ -175,24 +247,11 @@ publish_selected_post() {
     thread_plan_source_url=""
   fi
 
-  PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
-    python_cmd - "${post_text}" "${thread_plan_source_url}" "${single_post_max_length}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
-import json
-import sys
-from post_summary import build_thread_posts
-
-print(
-    json.dumps(
-        build_thread_posts(
-            sys.argv[1],
-            source_url=sys.argv[2],
-            single_post_max_length=int(sys.argv[3]),
-        ),
-        ensure_ascii=False,
-    )
-)
-PY
-  exit_code=$?
+  if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
   if (( exit_code != 0 )); then
     write_post_failure_file \
       "${post_result_file}" \
@@ -208,13 +267,7 @@ PY
 
   thread_posts_json="$(cat "${thread_plan_stdout}")"
   rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
-  thread_count="$(python_cmd - "${thread_posts_json}" <<'PY'
-import json
-import sys
-
-print(len(json.loads(sys.argv[1])))
-PY
-  )"
+  thread_count="$(count_thread_posts "${thread_posts_json}")"
   if (( thread_count <= 0 )); then
     write_post_failure_file \
       "${post_result_file}" \
@@ -225,12 +278,7 @@ PY
     warn "thread plan did not produce any posts for '${category}'"
     return 1
   fi
-  if (( thread_count > 1 )); then
-    action_name="post_thread"
-  fi
-  if [[ "${source_reference_mode}" == "quote" ]]; then
-    action_name="${action_name}_quote"
-  fi
+  action_name="$(resolve_publish_action_name "${thread_count}" "${source_reference_mode}")"
 
   for ((index = 0; index < thread_count; index++)); do
     current_post_text="$(python_cmd - "${thread_posts_json}" "${index}" <<'PY'
@@ -252,6 +300,53 @@ PY
     execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_quote_tweet_id}" "${current_output_file}" "${current_stderr_file}"
     exit_code=$?
     if (( exit_code != 0 )); then
+      if [[ "${did_quote_length_fallback}" != "true" && "${source_reference_mode}" == "quote" ]] \
+        && (( thread_count == 1 )) \
+        && (( index == 0 )) \
+        && is_quote_length_error "${current_output_file}" "${current_stderr_file}"; then
+        planning_single_post_max_length="280"
+        did_quote_length_fallback="true"
+        rm -f "${current_stderr_file}" "${current_output_file}"
+
+        if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+          exit_code=0
+        else
+          exit_code=$?
+        fi
+        if (( exit_code != 0 )); then
+          write_post_failure_file \
+            "${post_result_file}" \
+            "failed to build fallback thread post plan" \
+            "${exit_code}" \
+            "${thread_plan_stdout}" \
+            "${thread_plan_stderr}"
+          response_preview="$(summarize_post_result_file "${post_result_file}")"
+          [[ -n "${response_preview}" ]] && warn "${response_preview}"
+          rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+          return 1
+        fi
+
+        thread_posts_json="$(cat "${thread_plan_stdout}")"
+        rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+        thread_count="$(count_thread_posts "${thread_posts_json}")"
+        if (( thread_count <= 1 )); then
+          write_post_failure_file \
+            "${post_result_file}" \
+            "fallback thread plan still produced a single post" \
+            "1" \
+            "/dev/null" \
+            "/dev/null"
+          warn "fallback thread plan did not split '${category}' into multiple posts"
+          return 1
+        fi
+
+        action_name="$(resolve_publish_action_name "${thread_count}" "${source_reference_mode}")"
+        posted_tweet_ids=()
+        reply_to_id=""
+        index=-1
+        continue
+      fi
+
       write_post_failure_file \
         "${post_result_file}" \
         "twitter post command failed for thread segment $((index + 1))" \
