@@ -11,6 +11,7 @@ SUMMARY_HEADER = "【👀 要約】"
 SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
 X_SHORT_URL_LENGTH = 23
+MAX_X_POST_LENGTH = 280
 SENTENCE_BOUNDARY_CHARS = "。！？!?\n"
 TRAILING_CLOSERS = "」』）】〉》〕〗〙〛\"'”’ \t\r\n"
 
@@ -183,10 +184,11 @@ def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: 
 
 
 def format_translation_post(body_text: str, *, source_url: str, max_length: int) -> str:
+    effective_max_length = max(min(max_length, MAX_X_POST_LENGTH), 0)
     header = f"{SUMMARY_HEADER}\n\n"
     suffix = f"\n\n{SUMMARY_SEPARATOR}\n{source_url}" if source_url else ""
     available_body_length = max(
-        max_length - estimate_x_post_length(header) - estimate_x_post_length(suffix),
+        effective_max_length - estimate_x_post_length(header) - estimate_x_post_length(suffix),
         0,
     )
     formatted_body = (
@@ -194,7 +196,7 @@ def format_translation_post(body_text: str, *, source_url: str, max_length: int)
         if available_body_length
         else ""
     )
-    return truncate_post_text(f"{header}{formatted_body}{suffix}".rstrip(), max_length)
+    return truncate_post_text(f"{header}{formatted_body}{suffix}".rstrip(), effective_max_length)
 
 
 def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:

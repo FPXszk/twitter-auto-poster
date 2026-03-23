@@ -76,7 +76,7 @@ sources:
 - `max_candidates`: integer, `> 0`
 - `summary_prefix`: string
 - `summary_language`: `ja | raw`
-- `summary_max_length`: integer, `> 0`
+- `summary_max_length`: integer, `1..280`
 - `state_file`: string
 - `selection_mode`: `score | round_robin`
 - `rotation_state_file`: string
@@ -105,7 +105,7 @@ defaults:
   dry_run: true
   summary_prefix: "Xで反応上位: "
   summary_language: "ja"
-  summary_max_length: 2000
+  summary_max_length: 280
   score_weights:
     likes: 1
     retweets: 1

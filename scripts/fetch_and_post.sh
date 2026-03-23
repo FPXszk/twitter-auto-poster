@@ -310,7 +310,7 @@ candidates = []
 
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
-summary_max_length = int(account.get("summary_max_length") or 2000)
+summary_max_length = int(account.get("summary_max_length") or 280)
 selection_mode = str(account.get("selection_mode") or "score")
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}

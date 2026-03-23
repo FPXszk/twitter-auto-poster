@@ -399,8 +399,12 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
 
     if "max_candidates" in block and int(block["max_candidates"]) <= 0:
         raise SystemExit(f"{label}.max_candidates must be > 0")
-    if "summary_max_length" in block and int(block["summary_max_length"]) <= 0:
-        raise SystemExit(f"{label}.summary_max_length must be > 0")
+    if "summary_max_length" in block:
+        summary_max_length = int(block["summary_max_length"])
+        if summary_max_length <= 0:
+            raise SystemExit(f"{label}.summary_max_length must be > 0")
+        if summary_max_length > 280:
+            raise SystemExit(f"{label}.summary_max_length must be <= 280")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
@@ -572,7 +576,7 @@ payload = {
         or "Xで反応上位: "
     ),
     "summary_language": str(account.get("summary_language") or defaults.get("summary_language") or "ja"),
-    "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 2000),
+    "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 280),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),

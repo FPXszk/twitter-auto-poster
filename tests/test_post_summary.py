@@ -131,7 +131,7 @@ class PostSummaryTest(TestCase):
             post_summary.X_SHORT_URL_LENGTH,
         )
 
-    def test_build_summary_fits_weighted_length_for_long_japanese_translation(self) -> None:
+    def test_build_summary_caps_length_to_x_limit(self) -> None:
         summary = post_summary.build_summary(
             "Apple stock rises 3% after strong earnings report",
             prefix="Xで反応上位: ",
@@ -142,8 +142,8 @@ class PostSummaryTest(TestCase):
             translator=FakeTranslator(text="あ" * 700),
         )
 
-        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 2000)
-        self.assertIn("あ" * 700, summary)
+        self.assertLessEqual(post_summary.estimate_x_post_length(summary), post_summary.MAX_X_POST_LENGTH)
+        self.assertNotIn("あ" * 700, summary)
         self.assertIn("https://x.com/AppleNews/status/1234567890", summary)
 
     def test_truncate_post_text_keeps_url_atomic(self) -> None:

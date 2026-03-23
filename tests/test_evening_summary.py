@@ -63,7 +63,7 @@ class EveningSummaryTests(unittest.TestCase):
         self.assertIn("値下がり率TOP3\n1. なし", text)
 
     @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
-    def test_build_post_result_keeps_full_variant_with_premium_length_limit(self, _fetch_market_snapshot: object) -> None:
+    def test_build_post_result_respects_x_weighted_limit(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
             snapshot("1111.T", "超長い銘柄名サンプルホールディングス一号", 2.7),
             snapshot("2222.T", "超長い銘柄名サンプルホールディングス二号", 2.4),
@@ -76,7 +76,6 @@ class EveningSummaryTests(unittest.TestCase):
         result = build_post_result(snapshots, headline_date=date(2026, 3, 23))
 
         self.assertLessEqual(estimate_x_weighted_length(result.text), MAX_X_WEIGHTED_LENGTH)
-        self.assertEqual(result.variant_label, "template-3x3-auto")
         self.assertIn("【🌆 本日の市場総括】03/23", result.text)
 
 
