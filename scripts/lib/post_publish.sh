@@ -139,9 +139,10 @@ publish_selected_post() {
   local source_tweet_id="$3"
   local source_url="$4"
   local source_reference_mode="${5:-url}"
-  local state_file="$6"
-  local source_state_file="$7"
-  local post_result_file="$8"
+  local single_post_max_length="${6:-280}"
+  local state_file="$7"
+  local source_state_file="$8"
+  local post_result_file="$9"
   local thread_plan_stdout="${post_result_file}.plan.stdout"
   local thread_plan_stderr="${post_result_file}.plan.stderr"
   local thread_plan_source_url="${source_url}"
@@ -175,12 +176,21 @@ publish_selected_post() {
   fi
 
   PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
-    python_cmd - "${post_text}" "${thread_plan_source_url}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
+    python_cmd - "${post_text}" "${thread_plan_source_url}" "${single_post_max_length}" > "${thread_plan_stdout}" 2> "${thread_plan_stderr}" <<'PY'
 import json
 import sys
 from post_summary import build_thread_posts
 
-print(json.dumps(build_thread_posts(sys.argv[1], source_url=sys.argv[2]), ensure_ascii=False))
+print(
+    json.dumps(
+        build_thread_posts(
+            sys.argv[1],
+            source_url=sys.argv[2],
+            single_post_max_length=int(sys.argv[3]),
+        ),
+        ensure_ascii=False,
+    )
+)
 PY
   exit_code=$?
   if (( exit_code != 0 )); then

@@ -109,6 +109,18 @@ class PostSummaryTest(TestCase):
             "【👀 要約】\n\n短い要約です。\n🔗 https://x.com/AppleNews/status/1234567890",
         )
 
+    def test_build_thread_posts_single_post_can_use_extended_single_post_limit(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "【👀 要約】\n\n" + ("a" * 180) + "。" + ("b" * 140) + "。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+            single_post_max_length=4000,
+        )
+
+        self.assertEqual(len(posts), 1)
+        self.assertGreater(post_summary.estimate_x_post_length(posts[0]), post_summary.MAX_X_POST_LENGTH)
+        self.assertLessEqual(post_summary.estimate_x_post_length(posts[0]), 4000)
+        self.assertTrue(posts[0].endswith("https://x.com/AppleNews/status/1234567890"))
+
     def test_build_summary_never_exceeds_max_length(self) -> None:
         summary = post_summary.build_summary(
             "Apple stock rises 3% after strong earnings report",
@@ -206,6 +218,19 @@ class PostSummaryTest(TestCase):
         self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
         self.assertNotIn("🔗", posts[0])
         self.assertTrue(posts[1].endswith("https://x.com/AppleNews/status/1234567890"))
+        for item in posts:
+            self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
+
+    def test_build_thread_posts_keeps_thread_segment_limit_when_single_post_limit_is_custom(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "【👀 要約】\n\n" + ("a" * 150) + "。" + ("b" * 150) + "。" + ("c" * 150) + "。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+            single_post_max_length=320,
+        )
+
+        self.assertEqual(len(posts), 3)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertTrue(posts[-1].endswith("https://x.com/AppleNews/status/1234567890"))
         for item in posts:
             self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
 

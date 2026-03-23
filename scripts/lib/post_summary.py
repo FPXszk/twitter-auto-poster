@@ -313,6 +313,7 @@ def build_thread_posts(
     *,
     source_url: str,
     max_body_length: int = THREAD_BODY_MAX_LENGTH,
+    single_post_max_length: int = MAX_X_POST_LENGTH,
     max_posts: int = MAX_THREAD_TWEETS,
 ) -> list[str]:
     normalized = text.strip()
@@ -320,7 +321,7 @@ def build_thread_posts(
         raise ValueError("thread text is empty")
 
     single_post = compose_source_link_post(normalized, source_url=source_url)
-    if _fits_body_text(normalized, max_body_length) and _fits_post_text(single_post):
+    if _fits_post_text(single_post, single_post_max_length):
         return [single_post]
 
     def first_predicate(candidate: str) -> bool:

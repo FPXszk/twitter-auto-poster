@@ -314,6 +314,7 @@ PY
 - `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
 - `post_invest.yml` は source 順の round-robin で候補を選び、`tmp/state/invest-robin.txt` に前回投稿アカウント名を保存します
 - 選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
+- `fetch_and_post.sh` の実投稿は、要約が短ければ元ツイート URL 付きの単発投稿、長ければ最大 5 ツイートの reply-chain スレッド投稿になります
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します
@@ -376,6 +377,7 @@ PY
 - `summary_prefix`
 - `summary_language`
 - `summary_max_length`
+- `single_post_max_length`
 - `state_file`
 - `selection_mode`
 - `rotation_state_file`

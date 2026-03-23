@@ -405,6 +405,12 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
             raise SystemExit(f"{label}.summary_max_length must be > 0")
         if summary_max_length > 280:
             raise SystemExit(f"{label}.summary_max_length must be <= 280")
+    if "single_post_max_length" in block:
+        single_post_max_length = int(block["single_post_max_length"])
+        if single_post_max_length <= 0:
+            raise SystemExit(f"{label}.single_post_max_length must be > 0")
+        if single_post_max_length > 25000:
+            raise SystemExit(f"{label}.single_post_max_length must be <= 25000")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
@@ -579,6 +585,7 @@ payload = {
     ),
     "summary_language": str(account.get("summary_language") or defaults.get("summary_language") or "ja"),
     "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 280),
+    "single_post_max_length": int(account.get("single_post_max_length") or defaults.get("single_post_max_length") or 280),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
     "source_reference_mode": str(account.get("source_reference_mode") or defaults.get("source_reference_mode") or "url"),

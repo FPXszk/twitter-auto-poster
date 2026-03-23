@@ -195,6 +195,7 @@ main() {
   local selection_mode=""
   local selected_source_name=""
   local source_reference_mode="url"
+  local single_post_max_length="280"
   local source_root=""
   local source_url=""
   local payload_count=""
@@ -280,6 +281,14 @@ import sys
 
 payload = json.loads(sys.argv[1])
 print(str(payload.get("source_reference_mode") or "url").strip().lower())
+PY
+  )"
+  single_post_max_length="$(python_cmd - "${account_json}" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(int(payload.get("single_post_max_length") or 280))
 PY
   )"
 
@@ -462,6 +471,7 @@ payload = {
     "selected_candidates": selected_candidates,
     "selection_mode": selection_mode,
     "source_reference_mode": source_reference_mode,
+    "single_post_max_length": int(account.get("single_post_max_length") or 280),
     "rotation": rotation,
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
@@ -553,7 +563,7 @@ PY
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
+  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${single_post_max_length}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
     post_error="$(summarize_post_result_file "${post_result_file}")"
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
     exit 1

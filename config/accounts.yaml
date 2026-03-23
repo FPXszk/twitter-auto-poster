@@ -2,6 +2,7 @@
 # - dry_run: post_invest workflow とローカル実行の既定モードの設定元
 # - state_file: 空文字なら `tmp/state/<category>-posted.txt`、相対パスなら output-dir 配下に解決
 # - summary_*: 候補本文を作るときの接頭辞・言語・最大文字数
+# - single_post_max_length: 単発投稿時のみ使う上限。280超は Premium 前提
 # - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
 # - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点）
 defaults:
@@ -11,6 +12,7 @@ defaults:
   summary_prefix: "Xで反応上位: "
   summary_language: "ja"
   summary_max_length: 280
+  single_post_max_length: 280
   state_file: ""
   selection_mode: "score"
   rotation_state_file: ""
@@ -31,6 +33,7 @@ accounts:
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
     summary_max_length: 280
+    single_post_max_length: 4000
     selection_mode: "round_robin"
     source_reference_mode: "quote"
     state_file: "state/invest-posted.txt"
