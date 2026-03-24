@@ -48,7 +48,7 @@ class CopilotSummaryTest(TestCase):
         def fake_runner(command: list[str], *, working_directory: object | None = None) -> SimpleNamespace:
             captured["command"] = command
             captured["working_directory"] = working_directory
-            return SimpleNamespace(stdout="要約結果")
+            return SimpleNamespace(stdout="要約結果", stderr="")
 
         summary = copilot_summary.summarize_to_japanese(
             "Original tweet body",
@@ -65,7 +65,7 @@ class CopilotSummaryTest(TestCase):
 
     def test_summarize_to_japanese_raises_when_copilot_returns_empty_output(self) -> None:
         def fake_runner(command: list[str], *, working_directory: object | None = None) -> SimpleNamespace:
-            return SimpleNamespace(stdout="   ")
+            return SimpleNamespace(stdout="   ", stderr="")
 
         with self.assertRaisesRegex(RuntimeError, "empty summary"):
             copilot_summary.summarize_to_japanese(
@@ -86,6 +86,18 @@ class CopilotSummaryTest(TestCase):
                 "Original tweet body",
                 command_runner=failing_runner,
             )
+
+    def test_summarize_to_japanese_result_collects_usage_lines_from_stderr(self) -> None:
+        result = copilot_summary.summarize_to_japanese_result(
+            "Original tweet body",
+            command_runner=lambda command, *, working_directory=None: SimpleNamespace(
+                stdout="要約結果",
+                stderr="Used 1 premium request\nRemaining quota: 99",
+            ),
+        )
+
+        self.assertEqual(result.summary, "要約結果")
+        self.assertEqual(result.usage_lines, ["Used 1 premium request", "Remaining quota: 99"])
 
 
 if __name__ == "__main__":

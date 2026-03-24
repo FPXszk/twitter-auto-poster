@@ -451,6 +451,7 @@ selected_candidates, rotation = select_candidates(
 selected = selected_candidates[0] if selected_candidates else None
 post_text = ""
 source_url = ""
+summary_generation = {}
 if selected:
     source_url = build_source_tweet_url(
         selected["screen_name"],
@@ -465,8 +466,11 @@ if selected:
         copilot_model=summary_model,
         copilot_prompt_path=summary_prompt_path,
         working_directory=pathlib.Path.cwd(),
+        diagnostics_sink=summary_generation,
     )
     selected["summary_text"] = post_text
+    if summary_generation:
+        selected["summary_generation"] = summary_generation
 
 payload = {
     "category": category,
@@ -478,6 +482,7 @@ payload = {
     "source_url": source_url,
     "selected": selected,
     "selected_candidates": selected_candidates,
+    "summary_generation": summary_generation or None,
     "selection_mode": selection_mode,
     "source_reference_mode": source_reference_mode,
     "single_post_max_length": int(account.get("single_post_max_length") or 280),

@@ -33,9 +33,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_FUTURES_TICKER = "NKD=F"
-MAX_X_WEIGHTED_LENGTH = 4000
+MAX_X_WEIGHTED_LENGTH = 280
 DEFAULT_BREAKOUT_COUNT = 8
-NAME_LIMIT_FALLBACKS = (None, 12, 10, 8)
+NAME_LIMIT_FALLBACKS = (None, 12, 10, 8, 6, 4)
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -52,6 +52,13 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def weighted_length_cap(value: str) -> int:
+    parsed = positive_int(value)
+    if parsed > MAX_X_WEIGHTED_LENGTH:
+        raise argparse.ArgumentTypeError(f"must be <= {MAX_X_WEIGHTED_LENGTH}")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Post the morning Japanese stock summary.")
     parser.add_argument("--dry-run", action="store_true")
@@ -60,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
-    parser.add_argument("--max-weighted-length", type=positive_int, default=MAX_X_WEIGHTED_LENGTH)
+    parser.add_argument("--max-weighted-length", type=weighted_length_cap, default=MAX_X_WEIGHTED_LENGTH)
     parser.add_argument("--breakout-count", type=positive_int, default=DEFAULT_BREAKOUT_COUNT)
     parser.add_argument("--summary-output", type=Path)
     parser.add_argument("--log-level", default="INFO")
@@ -113,6 +120,27 @@ def render_post_text(
     )
 
 
+def build_morning_variant_specs(
+    *,
+    breakout_items: Sequence[StockSnapshot],
+    breakout_count: int,
+) -> list[dict[str, object]]:
+    breakout_count_options = list(
+        dict.fromkeys([breakout_count, min(breakout_count, 6), min(breakout_count, 5), min(breakout_count, 4), min(breakout_count, 3), min(breakout_count, 2), 1])
+    )
+    variant_specs: list[dict[str, object]] = []
+
+    for resolved_breakout_count in breakout_count_options:
+        variant_specs.extend(
+            build_name_limited_variant_specs(
+                label_prefix=f"template-{resolved_breakout_count}",
+                base_kwargs={"breakout_items": breakout_items[:resolved_breakout_count]},
+                name_limits=NAME_LIMIT_FALLBACKS,
+            )
+        )
+    return variant_specs
+
+
 def build_post_result(
     snapshots: Sequence[StockSnapshot],
     headline_date: date | None = None,
@@ -134,10 +162,9 @@ def build_post_result(
             futures_change=futures_change,
             **kwargs,
         ),
-        variant_specs=build_name_limited_variant_specs(
-            label_prefix=f"template-{breakout_count}",
-            base_kwargs={"breakout_items": breakout_top},
-            name_limits=NAME_LIMIT_FALLBACKS,
+        variant_specs=build_morning_variant_specs(
+            breakout_items=breakout_top,
+            breakout_count=breakout_count,
         ),
     )
     return pick_fitting_variant(

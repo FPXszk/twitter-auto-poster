@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 LOGGER = logging.getLogger(__name__)
+MAX_TWITTER_CLI_POST_LENGTH = 280
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,11 @@ def _format_command_failure(command_name: str, result: subprocess.CompletedProce
 def post_summary(tweet_text: str, twitter_bin: Path) -> str:
     if not twitter_bin.is_file():
         raise FileNotFoundError(f"twitter-cli executable not found: {twitter_bin}")
+    tweet_length = estimate_x_weighted_length(tweet_text)
+    if tweet_length > MAX_TWITTER_CLI_POST_LENGTH:
+        raise ValueError(
+            f"twitter post text exceeds {MAX_TWITTER_CLI_POST_LENGTH} weighted chars ({tweet_length})"
+        )
 
     auth_result = subprocess.run(
         [str(twitter_bin), "whoami", "--json"],

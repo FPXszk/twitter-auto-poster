@@ -38,7 +38,7 @@ on:
         default: ""
         type: string
       max_weighted_length:
-        description: Override weighted length cap for this manual run
+        description: Override weighted length cap for this manual run (max 280)
         required: false
         default: ""
         type: string

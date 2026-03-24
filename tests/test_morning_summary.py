@@ -94,6 +94,7 @@ class MorningSummaryTests(unittest.TestCase):
 
         self.assertLessEqual(estimate_x_weighted_length(result.text), MAX_X_WEIGHTED_LENGTH)
         self.assertIn("【🌅 本日の注目銘柄】03/23", result.text)
+        self.assertIn("8. 超長い銘", result.text)
 
 
 if __name__ == "__main__":

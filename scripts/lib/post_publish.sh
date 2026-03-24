@@ -260,6 +260,10 @@ publish_selected_post() {
     return 1
   fi
 
+  if (( planning_single_post_max_length > 280 )); then
+    planning_single_post_max_length="280"
+  fi
+
   if [[ "${effective_source_reference_mode}" == "quote" ]]; then
     thread_plan_source_url=""
   fi

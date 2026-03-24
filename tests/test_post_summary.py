@@ -121,17 +121,18 @@ class PostSummaryTest(TestCase):
             "短い要約です。\n🔗 https://x.com/AppleNews/status/1234567890",
         )
 
-    def test_build_thread_posts_single_post_can_use_extended_single_post_limit(self) -> None:
+    def test_build_thread_posts_caps_single_post_limit_at_280(self) -> None:
         posts = post_summary.build_thread_posts(
             ("a" * 180) + "。" + ("b" * 140) + "。",
             source_url="https://x.com/AppleNews/status/1234567890",
             single_post_max_length=4000,
         )
 
-        self.assertEqual(len(posts), 1)
-        self.assertGreater(post_summary.estimate_x_post_length(posts[0]), post_summary.MAX_X_POST_LENGTH)
-        self.assertLessEqual(post_summary.estimate_x_post_length(posts[0]), 4000)
-        self.assertTrue(posts[0].endswith("https://x.com/AppleNews/status/1234567890"))
+        self.assertEqual(len(posts), 2)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertTrue(posts[-1].endswith("https://x.com/AppleNews/status/1234567890"))
+        for item in posts:
+            self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
 
     def test_build_summary_never_exceeds_max_length(self) -> None:
         summary = post_summary.build_summary(
@@ -235,8 +236,9 @@ class PostSummaryTest(TestCase):
 
     def test_build_thread_summary_can_use_copilot_provider(self) -> None:
         class FakeCompletedProcess:
-            def __init__(self, stdout: str) -> None:
+            def __init__(self, stdout: str, stderr: str = "") -> None:
                 self.stdout = stdout
+                self.stderr = stderr
 
         def fake_command_runner(command: list[str], *, working_directory: object | None = None) -> FakeCompletedProcess:
             self.assertEqual(command[:4], ["copilot", "--model", "gpt-5-mini", "-p"])
@@ -253,6 +255,31 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertEqual(summary, "🚨速報\n要約本文")
+
+    def test_build_thread_summary_can_capture_copilot_usage_diagnostics(self) -> None:
+        diagnostics: dict[str, object] = {}
+
+        class FakeCompletedProcess:
+            def __init__(self, stdout: str, stderr: str) -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+
+        summary = post_summary.build_thread_summary(
+            "Apple stock rises 3% after strong earnings report",
+            language="ja",
+            provider="copilot_cli",
+            copilot_model="gpt-5-mini",
+            command_runner=lambda command, *, working_directory=None: FakeCompletedProcess(
+                "🚨速報\n要約本文",
+                "Used 1 premium request\nRemaining quota: 99",
+            ),
+            diagnostics_sink=diagnostics,
+        )
+
+        self.assertEqual(summary, "🚨速報\n要約本文")
+        self.assertEqual(diagnostics["provider"], "copilot_cli")
+        self.assertEqual(diagnostics["model"], "gpt-5-mini")
+        self.assertEqual(diagnostics["usage_lines"], ["Used 1 premium request", "Remaining quota: 99"])
 
     def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
         posts = post_summary.build_thread_posts(

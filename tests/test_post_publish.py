@@ -21,12 +21,13 @@ class PostPublishTest(TestCase):
             check=False,
         )
 
-    def test_publish_selected_post_falls_back_to_thread_after_url_single_post_186(self) -> None:
+    def test_publish_selected_post_caps_single_post_limit_and_falls_back_after_186(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             result_path = temp_path / "post-result.json"
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
+            limits_path = temp_path / "single-post-limits.txt"
 
             result = self.run_bash(
                 f'''
@@ -38,6 +39,7 @@ class PostPublishTest(TestCase):
                 }}
 
                 post_calls=0
+                build_plan_calls=0
 
                 build_thread_plan_json() {{
                   local post_text="$1"
@@ -46,17 +48,15 @@ class PostPublishTest(TestCase):
                   local stdout_path="$4"
                   local stderr_path="$5"
 
-                  if [[ "${{single_post_max_length}}" == "4000" && -z "${{source_url}}" ]]; then
+                  printf '%s\n' "${{single_post_max_length}}" >> "{limits_path}"
+                  build_plan_calls=$((build_plan_calls + 1))
+
+                  if (( build_plan_calls == 1 )); then
                     printf '%s' '["quote-single-post"]' > "${{stdout_path}}"
                     : > "${{stderr_path}}"
                     return 0
                   fi
-                  if [[ "${{single_post_max_length}}" == "4000" && -n "${{source_url}}" ]]; then
-                    printf '%s' '["url-single-post"]' > "${{stdout_path}}"
-                    : > "${{stderr_path}}"
-                    return 0
-                  fi
-                  if [[ "${{single_post_max_length}}" == "280" ]]; then
+                  if (( build_plan_calls == 2 )); then
                     printf '%s' '["thread-part-1","thread-part-2"]' > "${{stdout_path}}"
                     : > "${{stderr_path}}"
                     return 0
@@ -74,7 +74,7 @@ PY
                 }}
 
                 estimate_thread_post_length() {{
-                  printf '300\\n'
+                  printf '280\\n'
                 }}
 
                 execute_twitter_post() {{
@@ -131,6 +131,7 @@ PY
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertIn("status=0", result.stdout, msg=result.stderr)
             self.assertIn("post_calls=3", result.stdout, msg=result.stderr)
+            self.assertEqual(limits_path.read_text(encoding="utf-8").splitlines(), ["280", "280"])
 
             payload = json.loads(result_path.read_text(encoding="utf-8"))
             self.assertTrue(payload["ok"])

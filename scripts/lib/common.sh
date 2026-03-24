@@ -409,8 +409,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         single_post_max_length = int(block["single_post_max_length"])
         if single_post_max_length <= 0:
             raise SystemExit(f"{label}.single_post_max_length must be > 0")
-        if single_post_max_length > 25000:
-            raise SystemExit(f"{label}.single_post_max_length must be <= 25000")
+        if single_post_max_length > 280:
+            raise SystemExit(f"{label}.single_post_max_length must be <= 280")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:

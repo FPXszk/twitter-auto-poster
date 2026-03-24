@@ -33,10 +33,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_CLOSE_TICKER = "^N225"
-MAX_X_WEIGHTED_LENGTH = 4000
+MAX_X_WEIGHTED_LENGTH = 280
 DEFAULT_GAINERS_COUNT = 5
 DEFAULT_LOSERS_COUNT = 5
-NAME_LIMIT_FALLBACKS = (None, 12, 10, 8)
+NAME_LIMIT_FALLBACKS = (None, 12, 10, 8, 6, 4)
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -53,6 +53,13 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def weighted_length_cap(value: str) -> int:
+    parsed = positive_int(value)
+    if parsed > MAX_X_WEIGHTED_LENGTH:
+        raise argparse.ArgumentTypeError(f"must be <= {MAX_X_WEIGHTED_LENGTH}")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Post the evening Japanese stock summary.")
     parser.add_argument("--dry-run", action="store_true")
@@ -61,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
-    parser.add_argument("--max-weighted-length", type=positive_int, default=MAX_X_WEIGHTED_LENGTH)
+    parser.add_argument("--max-weighted-length", type=weighted_length_cap, default=MAX_X_WEIGHTED_LENGTH)
     parser.add_argument("--gainers-count", type=positive_int, default=DEFAULT_GAINERS_COUNT)
     parser.add_argument("--losers-count", type=positive_int, default=DEFAULT_LOSERS_COUNT)
     parser.add_argument("--summary-output", type=Path)
@@ -126,6 +133,34 @@ def render_post_text(
     )
 
 
+def build_evening_variant_specs(
+    *,
+    gainers: Sequence[StockSnapshot],
+    losers: Sequence[StockSnapshot],
+    gainers_count: int,
+    losers_count: int,
+) -> list[dict[str, object]]:
+    gainers_count_options = list(dict.fromkeys([gainers_count, min(gainers_count, 4), min(gainers_count, 3), min(gainers_count, 2), 1]))
+    losers_count_options = list(dict.fromkeys([losers_count, min(losers_count, 4), min(losers_count, 3), min(losers_count, 2), 1]))
+    variant_specs: list[dict[str, object]] = []
+
+    for resolved_gainers_count in gainers_count_options:
+        for resolved_losers_count in losers_count_options:
+            variant_specs.extend(
+                build_name_limited_variant_specs(
+                    label_prefix=f"template-{resolved_gainers_count}x{resolved_losers_count}",
+                    base_kwargs={
+                        "gainers": gainers[:resolved_gainers_count],
+                        "losers": losers[:resolved_losers_count],
+                        "gainers_label_count": resolved_gainers_count,
+                        "losers_label_count": resolved_losers_count,
+                    },
+                    name_limits=NAME_LIMIT_FALLBACKS,
+                )
+            )
+    return variant_specs
+
+
 def build_post_result(
     snapshots: Sequence[StockSnapshot],
     headline_date: date | None = None,
@@ -150,14 +185,13 @@ def build_post_result(
             display_date=display_date,
             nikkei_price=nikkei_price,
             nikkei_change=nikkei_change,
-            gainers_label_count=gainers_count,
-            losers_label_count=losers_count,
             **kwargs,
         ),
-        variant_specs=build_name_limited_variant_specs(
-            label_prefix=f"template-{gainers_count}x{losers_count}",
-            base_kwargs={"gainers": gainers, "losers": losers},
-            name_limits=NAME_LIMIT_FALLBACKS,
+        variant_specs=build_evening_variant_specs(
+            gainers=gainers,
+            losers=losers,
+            gainers_count=gainers_count,
+            losers_count=losers_count,
         ),
     )
     return pick_fitting_variant(

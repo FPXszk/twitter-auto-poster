@@ -15,7 +15,7 @@
 5. 対象 category の設定が live-post のときだけ `twitter post` を実行する
 6. 日本株サマリーでは `yfinance` で東証プライム銘柄を集計し、朝夕の要約を投稿する
 
-朝夕の投稿文面は `docs/POSTING_STRATEGY.md` を主基準とし、X Premium 前提で全文を組み立てつつ、タイムラインで見える冒頭140字のフックを重視します。
+朝夕の投稿文面は `docs/POSTING_STRATEGY.md` を主基準とし、通常の `twitter-cli` 投稿経路で live 投稿できる 280 weighted chars 制限を守りつつ、タイムラインで見える冒頭140字のフックを重視します。
 
 ## ディレクトリ構成
 
@@ -244,7 +244,7 @@ python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.j
 
 `tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
 
-朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位 8 銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP5` / `値下がり率TOP5` を出力します。どちらも Premium 前提の長文単発投稿として最大 4000 文字級まで組み立てます。手動実行では件数と weighted length 上限を一時 override でき、GitHub Actions の summary では全文に加えて先頭140文字の preview と実際に使った rendering 設定も確認できます。
+朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP` / `値下がり率TOP` を出力します。どちらも通常投稿経路で live 投稿できるよう既定では 280 weighted chars 以内に収まる variant を選び、必要に応じて件数や銘柄名を compact 化します。手動実行では件数と weighted length 上限を一時 override でき、GitHub Actions の summary では全文に加えて先頭140文字の preview と実際に使った rendering 設定も確認できます。
 
 ### auto follow を手動確認する
 
@@ -419,6 +419,8 @@ PY
 - `filters`
 
 `post_invest.yml` はこの `dry_run` を読んで実行モードを決め、`selection_mode: round_robin` のときは `rotation_state_file` を使って前回投稿アカウント名を保持します。
+
+`single_post_max_length` は単発投稿を thread に分けずに送れる上限で、`twitter-cli` の実投稿制限に合わせて 280 を上限にします。
 
 ## 運用上の注意
 

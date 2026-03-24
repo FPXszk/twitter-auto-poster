@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import subprocess
 from pathlib import Path
 from typing import Callable, Protocol
@@ -23,9 +24,35 @@ DEFAULT_PROMPT_TEMPLATE = """以下の投稿を日本語で簡潔に要約し、
 
 class CommandResult(Protocol):
     stdout: str | None
+    stderr: str | None
 
 
 CommandRunner = Callable[..., CommandResult]
+
+
+@dataclass(frozen=True)
+class CopilotSummaryResult:
+    summary: str
+    stderr: str
+    usage_lines: list[str]
+
+
+def extract_usage_lines(*texts: str) -> list[str]:
+    matched_lines: list[str] = []
+    seen = set()
+    keywords = ("premium", "request", "usage", "quota")
+    for text in texts:
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if not any(keyword in line.lower() for keyword in keywords):
+                continue
+            if line in seen:
+                continue
+            matched_lines.append(line)
+            seen.add(line)
+    return matched_lines
 
 
 def resolve_prompt_path(prompt_path: str, *, working_directory: str | Path | None = None) -> Path:
@@ -71,7 +98,7 @@ def run_copilot_command(
     )
 
 
-def summarize_to_japanese(
+def summarize_to_japanese_result(
     text: str,
     *,
     model: str = DEFAULT_COPILOT_MODEL,
@@ -100,4 +127,26 @@ def summarize_to_japanese(
     summary = str(getattr(result, "stdout", "") or "").strip()
     if not summary:
         raise RuntimeError("copilot CLI returned empty summary")
-    return summary
+    stderr = str(getattr(result, "stderr", "") or "").strip()
+    return CopilotSummaryResult(
+        summary=summary,
+        stderr=stderr,
+        usage_lines=extract_usage_lines(summary, stderr),
+    )
+
+
+def summarize_to_japanese(
+    text: str,
+    *,
+    model: str = DEFAULT_COPILOT_MODEL,
+    prompt_path: str = "",
+    command_runner: CommandRunner | None = None,
+    working_directory: str | Path | None = None,
+) -> str:
+    return summarize_to_japanese_result(
+        text,
+        model=model,
+        prompt_path=prompt_path,
+        command_runner=command_runner,
+        working_directory=working_directory,
+    ).summary

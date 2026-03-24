@@ -4,7 +4,7 @@
 # - summary_*: 候補本文を作るときの接頭辞・言語・最大文字数
 # - summary_provider: `legacy_google_translate` または `copilot_cli`
 # - summary_model / summary_prompt_path: copilot provider 用のモデルと指示文
-# - single_post_max_length: 単発投稿時のみ使う上限。280超は Premium 前提
+# - single_post_max_length: 単発投稿の上限。twitter-cli 実投稿経路に合わせて 280 以内
 # - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
 # - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点）
 defaults:
@@ -41,7 +41,7 @@ accounts:
     summary_model: "gpt-5-mini"
     summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     summary_max_length: 280
-    single_post_max_length: 4000
+    single_post_max_length: 280
     selection_mode: "round_robin"
     source_reference_mode: "quote"
     state_file: "state/invest-posted.txt"

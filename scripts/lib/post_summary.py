@@ -5,7 +5,7 @@ import unicodedata
 from pathlib import Path
 from typing import Callable
 
-from copilot_summary import DEFAULT_COPILOT_MODEL, summarize_to_japanese as summarize_with_copilot_cli
+from copilot_summary import DEFAULT_COPILOT_MODEL, summarize_to_japanese_result as summarize_with_copilot_cli_result
 from google_translate_summary import translate_to_japanese as translate_with_legacy_google_translate
 
 SUMMARY_SEPARATOR = "---"
@@ -335,9 +335,12 @@ def build_thread_posts(
     normalized = text.strip()
     if not normalized:
         raise ValueError("thread text is empty")
+    if single_post_max_length <= 0:
+        raise ValueError("single_post_max_length must be > 0")
+    resolved_single_post_max_length = min(single_post_max_length, MAX_X_POST_LENGTH)
 
     single_post = compose_source_link_post(normalized, source_url=source_url)
-    if _fits_post_text(single_post, single_post_max_length):
+    if _fits_post_text(single_post, resolved_single_post_max_length):
         return [single_post]
 
     def first_predicate(candidate: str) -> bool:
@@ -402,6 +405,7 @@ def build_summary_body(
     copilot_prompt_path: str = "",
     command_runner: Callable[..., object] | None = None,
     working_directory: str | Path | None = None,
+    diagnostics_sink: dict[str, object] | None = None,
 ) -> str:
     cleaned = clean_post_source_text(text)
     if language == "raw":
@@ -413,13 +417,24 @@ def build_summary_body(
     if resolved_provider == DEFAULT_SUMMARY_PROVIDER:
         return translate_with_legacy_google_translate(cleaned, translator=translator)
 
-    return summarize_with_copilot_cli(
+    result = summarize_with_copilot_cli_result(
         cleaned,
         model=copilot_model,
         prompt_path=copilot_prompt_path,
         command_runner=command_runner,
         working_directory=working_directory,
     )
+    if diagnostics_sink is not None:
+        diagnostics_sink.clear()
+        diagnostics_sink.update(
+            {
+                "provider": resolved_provider,
+                "model": copilot_model or DEFAULT_COPILOT_MODEL,
+                "stderr": result.stderr,
+                "usage_lines": result.usage_lines,
+            }
+        )
+    return result.summary
 
 
 def build_summary(
@@ -437,6 +452,7 @@ def build_summary(
     copilot_prompt_path: str = "",
     command_runner: Callable[..., object] | None = None,
     working_directory: str | Path | None = None,
+    diagnostics_sink: dict[str, object] | None = None,
 ) -> str:
     del prefix, screen_name, tweet_id, source_username
     body = build_summary_body(
@@ -448,6 +464,7 @@ def build_summary(
         copilot_prompt_path=copilot_prompt_path,
         command_runner=command_runner,
         working_directory=working_directory,
+        diagnostics_sink=diagnostics_sink,
     )
     if not body:
         body = "$MU関連の注目投稿"
@@ -464,6 +481,7 @@ def build_thread_summary(
     copilot_prompt_path: str = "",
     command_runner: Callable[..., object] | None = None,
     working_directory: str | Path | None = None,
+    diagnostics_sink: dict[str, object] | None = None,
 ) -> str:
     body = build_summary_body(
         text,
@@ -474,6 +492,7 @@ def build_thread_summary(
         copilot_prompt_path=copilot_prompt_path,
         command_runner=command_runner,
         working_directory=working_directory,
+        diagnostics_sink=diagnostics_sink,
     )
     if not body:
         body = "$MU関連の注目投稿"

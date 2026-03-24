@@ -64,6 +64,18 @@ class SummaryCommonTests(unittest.TestCase):
         self.assertIn("stderr: 🔐 Getting Twitter cookies...", message)
         self.assertIn('stdout: {"ok":false,"error":"duplicate"}', message)
 
+    @patch("python.summary_common.subprocess.run")
+    def test_post_summary_rejects_text_over_280_weighted_chars(self, mock_run: object) -> None:
+        with TemporaryDirectory() as temp_dir:
+            twitter_bin = Path(temp_dir) / "twitter"
+            twitter_bin.write_text("", encoding="utf-8")
+
+            with self.assertRaises(ValueError) as context:
+                post_summary("あ" * 141, twitter_bin)
+
+        self.assertIn("twitter post text exceeds 280 weighted chars (282)", str(context.exception))
+        mock_run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

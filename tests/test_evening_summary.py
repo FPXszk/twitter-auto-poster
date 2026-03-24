@@ -52,9 +52,10 @@ class EveningSummaryTests(unittest.TestCase):
         self.assertIn("【🌆 本日の市場総括】03/23", text)
         self.assertIn("🗾 日経平均 ¥38,123 -1.2%", text)
         self.assertIn("値上がり率TOP5", text)
-        self.assertIn("値下がり率TOP5", text)
-        self.assertIn("5. 古河電気工業(2222) +2.4%", text)
-        self.assertIn("5. 日本郵船(8888) -7.5%", text)
+        self.assertIn("値下がり率TOP3", text)
+        self.assertIn("5. 古河電気(2222) +2.4%", text)
+        self.assertIn("3. 東京電力(6666) -8.4%", text)
+        self.assertNotIn("4. 三菱重工業(7777)", text)
 
     @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
     def test_build_post_text_falls_back_to_none_when_one_side_is_empty(self, _fetch_market_snapshot: object) -> None:
@@ -113,6 +114,8 @@ class EveningSummaryTests(unittest.TestCase):
 
         self.assertLessEqual(estimate_x_weighted_length(result.text), MAX_X_WEIGHTED_LENGTH)
         self.assertIn("【🌆 本日の市場総括】03/23", result.text)
+        self.assertIn("値下がり率TOP3", result.text)
+        self.assertNotIn("4. 超長い銘(9999)", result.text)
 
 
 if __name__ == "__main__":
