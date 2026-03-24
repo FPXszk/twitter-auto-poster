@@ -25,3 +25,65 @@ Thumbs.db
 # 一時ファイル
 tmp/
 *.tmp
+
+
+_old/
+.venv/
+node_modules/  
+dist/  
+out/  
+tmp/  
+temp/  
+  
+# logs  
+*.log  
+npm-debug.log*  
+yarn-debug.log*  
+pnpm-debug.log*  
+  
+# OS/IDE  
+.DS_Store  
+Thumbs.db  
+.vscode/  
+.idea/  
+  
+# env/config  
+.env  
+.env.*  
+  
+# tests/coverage  
+coverage/  
+
+# typescript
+node_modules/
+dist/
+release/
+renderer-dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+python/output/charts
+python/output/job_runs
+python/output/backtest
+python/cache/
+_pending/
