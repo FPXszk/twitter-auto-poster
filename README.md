@@ -258,7 +258,7 @@ python/.venv/bin/python python/auto_like.py
 python/.venv/bin/python python/auto_like.py --target-accounts markminervini hypertechinvest
 ```
 
-`auto_like.py` は `python/.venv/bin/twitter feed --max 50 --json` の for-you タイムラインから新着順で候補を作り、まず 30 分以内を優先し、5 件未満なら 1 時間以内まで広げます。1 回ごとに 5〜15 件の like 上限をランダムに決め、`tmp/state/liked_ids.txt` に `timestamp<TAB>tweet_id` 形式で 7 日分の state を保持しながら重複 like と当日 100 件超えを防ぎます。`--target-accounts` を付けたときは各アカウントの最新投稿を候補に切り替えます。
+`auto_like.py` は `python/.venv/bin/twitter feed --max 50 --json` の for-you タイムラインから新着順で候補を作り、まず 30 分以内を優先し、5 件未満なら 1 時間以内まで広げます。1 回ごとに 5〜15 件の like 上限をランダムに決め、like 間は 5〜20 秒待機しつつ、`tmp/state/liked_ids.txt` に `timestamp<TAB>tweet_id` 形式で 7 日分の state を保持して重複 like と当日 100 件超えを防ぎます。`--target-accounts` を付けたときは各アカウントの最新投稿を候補に切り替えます。
 
 ## 保守・確認コマンド
 

@@ -134,7 +134,7 @@ class AutoLikeTests(unittest.TestCase):
                 patch("auto_like.load_liked_state", return_value=[]),
                 patch("auto_like.fetch_feed_candidates", return_value=candidates),
                 patch("auto_like.select_timeline_candidates", return_value=(candidates, 30)),
-                patch("auto_like.random.randint", side_effect=[2, 45]),
+                patch("auto_like.random.randint", side_effect=[2, 20]),
                 patch("auto_like.random.shuffle", side_effect=lambda items: None),
                 patch("auto_like.run_twitter_write", side_effect=[RuntimeError("boom"), None]) as like_mock,
                 patch("auto_like.time.sleep") as sleep_mock,
@@ -145,7 +145,7 @@ class AutoLikeTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(like_mock.call_count, 2)
-        sleep_mock.assert_called_once_with(45)
+        sleep_mock.assert_called_once_with(20)
 
 
 if __name__ == "__main__":

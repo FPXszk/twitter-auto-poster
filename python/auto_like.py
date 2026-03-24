@@ -33,6 +33,8 @@ PRIMARY_WINDOW_MINUTES = 30
 EXPANDED_WINDOW_MINUTES = 60
 MIN_PRIMARY_WINDOW_TWEETS = 5
 DAILY_LIKE_LIMIT = 100
+MIN_LIKE_SLEEP_SECONDS = 5
+MAX_LIKE_SLEEP_SECONDS = 20
 
 
 @dataclass(frozen=True)
@@ -341,7 +343,7 @@ def main() -> int:
                 liked_tweet_ids.append(candidate.tweet_id)
 
             if index < len(selected_candidates):
-                sleep_seconds = random.randint(30, 90)
+                sleep_seconds = random.randint(MIN_LIKE_SLEEP_SECONDS, MAX_LIKE_SLEEP_SECONDS)
                 LOGGER.info("sleeping %s seconds before next like", sleep_seconds)
                 time.sleep(sleep_seconds)
 
