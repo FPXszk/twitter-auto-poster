@@ -248,7 +248,7 @@ python/.venv/bin/python python/auto_follow.py
 python/.venv/bin/python python/auto_unfollow.py
 ```
 
-`auto_follow.py` は `@paurooteri` のフォロワーから、認証済み・比率 0.8〜1.2・日本語プロフィール・株関連キーワード一致の候補をランダム件数だけ follow します。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
+`auto_follow.py` は `@paurooteri` のフォロワーを最大 1000 人まで調べ、認証済みを必須条件にしたうえで、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を見つかった分だけ follow します。summary JSON には何人のフォロワーを見たか (`scanned_followers`) も出ます。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
 ## 保守・確認コマンド
 

@@ -10,6 +10,7 @@ from auto_follow import (
     build_recorded_username_set,
     contains_stock_keywords,
     evaluate_candidate,
+    has_japanese_signal,
     has_japanese_text,
     matches_stock_keyword,
     record_follow,
@@ -60,14 +61,19 @@ class AutoFollowTests(unittest.TestCase):
             )
         )
 
-    def test_evaluate_candidate_rejects_ratio_out_of_range(self) -> None:
-        reason = evaluate_candidate(
-            build_user(followers=300, following=100),
-            following_usernames=set(),
-            recorded_usernames=set(),
-        )
+    def test_has_japanese_signal_uses_recent_posts_when_profile_is_not_japanese(self) -> None:
+        self.assertTrue(has_japanese_signal("US stocks and macro", ["今日は相場を見ています"]))
+        self.assertFalse(has_japanese_signal("US stocks and macro", ["market review only"]))
 
-        self.assertEqual(reason, "ratio_out_of_range")
+    def test_evaluate_candidate_rejects_not_verified_account(self) -> None:
+        self.assertEqual(
+            evaluate_candidate(
+                build_user(verified=False),
+                following_usernames=set(),
+                recorded_usernames=set(),
+            ),
+            "not_verified",
+        )
 
     def test_evaluate_candidate_rejects_already_following_and_recorded(self) -> None:
         self.assertEqual(

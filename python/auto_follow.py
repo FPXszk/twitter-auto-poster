@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH)
     parser.add_argument("--summary-output", type=Path, default=DEFAULT_SUMMARY_OUTPUT)
     parser.add_argument("--target-username", default="paurooteri")
-    parser.add_argument("--followers-max", type=int, default=200)
+    parser.add_argument("--followers-max", type=int, default=1000)
     parser.add_argument("--following-max", type=int, default=500)
     parser.add_argument("--recent-post-max", type=int, default=5)
     parser.add_argument("--log-level", default="INFO")
@@ -217,15 +217,6 @@ def contains_stock_keywords(text: str) -> bool:
     return any(keyword.lower() in normalized for keyword in STOCK_KEYWORDS)
 
 
-def is_target_ratio(user: dict[str, object]) -> bool:
-    followers = extract_metric(user, "followers")
-    following = extract_metric(user, "following")
-    if followers <= 0 or following <= 0:
-        return False
-    ratio = followers / following
-    return 0.8 <= ratio <= 1.2
-
-
 def evaluate_candidate(
     user: dict[str, object],
     *,
@@ -243,13 +234,13 @@ def evaluate_candidate(
         return "already_following"
     if not is_verified_account(user):
         return "not_verified"
-    if not is_target_ratio(user):
-        return "ratio_out_of_range"
-
-    profile_text = extract_profile_text(user)
-    if not has_japanese_text(profile_text):
-        return "profile_not_japanese"
     return None
+
+
+def has_japanese_signal(profile_text: str, recent_post_texts: list[str]) -> bool:
+    if has_japanese_text(profile_text):
+        return True
+    return any(has_japanese_text(text) for text in recent_post_texts)
 
 
 def matches_stock_keyword(user: dict[str, object], recent_post_texts: list[str]) -> bool:
@@ -299,6 +290,7 @@ def main() -> int:
     configure_logging(args.log_level)
     now = current_jst_datetime()
     current_date = now.date().isoformat()
+    target_follow_count = random.randint(1, 7)
 
     try:
         state_entries = load_follow_state(args.state_path)
@@ -327,10 +319,15 @@ def main() -> int:
 
     eligible_candidates: list[dict[str, object]] = []
     skipped: list[dict[str, object]] = []
+    scanned_followers = 0
+    recent_post_lookups = 0
     for candidate in follower_candidates:
+        if len(eligible_candidates) >= target_follow_count:
+            break
         username = extract_username(candidate)
         if not username:
             continue
+        scanned_followers += 1
         recent_post_texts: list[str] = []
         profile_text = extract_profile_text(candidate)
         reason = evaluate_candidate(
@@ -342,17 +339,24 @@ def main() -> int:
             if reason not in {"already_recorded", "already_following"}:
                 record_skip(state_entries, username, current_date, reason)
                 recorded_usernames.add(username.lower())
-            skipped.append({"username": username, "reason": reason})
+                skipped.append({"username": username, "reason": reason})
             continue
 
-        if not contains_stock_keywords(profile_text):
+        if not has_japanese_text(profile_text) or not contains_stock_keywords(profile_text):
             try:
                 recent_post_texts = fetch_recent_post_texts(args.twitter_bin, username, args.recent_post_max)
+                recent_post_lookups += 1
             except Exception as error:
                 reason = "recent_posts_error"
                 LOGGER.warning("failed to inspect recent posts for @%s: %s", username, error)
                 skipped.append({"username": username, "reason": reason})
                 continue
+
+        if not has_japanese_signal(profile_text, recent_post_texts):
+            record_skip(state_entries, username, current_date, "no_japanese_signal")
+            recorded_usernames.add(username.lower())
+            skipped.append({"username": username, "reason": "no_japanese_signal"})
+            continue
 
         if not matches_stock_keyword(candidate, recent_post_texts):
             record_skip(state_entries, username, current_date, "no_stock_keyword")
@@ -368,9 +372,12 @@ def main() -> int:
             }
         )
 
-    random.shuffle(eligible_candidates)
-    target_follow_count = random.randint(1, 7)
     followed: list[str] = []
+    search_stopped_reason = (
+        "enough_eligible_candidates"
+        if len(eligible_candidates) >= target_follow_count
+        else "scan_limit_reached"
+    )
 
     for candidate in eligible_candidates:
         if len(followed) >= target_follow_count:
@@ -404,6 +411,10 @@ def main() -> int:
             "target_username": args.target_username,
             "requested_follow_count": target_follow_count,
             "follower_candidates": len(follower_candidates),
+            "scanned_followers": scanned_followers,
+            "scan_limit": args.followers_max,
+            "recent_post_lookups": recent_post_lookups,
+            "search_stopped_reason": search_stopped_reason,
             "eligible_candidates": len(eligible_candidates),
             "followed_count": len(followed),
             "followed_usernames": followed,
