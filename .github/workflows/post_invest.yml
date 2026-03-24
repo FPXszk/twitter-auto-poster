@@ -24,6 +24,7 @@ jobs:
     env:
       CATEGORY: invest
       MANUAL_DRY_RUN_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run && 'true' || 'false') || '' }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -33,8 +34,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Install runtime dependencies
         run: |
+          npm install -g @github/copilot
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
@@ -72,6 +78,11 @@ jobs:
       - name: Run runtime diagnostics
         run: |
           mkdir -p tmp
+          if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+            echo "COPILOT_GITHUB_TOKEN secret is required for Copilot summary generation." >&2
+            exit 1
+          fi
+          copilot --version
           python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/invest-runtime.json
 
       - name: Prepare scripts

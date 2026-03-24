@@ -123,6 +123,7 @@
 - `pandas`
 - `yfinance`
 - `twitter-cli`
+- `copilot`
 - `tmux`
 - `lazygit`
 - `gh`
@@ -131,6 +132,8 @@
 ローカルの最低限セットアップ例:
 
 ```bash
+npm install -g @github/copilot
+copilot login
 python3 -m pip install --user pyyaml
 python3 -m pip install --user pandas yfinance
 uv tool install twitter-cli
@@ -145,6 +148,8 @@ twitter whoami
 ```
 
 これが失敗する場合、各スクリプトも失敗します。
+
+GitHub Actions で Copilot 要約を使う場合は、`COPILOT_GITHUB_TOKEN` secret に Copilot Requests 権限付きトークンを設定してください。
 
 シェルスクリプトは既定で `python/.venv/bin/python3` を優先し、必要なら `PYTHON_BIN` で override できます。
 

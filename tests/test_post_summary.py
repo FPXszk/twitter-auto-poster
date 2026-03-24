@@ -62,6 +62,18 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(result, ("あ" * 480) + "。" + ("い" * 100))
 
+    def test_resolve_summary_provider_supports_legacy_aliases(self) -> None:
+        self.assertEqual(post_summary.resolve_summary_provider("googletrans"), "legacy_google_translate")
+        self.assertEqual(post_summary.resolve_summary_provider("legacy_google_translate"), "legacy_google_translate")
+
+    def test_resolve_summary_provider_supports_copilot_aliases(self) -> None:
+        self.assertEqual(post_summary.resolve_summary_provider("copilot"), "copilot_cli")
+        self.assertEqual(post_summary.resolve_summary_provider("copilot_cli"), "copilot_cli")
+
+    def test_resolve_summary_provider_rejects_unknown_provider(self) -> None:
+        with self.assertRaises(ValueError):
+            post_summary.resolve_summary_provider("unknown")
+
     def test_build_source_tweet_url_prefers_screen_name(self) -> None:
         url = post_summary.build_source_tweet_url(
             "AppleNews",
@@ -220,6 +232,27 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(summary, "ignored")
         self.assertEqual(translator.calls, [("Line one\n\nLine two", "ja")])
+
+    def test_build_thread_summary_can_use_copilot_provider(self) -> None:
+        class FakeCompletedProcess:
+            def __init__(self, stdout: str) -> None:
+                self.stdout = stdout
+
+        def fake_command_runner(command: list[str], *, working_directory: object | None = None) -> FakeCompletedProcess:
+            self.assertEqual(command[:4], ["copilot", "--model", "gpt-5-mini", "-p"])
+            self.assertEqual(working_directory, Path("/tmp/work"))
+            return FakeCompletedProcess("🚨速報\n要約本文")
+
+        summary = post_summary.build_thread_summary(
+            "Apple stock rises 3% after strong earnings report",
+            language="ja",
+            provider="copilot_cli",
+            copilot_model="gpt-5-mini",
+            command_runner=fake_command_runner,
+            working_directory=Path("/tmp/work"),
+        )
+
+        self.assertEqual(summary, "🚨速報\n要約本文")
 
     def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
         posts = post_summary.build_thread_posts(

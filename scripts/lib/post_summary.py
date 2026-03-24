@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import logging
 import re
 import unicodedata
+from pathlib import Path
 from typing import Callable
 
-LOGGER = logging.getLogger(__name__)
+from copilot_summary import DEFAULT_COPILOT_MODEL, summarize_to_japanese as summarize_with_copilot_cli
+from google_translate_summary import translate_to_japanese as translate_with_legacy_google_translate
 
 SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
@@ -18,6 +19,7 @@ SOURCE_LINK_PREFIX = "\n🔗 "
 SENTENCE_BOUNDARY_CHARS = "。！？!?\n"
 THREAD_BOUNDARY_CHARS = "。！？!?、\n"
 TRAILING_CLOSERS = "」』）】〉》〕〗〙〛\"'”’ \t\r\n"
+DEFAULT_SUMMARY_PROVIDER = "legacy_google_translate"
 
 
 def clean_source_text(text: str) -> str:
@@ -49,12 +51,6 @@ def clean_post_source_text(text: str) -> str:
         cleaned_lines.append(normalized_line)
 
     return "\n".join(cleaned_lines).strip(" \n\"'|")
-
-
-def load_translator() -> object:
-    from googletrans import Translator
-
-    return Translator()
 
 
 def estimate_x_text_length(text: str) -> int:
@@ -182,23 +178,27 @@ def truncate_text_naturally(
     return truncate_text(normalized, max_length, measure_length=resolved_measure_length)
 
 
+def resolve_summary_provider(provider: str | None) -> str:
+    normalized = str(provider or DEFAULT_SUMMARY_PROVIDER).strip().lower()
+    aliases = {
+        "": DEFAULT_SUMMARY_PROVIDER,
+        "googletrans": DEFAULT_SUMMARY_PROVIDER,
+        "google_translate": DEFAULT_SUMMARY_PROVIDER,
+        "legacy_google_translate": DEFAULT_SUMMARY_PROVIDER,
+        "copilot": "copilot_cli",
+        "copilot_cli": "copilot_cli",
+    }
+    resolved = aliases.get(normalized)
+    if resolved is None:
+        raise ValueError(f"unsupported summary provider: {provider}")
+    return resolved
+
+
 def translate_to_japanese(text: str, *, translator: object | None = None) -> str:
     cleaned = clean_post_source_text(text)
     if not cleaned:
         return cleaned
-
-    active_translator = translator or load_translator()
-    try:
-        response = active_translator.translate(cleaned, dest="ja")
-    except Exception as exc:
-        LOGGER.warning("googletrans failed; falling back to source text: %s", exc)
-        return cleaned
-
-    translated = str(getattr(response, "text", "") or "").strip()
-    if not translated:
-        LOGGER.warning("googletrans returned empty text; falling back to source text")
-        return cleaned
-    return translated
+    return translate_with_legacy_google_translate(cleaned, translator=translator)
 
 
 def build_source_tweet_url(screen_name: str, tweet_id: str, *, source_username: str = "") -> str:
@@ -392,10 +392,34 @@ def build_thread_posts(
     return posts
 
 
-def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:
+def build_summary_body(
+    text: str,
+    *,
+    language: str,
+    translator: object | None = None,
+    provider: str = DEFAULT_SUMMARY_PROVIDER,
+    copilot_model: str = DEFAULT_COPILOT_MODEL,
+    copilot_prompt_path: str = "",
+    command_runner: Callable[..., object] | None = None,
+    working_directory: str | Path | None = None,
+) -> str:
+    cleaned = clean_post_source_text(text)
     if language == "raw":
-        return clean_post_source_text(text)
-    return translate_to_japanese(text, translator=translator)
+        return cleaned
+    if not cleaned:
+        return cleaned
+
+    resolved_provider = resolve_summary_provider(provider)
+    if resolved_provider == DEFAULT_SUMMARY_PROVIDER:
+        return translate_with_legacy_google_translate(cleaned, translator=translator)
+
+    return summarize_with_copilot_cli(
+        cleaned,
+        model=copilot_model,
+        prompt_path=copilot_prompt_path,
+        command_runner=command_runner,
+        working_directory=working_directory,
+    )
 
 
 def build_summary(
@@ -408,9 +432,23 @@ def build_summary(
     tweet_id: str = "",
     source_username: str = "",
     translator: object | None = None,
+    provider: str = DEFAULT_SUMMARY_PROVIDER,
+    copilot_model: str = DEFAULT_COPILOT_MODEL,
+    copilot_prompt_path: str = "",
+    command_runner: Callable[..., object] | None = None,
+    working_directory: str | Path | None = None,
 ) -> str:
     del prefix, screen_name, tweet_id, source_username
-    body = build_summary_body(text, language=language, translator=translator)
+    body = build_summary_body(
+        text,
+        language=language,
+        translator=translator,
+        provider=provider,
+        copilot_model=copilot_model,
+        copilot_prompt_path=copilot_prompt_path,
+        command_runner=command_runner,
+        working_directory=working_directory,
+    )
     if not body:
         body = "$MU関連の注目投稿"
     return format_translation_post(body, max_length=max_length)
@@ -421,8 +459,22 @@ def build_thread_summary(
     *,
     language: str,
     translator: object | None = None,
+    provider: str = DEFAULT_SUMMARY_PROVIDER,
+    copilot_model: str = DEFAULT_COPILOT_MODEL,
+    copilot_prompt_path: str = "",
+    command_runner: Callable[..., object] | None = None,
+    working_directory: str | Path | None = None,
 ) -> str:
-    body = build_summary_body(text, language=language, translator=translator)
+    body = build_summary_body(
+        text,
+        language=language,
+        translator=translator,
+        provider=provider,
+        copilot_model=copilot_model,
+        copilot_prompt_path=copilot_prompt_path,
+        command_runner=command_runner,
+        working_directory=working_directory,
+    )
     if not body:
         body = "$MU関連の注目投稿"
     return format_full_translation_post(body)

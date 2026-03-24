@@ -2,6 +2,8 @@
 # - dry_run: post_invest workflow とローカル実行の既定モードの設定元
 # - state_file: 空文字なら `tmp/state/<category>-posted.txt`、相対パスなら output-dir 配下に解決
 # - summary_*: 候補本文を作るときの接頭辞・言語・最大文字数
+# - summary_provider: `legacy_google_translate` または `copilot_cli`
+# - summary_model / summary_prompt_path: copilot provider 用のモデルと指示文
 # - single_post_max_length: 単発投稿時のみ使う上限。280超は Premium 前提
 # - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
 # - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点）
@@ -11,6 +13,9 @@ defaults:
   max_candidates: 1
   summary_prefix: "Xで反応上位: "
   summary_language: "ja"
+  summary_provider: "legacy_google_translate"
+  summary_model: "gpt-5-mini"
+  summary_prompt_path: ""
   summary_max_length: 280
   single_post_max_length: 280
   state_file: ""
@@ -32,6 +37,9 @@ accounts:
     post_prefix: "Market watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
+    summary_provider: "copilot_cli"
+    summary_model: "gpt-5-mini"
+    summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     summary_max_length: 280
     single_post_max_length: 4000
     selection_mode: "round_robin"
@@ -57,5 +65,8 @@ accounts:
     post_prefix: "News watch:"
     max_candidates: 1
     summary_prefix: "Xで反応上位: "
+    summary_provider: "copilot_cli"
+    summary_model: "gpt-5-mini"
+    summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     filters:
       max_age_hours: 48

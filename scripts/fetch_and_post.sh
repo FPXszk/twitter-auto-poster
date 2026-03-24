@@ -353,6 +353,9 @@ candidates = []
 
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
+summary_provider = str(account.get("summary_provider") or "legacy_google_translate")
+summary_model = str(account.get("summary_model") or "gpt-5-mini")
+summary_prompt_path = str(account.get("summary_prompt_path") or "")
 summary_max_length = int(account.get("summary_max_length") or 280)
 selection_mode = str(account.get("selection_mode") or "score")
 source_reference_mode = str(account.get("source_reference_mode") or "url").strip().lower()
@@ -458,6 +461,10 @@ if selected:
     post_text = build_thread_summary(
         selected.get("post_source_text") or selected["text"],
         language=summary_language,
+        provider=summary_provider,
+        copilot_model=summary_model,
+        copilot_prompt_path=summary_prompt_path,
+        working_directory=pathlib.Path.cwd(),
     )
     selected["summary_text"] = post_text
 
