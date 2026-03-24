@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_FUTURES_TICKER = "NKD=F"
-MAX_X_WEIGHTED_LENGTH = 280
+MAX_X_WEIGHTED_LENGTH = 4000
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -114,11 +114,9 @@ def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | 
         ),
         variant_specs=[
             {"label": "template-8-auto", "kwargs": {"breakout_items": breakout_top}},
-            {"label": "template-8-compact", "kwargs": {"breakout_items": breakout_top, "name_limit": 8}},
-            {"label": "template-6-compact", "kwargs": {"breakout_items": breakout_top[:6], "name_limit": 8}},
-            {"label": "template-5-compact", "kwargs": {"breakout_items": breakout_top[:5], "name_limit": 6}},
-            {"label": "template-4-compact", "kwargs": {"breakout_items": breakout_top[:4], "name_limit": 6}},
-            {"label": "template-3-compact", "kwargs": {"breakout_items": breakout_top[:3], "name_limit": 5}},
+            {"label": "template-8-compact-12", "kwargs": {"breakout_items": breakout_top, "name_limit": 12}},
+            {"label": "template-8-compact-10", "kwargs": {"breakout_items": breakout_top, "name_limit": 10}},
+            {"label": "template-8-compact-8", "kwargs": {"breakout_items": breakout_top, "name_limit": 8}},
         ],
     )
     return pick_fitting_variant(

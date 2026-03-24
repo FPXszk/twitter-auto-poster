@@ -239,7 +239,7 @@ python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.j
 
 `tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
 
-朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP3` / `値下がり率TOP3` を出力します。GitHub Actions の summary では全文に加えて先頭140文字の preview も確認できます。
+朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位 8 銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP5` / `値下がり率TOP5` を出力します。どちらも Premium 前提の長文単発投稿として最大 4000 文字級まで組み立て、GitHub Actions の summary では全文に加えて先頭140文字の preview も確認できます。
 
 ### auto follow を手動確認する
 

@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_CLOSE_TICKER = "^N225"
-MAX_X_WEIGHTED_LENGTH = 280
+MAX_X_WEIGHTED_LENGTH = 4000
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -58,8 +58,8 @@ def parse_args() -> argparse.Namespace:
 def compute_rankings(
     snapshots: Sequence[StockSnapshot],
 ) -> tuple[list[StockSnapshot], list[StockSnapshot]]:
-    gainers = sorted((item for item in snapshots if item.pct_change > 0), key=lambda item: item.pct_change, reverse=True)[:3]
-    losers = sorted((item for item in snapshots if item.pct_change < 0), key=lambda item: item.pct_change)[:3]
+    gainers = sorted((item for item in snapshots if item.pct_change > 0), key=lambda item: item.pct_change, reverse=True)[:5]
+    losers = sorted((item for item in snapshots if item.pct_change < 0), key=lambda item: item.pct_change)[:5]
     return gainers, losers
 
 
@@ -100,9 +100,9 @@ def render_post_text(
     return (
         f"【🌆 本日の市場総括】{date_label}\n\n"
         f"🗾 日経平均 ¥{format_price(nikkei_price)} {format_signed_pct(nikkei_change)}%\n\n"
-        "値上がり率TOP3\n"
+        "値上がり率TOP5\n"
         f"{format_gainer_lines(gainers, resolved_name_limit)}\n"
-        "\n値下がり率TOP3\n"
+        "\n値下がり率TOP5\n"
         f"{format_loser_lines(losers, resolved_name_limit)}"
     )
 
@@ -123,10 +123,10 @@ def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | 
             **kwargs,
         ),
         variant_specs=[
-            {"label": "template-3x3-auto", "kwargs": {"gainers": gainers, "losers": losers}},
-            {"label": "template-3x3-compact", "kwargs": {"gainers": gainers, "losers": losers, "name_limit": 8}},
-            {"label": "template-2x2-compact", "kwargs": {"gainers": gainers[:2], "losers": losers[:2], "name_limit": 6}},
-            {"label": "template-1x1-compact", "kwargs": {"gainers": gainers[:1], "losers": losers[:1], "name_limit": 5}},
+            {"label": "template-5x5-auto", "kwargs": {"gainers": gainers, "losers": losers}},
+            {"label": "template-5x5-compact-12", "kwargs": {"gainers": gainers, "losers": losers, "name_limit": 12}},
+            {"label": "template-5x5-compact-10", "kwargs": {"gainers": gainers, "losers": losers, "name_limit": 10}},
+            {"label": "template-5x5-compact-8", "kwargs": {"gainers": gainers, "losers": losers, "name_limit": 8}},
         ],
     )
     return pick_fitting_variant(
