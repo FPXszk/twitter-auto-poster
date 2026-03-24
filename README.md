@@ -86,6 +86,8 @@
   - 異常騰落率フィルタの閾値と summary 詳細件数
 - `config/jpx_calendar.json`
   - JPX の追加休場日 / 追加営業日を例外設定する
+- `config/follow_state.json`
+  - auto follow / auto unfollow の履歴 state
 
 ### `.github/workflows/`
 
@@ -101,6 +103,8 @@
   - 日本株サマリー用の `stock-cache` 更新
 - `update_tickers_jp.yml`
   - JPX XLS ベースの月次銘柄更新
+- `auto_follow.yml`
+  - 日次の auto follow / auto unfollow
 
 各 workflow は state をキャッシュし、`tmp/` を artifact として保存します。
 日本株系 workflow は JPX 非営業日（土日・祝日・年始年末休場）を自動でスキップします。
@@ -236,6 +240,15 @@ python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.j
 `tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
 
 朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP3` / `値下がり率TOP3` を出力します。GitHub Actions の summary では全文に加えて先頭140文字の preview も確認できます。
+
+### auto follow を手動確認する
+
+```bash
+python/.venv/bin/python python/auto_follow.py
+python/.venv/bin/python python/auto_unfollow.py
+```
+
+`auto_follow.py` は `@paurooteri` のフォロワーから、認証済み・比率 0.8〜1.2・日本語プロフィール・株関連キーワード一致の候補をランダム件数だけ follow します。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
 ## 保守・確認コマンド
 

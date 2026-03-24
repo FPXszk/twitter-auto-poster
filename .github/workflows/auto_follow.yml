@@ -1,0 +1,124 @@
+name: Auto follow
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-follow
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install twitter-cli
+
+      - name: Restore follow state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: config/follow_state.json
+          key: ${{ runner.os }}-auto-follow-state-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-auto-follow-state-
+
+      - name: Prepare runtime directories
+        run: |
+          mkdir -p config tmp
+          if [ ! -f config/follow_state.json ]; then
+            printf '[]\n' > config/follow_state.json
+          fi
+
+      - name: Run auto follow
+        run: python/.venv/bin/python python/auto_follow.py
+
+      - name: Run auto unfollow
+        run: python/.venv/bin/python python/auto_unfollow.py
+
+      - name: Write run summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          lines = ["## auto follow run", ""]
+
+          for label, path_str in (
+              ("auto follow", "tmp/auto_follow_summary.json"),
+              ("auto unfollow", "tmp/auto_unfollow_summary.json"),
+          ):
+              path = Path(path_str)
+              lines.extend([f"### {label}", ""])
+              if not path.exists():
+                  lines.append("summary file was not created.")
+                  lines.append("")
+                  continue
+
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              lines.append(f"- Status: `{payload.get('status', 'unknown')}`")
+              if payload.get("status") != "ok":
+                  lines.append(f"- Error: `{payload.get('error', '')}`")
+                  lines.append("")
+                  continue
+
+              if label == "auto follow":
+                  lines.extend(
+                      [
+                          f"- Target account: `{payload.get('target_username', '')}`",
+                          f"- Requested follows: `{payload.get('requested_follow_count', 0)}`",
+                          f"- Eligible candidates: `{payload.get('eligible_candidates', 0)}`",
+                          f"- Followed: `{payload.get('followed_count', 0)}`",
+                          f"- Followed usernames: `{', '.join(payload.get('followed_usernames') or [])}`",
+                      ]
+                  )
+              else:
+                  lines.extend(
+                      [
+                          f"- Requested unfollows: `{payload.get('requested_unfollow_count', 0)}`",
+                          f"- Eligible candidates: `{payload.get('eligible_candidates', 0)}`",
+                          f"- Unfollowed: `{payload.get('unfollowed_count', 0)}`",
+                          f"- Unfollowed usernames: `{', '.join(payload.get('unfollowed_usernames') or [])}`",
+                      ]
+                  )
+              lines.append("")
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Save follow state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: config/follow_state.json
+          key: ${{ runner.os }}-auto-follow-state-${{ github.run_id }}
+
+      - name: Upload auto follow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-follow-run
+          path: |
+            config/follow_state.json
+            tmp/auto_follow_summary.json
+            tmp/auto_unfollow_summary.json
+          if-no-files-found: ignore
