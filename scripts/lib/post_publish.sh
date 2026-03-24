@@ -170,6 +170,21 @@ print(len(json.loads(sys.argv[1])))
 PY
 }
 
+estimate_thread_post_length() {
+  local thread_posts_json="$1"
+  local index="$2"
+
+  PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${thread_posts_json}" "${index}" <<'PY'
+import json
+import sys
+from post_summary import estimate_x_post_length
+
+posts = json.loads(sys.argv[1])
+print(estimate_x_post_length(posts[int(sys.argv[2])]))
+PY
+}
+
 resolve_publish_action_name() {
   local thread_count="$1"
   local source_reference_mode="$2"
@@ -227,10 +242,12 @@ publish_selected_post() {
   local exit_code=0
   local current_post_id=""
   local action_name="post"
+  local effective_source_reference_mode="${source_reference_mode}"
   local -a posted_tweet_ids=()
   local index=0
   local planning_single_post_max_length="${single_post_max_length}"
   local did_quote_length_fallback="false"
+  local first_post_length=0
 
   if [[ "${source_reference_mode}" == "quote" && -z "${source_tweet_id}" ]]; then
     write_post_failure_file \
@@ -243,7 +260,7 @@ publish_selected_post() {
     return 1
   fi
 
-  if [[ "${source_reference_mode}" == "quote" ]]; then
+  if [[ "${effective_source_reference_mode}" == "quote" ]]; then
     thread_plan_source_url=""
   fi
 
@@ -278,7 +295,34 @@ publish_selected_post() {
     warn "thread plan did not produce any posts for '${category}'"
     return 1
   fi
-  action_name="$(resolve_publish_action_name "${thread_count}" "${source_reference_mode}")"
+  if [[ "${effective_source_reference_mode}" == "quote" && "${thread_count}" -eq 1 ]]; then
+    first_post_length="$(estimate_thread_post_length "${thread_posts_json}" 0)"
+    if (( first_post_length > 280 )) && [[ -n "${source_url}" ]]; then
+      if build_thread_plan_json "${post_text}" "${source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+        exit_code=0
+      else
+        exit_code=$?
+      fi
+      if (( exit_code == 0 )); then
+        local url_single_post_plan_json=""
+        local url_single_post_thread_count=0
+        url_single_post_plan_json="$(cat "${thread_plan_stdout}")"
+        url_single_post_thread_count="$(count_thread_posts "${url_single_post_plan_json}")"
+        rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+        if (( url_single_post_thread_count == 1 )); then
+          thread_posts_json="${url_single_post_plan_json}"
+          thread_count="${url_single_post_thread_count}"
+          effective_source_reference_mode="url"
+        else
+          warn "quote single-post overflow for '${category}' could not stay single with source URL; keeping thread fallback path"
+        fi
+      else
+        warn "failed to build URL single-post fallback for '${category}'; keeping quote fallback path"
+        rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+      fi
+    fi
+  fi
+  action_name="$(resolve_publish_action_name "${thread_count}" "${effective_source_reference_mode}")"
 
   for ((index = 0; index < thread_count; index++)); do
     current_post_text="$(python_cmd - "${thread_posts_json}" "${index}" <<'PY'
@@ -293,14 +337,14 @@ PY
     current_stderr_file="${current_output_file}.stderr"
     rm -f "${current_output_file}" "${current_stderr_file}"
     current_quote_tweet_id=""
-    if [[ "${source_reference_mode}" == "quote" && "${index}" -eq $((thread_count - 1)) ]]; then
+    if [[ "${effective_source_reference_mode}" == "quote" && "${index}" -eq $((thread_count - 1)) ]]; then
       current_quote_tweet_id="${source_tweet_id}"
     fi
 
     execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_quote_tweet_id}" "${current_output_file}" "${current_stderr_file}"
     exit_code=$?
     if (( exit_code != 0 )); then
-      if [[ "${did_quote_length_fallback}" != "true" && "${source_reference_mode}" == "quote" ]] \
+      if [[ "${did_quote_length_fallback}" != "true" && "${effective_source_reference_mode}" == "quote" ]] \
         && (( thread_count == 1 )) \
         && (( index == 0 )) \
         && is_quote_length_error "${current_output_file}" "${current_stderr_file}"; then
@@ -341,6 +385,7 @@ PY
         fi
 
         action_name="$(resolve_publish_action_name "${thread_count}" "${source_reference_mode}")"
+        effective_source_reference_mode="${source_reference_mode}"
         posted_tweet_ids=()
         reply_to_id=""
         index=-1

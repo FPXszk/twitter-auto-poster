@@ -333,7 +333,7 @@ import sys
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_selection import normalize_rotation_source, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
-from post_summary import build_source_tweet_url, build_thread_summary, clean_source_text
+from post_summary import build_source_tweet_url, build_thread_summary, clean_post_source_text, clean_source_text
 
 category = sys.argv[1]
 source_state_file = pathlib.Path(sys.argv[2])
@@ -388,6 +388,7 @@ for payload_path in payload_files:
         tweet_id = str(item.get("id") or "").strip()
         raw_text = str(item.get("text") or "")
         text = clean_source_text(raw_text)
+        post_source_text = clean_post_source_text(raw_text)
         if not tweet_id or not text:
             continue
 
@@ -422,6 +423,7 @@ for payload_path in payload_files:
                 "source_key": source_username or source_id,
                 "source_username": source_username,
                 "text": text,
+                "post_source_text": post_source_text or text,
                 "screen_name": str(author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
                 "likes": metrics["likes"],
@@ -454,7 +456,7 @@ if selected:
     )
     selected["source_url"] = source_url
     post_text = build_thread_summary(
-        selected["text"],
+        selected.get("post_source_text") or selected["text"],
         language=summary_language,
     )
     selected["summary_text"] = post_text

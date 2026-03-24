@@ -94,24 +94,24 @@ class PostSummaryTest(TestCase):
 
         self.assertEqual(
             summary,
-            "【👀 要約】\n\nアップル株が好決算で3%上昇",
+            "アップル株が好決算で3%上昇",
         )
 
     def test_build_thread_posts_single_post_appends_source_url(self) -> None:
         posts = post_summary.build_thread_posts(
-            "【👀 要約】\n\n短い要約です。",
+            "短い要約です。",
             source_url="https://x.com/AppleNews/status/1234567890",
         )
 
         self.assertEqual(len(posts), 1)
         self.assertEqual(
             posts[0],
-            "【👀 要約】\n\n短い要約です。\n🔗 https://x.com/AppleNews/status/1234567890",
+            "短い要約です。\n🔗 https://x.com/AppleNews/status/1234567890",
         )
 
     def test_build_thread_posts_single_post_can_use_extended_single_post_limit(self) -> None:
         posts = post_summary.build_thread_posts(
-            "【👀 要約】\n\n" + ("a" * 180) + "。" + ("b" * 140) + "。",
+            ("a" * 180) + "。" + ("b" * 140) + "。",
             source_url="https://x.com/AppleNews/status/1234567890",
             single_post_max_length=4000,
         )
@@ -156,6 +156,16 @@ class PostSummaryTest(TestCase):
         self.assertIn("あ" * 700, summary)
         self.assertNotIn("https://x.com/AppleNews/status/1234567890", summary)
 
+    def test_clean_post_source_text_preserves_paragraph_breaks(self) -> None:
+        cleaned = post_summary.clean_post_source_text(
+            "I keep getting asked:\n\nWhat's the PT of $SIVE?\n\n@user https://example.com #stocks"
+        )
+
+        self.assertEqual(
+            cleaned,
+            "I keep getting asked:\n\nWhat's the PT of $SIVE?\n\nstocks",
+        )
+
     def test_truncate_post_text_keeps_url_atomic(self) -> None:
         truncated = post_summary.truncate_post_text(
             "Test https://example.com more text",
@@ -186,7 +196,6 @@ class PostSummaryTest(TestCase):
             translator=FakeTranslator(text=("あ" * 320) + "。" + ("い" * 120)),
         )
 
-        self.assertTrue(summary.startswith("【👀 要約】\n\n"))
         self.assertIn(("あ" * 320) + "。" + ("い" * 120), summary)
         self.assertGreater(post_summary.estimate_x_post_length(summary), post_summary.MAX_X_POST_LENGTH)
 
@@ -200,11 +209,22 @@ class PostSummaryTest(TestCase):
         self.assertIn("項目A • 項目B • 項目C", summary)
         self.assertNotIn("\n• 項目B", summary)
 
+    def test_build_thread_summary_preserves_blank_lines_from_source(self) -> None:
+        translator = FakeTranslator(text="ignored")
+
+        summary = post_summary.build_thread_summary(
+            "Line one\n\nLine two",
+            language="ja",
+            translator=translator,
+        )
+
+        self.assertEqual(summary, "ignored")
+        self.assertEqual(translator.calls, [("Line one\n\nLine two", "ja")])
+
     def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
         posts = post_summary.build_thread_posts(
             (
-                "【👀 要約】\n\n"
-                + ("a" * 120)
+                ("a" * 120)
                 + "。"
                 + ("b" * 120)
                 + "。"
@@ -223,7 +243,7 @@ class PostSummaryTest(TestCase):
 
     def test_build_thread_posts_keeps_thread_segment_limit_when_single_post_limit_is_custom(self) -> None:
         posts = post_summary.build_thread_posts(
-            "【👀 要約】\n\n" + ("a" * 150) + "。" + ("b" * 150) + "。" + ("c" * 150) + "。",
+            ("a" * 150) + "。" + ("b" * 150) + "。" + ("c" * 150) + "。",
             source_url="https://x.com/AppleNews/status/1234567890",
             single_post_max_length=320,
         )
@@ -235,7 +255,7 @@ class PostSummaryTest(TestCase):
             self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
 
     def test_build_thread_posts_raises_when_text_requires_more_than_max_posts(self) -> None:
-        text = "【👀 要約】\n\n" + "".join((char * 260) + "。" for char in "abcdef")
+        text = "".join((char * 260) + "。" for char in "abcdef")
 
         with self.assertRaises(ValueError):
             post_summary.build_thread_posts(
@@ -246,13 +266,13 @@ class PostSummaryTest(TestCase):
     def test_build_thread_posts_raises_when_last_segment_cannot_fit_source_url(self) -> None:
         with self.assertRaises(ValueError):
             post_summary.build_thread_posts(
-                "【👀 要約】\n\n" + ("a" * 150) + "。" + ("b" * 260) + "。",
+                ("a" * 150) + "。" + ("b" * 260) + "。",
                 source_url="https://x.com/AppleNews/status/1234567890",
             )
 
     def test_build_thread_posts_reserves_space_for_final_source_url(self) -> None:
         posts = post_summary.build_thread_posts(
-            "【👀 要約】\n\n" + ("a" * 120) + "。" + ("b" * 120) + "。",
+            ("a" * 120) + "。" + ("b" * 120) + "。",
             source_url="https://x.com/AppleNews/status/1234567890",
         )
 
@@ -262,7 +282,7 @@ class PostSummaryTest(TestCase):
 
     def test_build_thread_posts_only_first_post_uses_continuation_suffix(self) -> None:
         posts = post_summary.build_thread_posts(
-            "【👀 要約】\n\n" + ("a" * 150) + "、" + ("b" * 150) + "、" + ("c" * 150) + "。",
+            ("a" * 150) + "、" + ("b" * 150) + "、" + ("c" * 150) + "。",
             source_url="https://x.com/AppleNews/status/1234567890",
         )
 

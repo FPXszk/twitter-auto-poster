@@ -7,7 +7,6 @@ from typing import Callable
 
 LOGGER = logging.getLogger(__name__)
 
-SUMMARY_HEADER = "【👀 要約】"
 SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
 X_SHORT_URL_LENGTH = 23
@@ -28,6 +27,28 @@ def clean_source_text(text: str) -> str:
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)
     return text.strip(" \"'|")
+
+
+def clean_post_source_text(text: str) -> str:
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"@\w+", "", text)
+    text = re.sub(r"#(\w+)", r"\1", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    cleaned_lines: list[str] = []
+    blank_pending = False
+    for raw_line in text.split("\n"):
+        normalized_line = re.sub(r"[ \t]+", " ", raw_line).strip(" \"'| ")
+        if not normalized_line:
+            if cleaned_lines:
+                blank_pending = True
+            continue
+        if blank_pending:
+            cleaned_lines.append("")
+            blank_pending = False
+        cleaned_lines.append(normalized_line)
+
+    return "\n".join(cleaned_lines).strip(" \n\"'|")
 
 
 def load_translator() -> object:
@@ -162,7 +183,7 @@ def truncate_text_naturally(
 
 
 def translate_to_japanese(text: str, *, translator: object | None = None) -> str:
-    cleaned = clean_source_text(text)
+    cleaned = clean_post_source_text(text)
     if not cleaned:
         return cleaned
 
@@ -193,25 +214,20 @@ def normalize_summary_body(body_text: str) -> str:
 
 
 def format_full_translation_post(body_text: str) -> str:
-    header = f"{SUMMARY_HEADER}\n\n"
     normalized_body = normalize_summary_body(body_text)
-    return f"{header}{normalized_body}".rstrip()
+    return normalized_body.rstrip()
 
 
 def format_translation_post(body_text: str, *, max_length: int) -> str:
     effective_max_length = max(max_length, 0)
-    header = f"{SUMMARY_HEADER}\n\n"
     normalized_body = normalize_summary_body(body_text)
-    available_body_length = max(
-        effective_max_length - estimate_x_post_length(header),
-        0,
-    )
+    available_body_length = max(effective_max_length, 0)
     formatted_body = (
         truncate_text_naturally(normalized_body, available_body_length, measure_length=estimate_x_text_length)
         if available_body_length
         else ""
     )
-    return truncate_post_text(f"{header}{formatted_body}".rstrip(), effective_max_length)
+    return truncate_post_text(formatted_body.rstrip(), effective_max_length)
 
 
 def compose_source_link_post(body_text: str, *, source_url: str) -> str:
@@ -378,7 +394,7 @@ def build_thread_posts(
 
 def build_summary_body(text: str, *, language: str, translator: object | None = None) -> str:
     if language == "raw":
-        return clean_source_text(text)
+        return clean_post_source_text(text)
     return translate_to_japanese(text, translator=translator)
 
 
