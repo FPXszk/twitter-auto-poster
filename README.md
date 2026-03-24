@@ -250,6 +250,16 @@ python/.venv/bin/python python/auto_unfollow.py
 
 `auto_follow.py` は `@paurooteri` のフォロワーを最大 1000 人まで調べ、認証済みを必須条件にしたうえで、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を見つかった分だけ follow します。summary JSON には何人のフォロワーを見たか (`scanned_followers`) も出ます。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
+### auto like を手動確認する
+
+```bash
+python/.venv/bin/python python/auto_like.py --dry-run
+python/.venv/bin/python python/auto_like.py
+python/.venv/bin/python python/auto_like.py --target-accounts markminervini hypertechinvest
+```
+
+`auto_like.py` は `python/.venv/bin/twitter feed --max 50 --json` の for-you タイムラインから新着順で候補を作り、まず 30 分以内を優先し、5 件未満なら 1 時間以内まで広げます。1 回ごとに 5〜15 件の like 上限をランダムに決め、`tmp/state/liked_ids.txt` に `timestamp<TAB>tweet_id` 形式で 7 日分の state を保持しながら重複 like と当日 100 件超えを防ぎます。`--target-accounts` を付けたときは各アカウントの最新投稿を候補に切り替えます。
+
 ## 保守・確認コマンド
 
 普段よく使うものをまとめると以下です。
@@ -291,6 +301,8 @@ PY
   - 投稿済み ID の簡易 state
 - `tmp/state/invest-robin.txt`
   - `post_invest.yml` が前回投稿アカウント名を保持する round-robin state
+- `tmp/state/liked_ids.txt`
+  - `auto_like.py` が 7 日分の like 済み tweet ID と日時を保持する state
 - `tmp/posted_ids.txt`
   - 日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
 - `tmp/*_summary.json`
@@ -314,6 +326,8 @@ PY
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
 - `.github/workflows/update_tickers_jp.yml`
+- `.github/workflows/auto_follow.yml`
+- `.github/workflows/auto_like.yml`
 
 ### 挙動
 
@@ -328,6 +342,8 @@ PY
 - `post_invest.yml` は source 順の round-robin で候補を選び、`tmp/state/invest-robin.txt` に前回投稿アカウント名を保存します
 - 選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
 - `fetch_and_post.sh` の実投稿は、要約が短ければ元ツイート URL 付きの単発投稿です。`source_reference_mode: quote` でも 280 超かつ単発で収まる本文は URL 付き単発へ切り替え、さらに長い場合だけ最大 5 ツイートの reply-chain スレッド投稿になります
+- `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避け、`tmp/state/liked_ids.txt` を Actions cache で保持しつつ `auto_like.py` を実行します
+- `auto_like.yml` の `workflow_dispatch` は `dry_run` を受け付け、対象 tweet 一覧だけを summary / log に出せます
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
 - `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
 - `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します

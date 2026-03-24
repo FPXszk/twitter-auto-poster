@@ -1,0 +1,127 @@
+name: Auto like
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Show selected like targets without sending likes
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  schedule:
+    - cron: "0 0-16,21-23 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-like
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install twitter-cli
+
+      - name: Restore like state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/state/liked_ids.txt
+          key: ${{ runner.os }}-auto-like-state-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-auto-like-state-
+
+      - name: Prepare runtime directories
+        run: |
+          mkdir -p tmp/state
+          touch tmp/state/liked_ids.txt
+
+      - name: Run auto like
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            python/.venv/bin/python python/auto_like.py --dry-run
+          else
+            python/.venv/bin/python python/auto_like.py
+          fi
+
+      - name: Write run summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          payload_path = Path("tmp/auto_like_summary.json")
+          lines = ["## auto like run", ""]
+
+          if not payload_path.exists():
+              lines.append("summary file was not created.")
+          else:
+              payload = json.loads(payload_path.read_text(encoding="utf-8"))
+              lines.append(f"- Status: `{payload.get('status', 'unknown')}`")
+              if payload.get("status") != "ok":
+                  lines.append(f"- Error: `{payload.get('error', '')}`")
+              else:
+                  lines.extend(
+                      [
+                          f"- Dry run: `{payload.get('dry_run', False)}`",
+                          f"- Source mode: `{payload.get('source_mode', '')}`",
+                          f"- Requested likes: `{payload.get('requested_like_count', 0)}`",
+                          f"- Current daily likes: `{payload.get('current_daily_like_count', 0)}`",
+                          f"- Remaining daily capacity: `{payload.get('remaining_daily_capacity', 0)}`",
+                          f"- Candidate window (minutes): `{payload.get('candidate_window_minutes', '')}`",
+                          f"- Eligible candidates: `{payload.get('eligible_candidates', 0)}`",
+                          f"- Selected targets: `{payload.get('selected_count', 0)}`",
+                          f"- Liked count: `{payload.get('liked_count', 0)}`",
+                          f"- Liked tweet IDs: `{', '.join(payload.get('liked_tweet_ids') or [])}`",
+                      ]
+                  )
+                  selected_candidates = payload.get("selected_candidates") or []
+                  if selected_candidates:
+                      lines.extend(["", "### selected candidates", ""])
+                      for item in selected_candidates:
+                          username = str(item.get("username") or "").strip() or "unknown"
+                          lines.append(
+                              f"- `{item.get('tweet_id', '')}` by `@{username}` at `{item.get('created_at', '')}`: "
+                              f"{item.get('text_snippet', '')}"
+                          )
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Save like state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tmp/state/liked_ids.txt
+          key: ${{ runner.os }}-auto-like-state-${{ github.run_id }}
+
+      - name: Upload auto like artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-like-run
+          path: |
+            tmp/state/liked_ids.txt
+            tmp/auto_like_summary.json
+          if-no-files-found: ignore
