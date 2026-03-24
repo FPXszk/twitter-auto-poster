@@ -349,8 +349,8 @@ class PostSummaryTest(TestCase):
         )
 
         self.assertEqual(len(posts), 2)
-        self.assertNotIn("3 億 7,", posts[0])
-        self.assertIn("3 億 7,500 万ドル", posts[1])
+        self.assertIn("3 億 7,500 万ドル", posts[0])
+        self.assertNotIn("500 万ドル", posts[1])
         self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
         self.assertTrue(posts[1].endswith("https://x.com/AppleNews/status/1234567890"))
 

@@ -92,6 +92,16 @@ PY
                     return 1
                   fi
 
+                  if (( post_calls == 2 )) && [[ "${{quote_tweet_id}}" != "12345" ]]; then
+                    printf '%s' 'first thread post should keep the quote target' >&2
+                    return 91
+                  fi
+
+                  if (( post_calls == 3 )) && [[ -n "${{quote_tweet_id}}" ]]; then
+                    printf '%s' 'second thread post should not include a quote target' >&2
+                    return 92
+                  fi
+
                   printf '%s' "{{\\"ok\\":true,\\"data\\":{{\\"id\\":\\"posted-${{post_calls}}\\"}}}}" > "${{output_file}}"
                   : > "${{stderr_file}}"
                   return 0

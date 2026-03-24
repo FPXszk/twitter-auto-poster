@@ -337,7 +337,7 @@ PY
     current_stderr_file="${current_output_file}.stderr"
     rm -f "${current_output_file}" "${current_stderr_file}"
     current_quote_tweet_id=""
-    if [[ "${effective_source_reference_mode}" == "quote" && "${index}" -eq $((thread_count - 1)) ]]; then
+    if [[ "${effective_source_reference_mode}" == "quote" && "${index}" -eq 0 ]]; then
       current_quote_tweet_id="${source_tweet_id}"
     fi
 
