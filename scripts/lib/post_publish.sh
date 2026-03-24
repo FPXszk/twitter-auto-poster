@@ -344,7 +344,7 @@ PY
     execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_quote_tweet_id}" "${current_output_file}" "${current_stderr_file}"
     exit_code=$?
     if (( exit_code != 0 )); then
-      if [[ "${did_quote_length_fallback}" != "true" && "${effective_source_reference_mode}" == "quote" ]] \
+      if [[ "${did_quote_length_fallback}" != "true" && "${source_reference_mode}" == "quote" ]] \
         && (( thread_count == 1 )) \
         && (( index == 0 )) \
         && is_quote_length_error "${current_output_file}" "${current_stderr_file}"; then
