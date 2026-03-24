@@ -321,7 +321,7 @@ PY
 - `schedule` 対応
 - `workflow_dispatch` では手動実行できます
 - `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
-- `post_invest.yml` は JST 02:00〜05:00 を避けて毎時実行します（cron: `0 0-16,21-23 * * *`）
+- `post_invest.yml` は JST 02:00〜05:00 を避けるため、JST 00, 06, 08, 10, 12, 14, 16, 18, 20, 22 に実行します（cron: `0 1,3,5,7,9,11,13,15,21,23 * * *`）
 - `post_invest.yml` は既定で live-post です。preview にしたいときは `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にします
 - `workflow_dispatch` では `dry_run` 入力で preview/live を一時上書きできます
 - `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
