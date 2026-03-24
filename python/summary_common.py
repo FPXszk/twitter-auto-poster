@@ -111,6 +111,24 @@ def build_variants(
     return variants
 
 
+def build_name_limited_variant_specs(
+    *,
+    label_prefix: str,
+    base_kwargs: dict[str, object],
+    name_limits: Sequence[int | None],
+) -> list[dict[str, object]]:
+    variant_specs: list[dict[str, object]] = []
+    for name_limit in name_limits:
+        kwargs = dict(base_kwargs)
+        if name_limit is None:
+            label = f"{label_prefix}-auto"
+        else:
+            label = f"{label_prefix}-compact-{name_limit}"
+            kwargs["name_limit"] = name_limit
+        variant_specs.append({"label": label, "kwargs": kwargs})
+    return variant_specs
+
+
 def extract_tweet_id(payload: object) -> str:
     def walk(node: object) -> str:
         if isinstance(node, dict):

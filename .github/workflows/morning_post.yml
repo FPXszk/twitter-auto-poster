@@ -27,6 +27,16 @@ on:
         options:
           - "false"
           - "true"
+      breakout_count:
+        description: Override morning breakout count for this manual run
+        required: false
+        default: ""
+        type: string
+      max_weighted_length:
+        description: Override weighted length cap for this manual run
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "0 23 * * 0-4"
 
@@ -45,6 +55,8 @@ jobs:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       FORCE_REPOST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_repost || 'false' }}
       IGNORE_MARKET_DAY: ${{ github.event_name == 'workflow_dispatch' && inputs.ignore_market_day || 'false' }}
+      BREAKOUT_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.breakout_count || '' }}
+      MAX_WEIGHTED_LENGTH: ${{ github.event_name == 'workflow_dispatch' && inputs.max_weighted_length || '' }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -157,6 +169,12 @@ jobs:
           if [ "${IGNORE_MARKET_DAY}" = "true" ]; then
             EXTRA_ARGS="${EXTRA_ARGS} --ignore-market-day"
           fi
+          if [ -n "${BREAKOUT_COUNT}" ]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --breakout-count ${BREAKOUT_COUNT}"
+          fi
+          if [ -n "${MAX_WEIGHTED_LENGTH}" ]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --max-weighted-length ${MAX_WEIGHTED_LENGTH}"
+          fi
           if [ "${DRY_RUN}" = "true" ]; then
             python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json ${EXTRA_ARGS}
           else
@@ -195,12 +213,14 @@ jobs:
               lines.extend(
                   [
                       f"- Status: `{payload.get('status', 'unknown')}`",
-                      f"- JST date: `{payload.get('date', '')}`",
-                      f"- Trade date: `{payload.get('trade_date', '')}`",
-                      f"- Variant: `{payload.get('variant', '')}`",
-                      f"- Text length: `{payload.get('text_length', '')}`",
-                  ]
-              )
+                       f"- JST date: `{payload.get('date', '')}`",
+                       f"- Trade date: `{payload.get('trade_date', '')}`",
+                       f"- Variant: `{payload.get('variant', '')}`",
+                       f"- Text length: `{payload.get('text_length', '')}`",
+                       f"- Max weighted length: `{payload.get('max_weighted_length', '')}`",
+                       f"- Breakout count: `{payload.get('breakout_count', '')}`",
+                   ]
+               )
               if payload.get("reason"):
                   lines.append(f"- Reason: `{payload.get('reason')}`")
               if payload.get("error"):

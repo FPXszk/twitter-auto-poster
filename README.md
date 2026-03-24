@@ -239,7 +239,7 @@ python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.j
 
 `tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
 
-朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位 8 銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP5` / `値下がり率TOP5` を出力します。どちらも Premium 前提の長文単発投稿として最大 4000 文字級まで組み立て、GitHub Actions の summary では全文に加えて先頭140文字の preview も確認できます。
+朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位 8 銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP5` / `値下がり率TOP5` を出力します。どちらも Premium 前提の長文単発投稿として最大 4000 文字級まで組み立てます。手動実行では件数と weighted length 上限を一時 override でき、GitHub Actions の summary では全文に加えて先頭140文字の preview と実際に使った rendering 設定も確認できます。
 
 ### auto follow を手動確認する
 
@@ -323,7 +323,7 @@ PY
 - `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
 - `post_invest.yml` は JST 02:00〜05:00 を避けるため、JST 00, 06, 08, 10, 12, 14, 16, 18, 20, 22 に実行します（cron: `0 1,3,5,7,9,11,13,15,21,23 * * *`）
 - `post_invest.yml` は既定で live-post です。preview にしたいときは `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にします
-- `workflow_dispatch` では `dry_run` 入力で preview/live を一時上書きできます
+- `workflow_dispatch` では `dry_run` に加えて、morning/evening の件数と weighted length 上限も一時上書きできます
 - `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
 - `post_invest.yml` は source 順の round-robin で候補を選び、`tmp/state/invest-robin.txt` に前回投稿アカウント名を保存します
 - 選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
@@ -334,7 +334,7 @@ PY
 - `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
 - `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
 - `update_tickers_jp.yml` は `tmp/tickers_jp_update_summary.json` と `GITHUB_STEP_SUMMARY` に件数・差分要約も出力します
-- `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` も `GITHUB_STEP_SUMMARY` に文字数、採用パターン、skip 理由、異常値 skip 要約を出力します
+- `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` も `GITHUB_STEP_SUMMARY` に文字数、採用パターン、rendering 設定、skip 理由、異常値 skip 要約を出力します
 - `twitter_diagnostic.yml` は `tmp/diagnostics/account-score-history.jsonl` を Actions cache + artifact に保存し、summary へ当日の内訳と改善提案を表示します
 - 主要 workflow は依存インストール後に runtime diagnostics を実行し、使用 Python と import 可否を artifact / summary 用 JSON に残します
 - Python 3.11 をセットアップ

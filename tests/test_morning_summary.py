@@ -67,6 +67,23 @@ class MorningSummaryTests(unittest.TestCase):
         self.assertTrue(text.endswith("52週高値更新中\n1. なし"))
 
     @patch("python.morning_summary.fetch_market_snapshot", return_value=(38200.0, 0.8))
+    def test_build_post_text_honors_custom_breakout_count(self, _fetch_market_snapshot: object) -> None:
+        snapshots = [
+            snapshot("1001.T", "銘柄一", 1.0),
+            snapshot("1002.T", "銘柄二", 2.0),
+            snapshot("1003.T", "銘柄三", 3.0),
+            snapshot("1004.T", "銘柄四", 4.0),
+            snapshot("1005.T", "銘柄五", 5.0),
+            snapshot("1006.T", "銘柄六", 6.0),
+            snapshot("1007.T", "銘柄七", 7.0),
+        ]
+
+        _, text = build_post_text(snapshots, headline_date=date(2026, 3, 23), breakout_count=5)
+
+        self.assertIn("5. 銘柄三(1003) +3.0%", text)
+        self.assertNotIn("6. 銘柄二(1002)", text)
+
+    @patch("python.morning_summary.fetch_market_snapshot", return_value=(38200.0, 0.8))
     def test_build_post_result_respects_x_weighted_limit(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
             snapshot(f"{1000 + index}.T", f"超長い銘柄名サンプルホールディングス{index}", 9.0 - index)

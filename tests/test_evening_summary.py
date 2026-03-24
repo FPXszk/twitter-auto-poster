@@ -68,6 +68,33 @@ class EveningSummaryTests(unittest.TestCase):
         self.assertIn("値下がり率TOP5\n1. なし", text)
 
     @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
+    def test_build_post_text_honors_custom_rank_counts(self, _fetch_market_snapshot: object) -> None:
+        snapshots = [
+            snapshot("0001.T", "ディスコ", 5.1),
+            snapshot("0002.T", "アドバンテスト", 4.8),
+            snapshot("0003.T", "東京エレクトロン", 3.4),
+            snapshot("1111.T", "ベイカレント", 2.7),
+            snapshot("2222.T", "古河電気工業", 2.4),
+            snapshot("4444.T", "住友金属鉱山", -8.8),
+            snapshot("5555.T", "太平洋セメント", -8.7),
+            snapshot("6666.T", "東京電力ホールディングス", -8.4),
+        ]
+
+        _, text = build_post_text(
+            snapshots,
+            headline_date=date(2026, 3, 23),
+            gainers_count=3,
+            losers_count=2,
+        )
+
+        self.assertIn("値上がり率TOP3", text)
+        self.assertIn("値下がり率TOP2", text)
+        self.assertIn("3. 東京エレクトロン(0003) +3.4%", text)
+        self.assertNotIn("4. ベイカレント(1111)", text)
+        self.assertIn("2. 太平洋セメント(5555) -8.7%", text)
+        self.assertNotIn("3. 東京電力ホールディングス(6666)", text)
+
+    @patch("python.evening_summary.fetch_market_snapshot", return_value=(38123.0, -1.2))
     def test_build_post_result_respects_x_weighted_limit(self, _fetch_market_snapshot: object) -> None:
         snapshots = [
             snapshot("1111.T", "超長い銘柄名サンプルホールディングス一号", 4.8),

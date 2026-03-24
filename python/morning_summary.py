@@ -15,6 +15,7 @@ from stock_fetcher import DEFAULT_BATCH_SIZE, DEFAULT_SLEEP_SECONDS, StockSnapsh
 from summary_common import (
     SummaryBuildResult,
     append_state_entries,
+    build_name_limited_variant_specs,
     build_variants,
     code_of,
     estimate_x_weighted_length,
@@ -33,6 +34,8 @@ POSTED_IDS_PATH = PROJECT_ROOT / "tmp" / "posted_ids.txt"
 TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 NIKKEI_FUTURES_TICKER = "NKD=F"
 MAX_X_WEIGHTED_LENGTH = 4000
+DEFAULT_BREAKOUT_COUNT = 8
+NAME_LIMIT_FALLBACKS = (None, 12, 10, 8)
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -40,6 +43,13 @@ def configure_logging(level: str = "INFO") -> None:
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,18 +60,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
+    parser.add_argument("--max-weighted-length", type=positive_int, default=MAX_X_WEIGHTED_LENGTH)
+    parser.add_argument("--breakout-count", type=positive_int, default=DEFAULT_BREAKOUT_COUNT)
     parser.add_argument("--summary-output", type=Path)
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
 
-def compute_rankings(snapshots: Sequence[StockSnapshot]) -> list[StockSnapshot]:
+def compute_rankings(
+    snapshots: Sequence[StockSnapshot],
+    *,
+    breakout_count: int = DEFAULT_BREAKOUT_COUNT,
+) -> list[StockSnapshot]:
     high_breakouts = [
         snapshot
         for snapshot in snapshots
         if snapshot.high_price >= snapshot.fifty_two_week_high
     ]
-    return sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:8]
+    return sorted(high_breakouts, key=lambda item: item.pct_change, reverse=True)[:breakout_count]
 
 
 def format_breakout_lines(items: Sequence[StockSnapshot], name_limit: int) -> str:
@@ -97,11 +113,17 @@ def render_post_text(
     )
 
 
-def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> SummaryBuildResult:
+def build_post_result(
+    snapshots: Sequence[StockSnapshot],
+    headline_date: date | None = None,
+    *,
+    max_weighted_length: int = MAX_X_WEIGHTED_LENGTH,
+    breakout_count: int = DEFAULT_BREAKOUT_COUNT,
+) -> SummaryBuildResult:
     if not snapshots:
         raise ValueError("no stock snapshots available")
 
-    breakout_top = compute_rankings(snapshots)
+    breakout_top = compute_rankings(snapshots, breakout_count=breakout_count)
     trade_date = latest_trade_date([snapshot.latest_date for snapshot in snapshots])
     display_date = (headline_date or current_jst_date()).isoformat()
     futures_price, futures_change = fetch_market_snapshot(NIKKEI_FUTURES_TICKER)
@@ -112,23 +134,33 @@ def build_post_result(snapshots: Sequence[StockSnapshot], headline_date: date | 
             futures_change=futures_change,
             **kwargs,
         ),
-        variant_specs=[
-            {"label": "template-8-auto", "kwargs": {"breakout_items": breakout_top}},
-            {"label": "template-8-compact-12", "kwargs": {"breakout_items": breakout_top, "name_limit": 12}},
-            {"label": "template-8-compact-10", "kwargs": {"breakout_items": breakout_top, "name_limit": 10}},
-            {"label": "template-8-compact-8", "kwargs": {"breakout_items": breakout_top, "name_limit": 8}},
-        ],
+        variant_specs=build_name_limited_variant_specs(
+            label_prefix=f"template-{breakout_count}",
+            base_kwargs={"breakout_items": breakout_top},
+            name_limits=NAME_LIMIT_FALLBACKS,
+        ),
     )
     return pick_fitting_variant(
         trade_date=trade_date,
         variants=variants,
-        max_length=MAX_X_WEIGHTED_LENGTH,
+        max_length=max_weighted_length,
         measure_length=estimate_x_weighted_length,
     )
 
 
-def build_post_text(snapshots: Sequence[StockSnapshot], headline_date: date | None = None) -> tuple[str, str]:
-    result = build_post_result(snapshots, headline_date=headline_date)
+def build_post_text(
+    snapshots: Sequence[StockSnapshot],
+    headline_date: date | None = None,
+    *,
+    max_weighted_length: int = MAX_X_WEIGHTED_LENGTH,
+    breakout_count: int = DEFAULT_BREAKOUT_COUNT,
+) -> tuple[str, str]:
+    result = build_post_result(
+        snapshots,
+        headline_date=headline_date,
+        max_weighted_length=max_weighted_length,
+        breakout_count=breakout_count,
+    )
     return result.trade_date, result.text
 
 
@@ -190,9 +222,18 @@ def main() -> int:
             LOGGER.error("no stock data available; skipping morning post")
             return 1
 
-        build_result = build_post_result(snapshots, headline_date=today)
+        build_result = build_post_result(
+            snapshots,
+            headline_date=today,
+            max_weighted_length=args.max_weighted_length,
+            breakout_count=args.breakout_count,
+        )
         trade_date = build_result.trade_date
         tweet_text = build_result.text
+        rendering_settings = {
+            "max_weighted_length": args.max_weighted_length,
+            "breakout_count": args.breakout_count,
+        }
         expected_date = expected_trade_date(today)
         if trade_date != expected_date:
             if args.summary_output is not None:
@@ -200,12 +241,13 @@ def main() -> int:
                     args.summary_output,
                     {
                         "status": "skipped_stale_trade_date",
-                        "date": today.isoformat(),
-                        "trade_date": trade_date,
-                        "expected_trade_date": expected_date,
-                        "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
-                    },
-                )
+                            "date": today.isoformat(),
+                            "trade_date": trade_date,
+                            "expected_trade_date": expected_date,
+                            **rendering_settings,
+                            "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                        },
+                    )
             LOGGER.warning(
                 "morning summary trade_date=%s does not match expected previous business day=%s; skipping",
                 trade_date,
@@ -227,6 +269,7 @@ def main() -> int:
                             "trade_date": trade_date,
                             "variant": build_result.variant_label,
                             "text_length": build_result.text_length,
+                            **rendering_settings,
                             "tweet_text": tweet_text,
                             "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
                         },
@@ -239,15 +282,16 @@ def main() -> int:
             if args.summary_output is not None:
                 write_summary_payload(
                     args.summary_output,
-                    {
-                        "status": "dry_run",
-                        "date": today.isoformat(),
-                        "trade_date": trade_date,
-                        "variant": build_result.variant_label,
-                        "text_length": build_result.text_length,
-                        "tweet_text": tweet_text,
-                        "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
-                    },
+                        {
+                            "status": "dry_run",
+                            "date": today.isoformat(),
+                            "trade_date": trade_date,
+                            "variant": build_result.variant_label,
+                            "text_length": build_result.text_length,
+                            **rendering_settings,
+                            "tweet_text": tweet_text,
+                            "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                        },
                 )
             sys.stdout.write(f"{tweet_text}\n")
             return 0
@@ -257,15 +301,16 @@ def main() -> int:
         if args.summary_output is not None:
             write_summary_payload(
                 args.summary_output,
-                {
-                    "status": "posted",
-                    "date": today.isoformat(),
-                    "trade_date": trade_date,
-                    "variant": build_result.variant_label,
-                    "text_length": build_result.text_length,
-                    "tweet_text": tweet_text,
-                    "tweet_id": tweet_id,
-                    "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
+                        {
+                            "status": "posted",
+                            "date": today.isoformat(),
+                            "trade_date": trade_date,
+                            "variant": build_result.variant_label,
+                            "text_length": build_result.text_length,
+                            **rendering_settings,
+                            "tweet_text": tweet_text,
+                            "tweet_id": tweet_id,
+                            "cache_metadata": (bundle.metadata if args.cache_path is not None and bundle is not None else {}),
                 },
             )
         LOGGER.info("posted morning summary tweet_id=%s", tweet_id)
