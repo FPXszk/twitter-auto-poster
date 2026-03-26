@@ -10,6 +10,21 @@ from google_translate_summary import translate_to_japanese as translate_with_leg
 
 SUMMARY_SEPARATOR = "---"
 URL_PATTERN = re.compile(r"https?://\S+")
+EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "]",
+)
+LIST_MARKER_PATTERN = re.compile(r"^(?:[-*•・▪▫◦‣⁃]+|\d+[.)])\s*")
 X_SHORT_URL_LENGTH = 23
 MAX_X_POST_LENGTH = 280
 THREAD_BODY_MAX_LENGTH = 275
@@ -213,6 +228,29 @@ def normalize_summary_body(body_text: str) -> str:
     return body_text.strip()
 
 
+def strip_summary_emoji(text: str) -> str:
+    return EMOJI_PATTERN.sub("", text).replace("\u200d", "").replace("\ufe0f", "")
+
+
+def normalize_single_post_summary_body(body_text: str) -> str:
+    normalized = normalize_summary_body(body_text).replace("\r\n", "\n").replace("\r", "\n")
+    normalized = strip_summary_emoji(normalized)
+
+    compact_lines: list[str] = []
+    for raw_line in normalized.split("\n"):
+        cleaned_line = LIST_MARKER_PATTERN.sub("", raw_line.strip())
+        if not cleaned_line:
+            continue
+        compact_lines.append(cleaned_line)
+
+    compacted = " ".join(compact_lines)
+    compacted = re.sub(r"\s+", " ", compacted).strip()
+    compacted = re.sub(r"\s+([、。！？!?,.:;])", r"\1", compacted)
+    compacted = re.sub(r"([（\(])\s+", r"\1", compacted)
+    compacted = re.sub(r"\s+([）\)])", r"\1", compacted)
+    return compacted
+
+
 def format_full_translation_post(body_text: str) -> str:
     normalized_body = normalize_summary_body(body_text)
     return normalized_body.rstrip()
@@ -220,7 +258,7 @@ def format_full_translation_post(body_text: str) -> str:
 
 def format_translation_post(body_text: str, *, max_length: int) -> str:
     effective_max_length = max(max_length, 0)
-    normalized_body = normalize_summary_body(body_text)
+    normalized_body = normalize_single_post_summary_body(body_text)
     available_body_length = max(effective_max_length, 0)
     formatted_body = (
         truncate_text_naturally(normalized_body, available_body_length, measure_length=estimate_x_text_length)

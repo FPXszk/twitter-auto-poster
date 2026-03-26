@@ -346,7 +346,8 @@ PY
 - `post_invest.yml` の候補選定は `user/search` source の収集結果に対して filter を適用し、`likes` / `retweets` / `views` / `freshness` / source ごとの `score_boost` を合算します
 - `post_invest.yml` は source 順の round-robin で候補を選び、`tmp/state/invest-robin.txt` に前回投稿アカウント名を保存します
 - 選ばれたツイートが投稿済みなら同 source の次点へ進み、全件投稿済みならその source をスキップして次の source へ進みます
-- `fetch_and_post.sh` の実投稿は、要約が短ければ元ツイート URL 付きの単発投稿です。`source_reference_mode: quote` でも 280 超かつ単発で収まる本文は URL 付き単発へ切り替え、さらに長い場合だけ最大 5 ツイートの reply-chain スレッド投稿になります
+- `fetch_and_post.sh` は候補本文を `summary_max_length` 以内に整形してから投稿します。`post_invest.yml` の Copilot 要約は 280 文字以内・改行なし・非絵文字の 1 投稿向け本文へ圧縮されます
+- 実投稿経路は、要約が短ければ元ツイート URL 付きの単発投稿です。`source_reference_mode: quote` でも 280 超かつ単発で収まる本文は URL 付き単発へ切り替え、さらに長い場合だけ最大 5 ツイートの reply-chain スレッド投稿になります
 - `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避け、`tmp/state/liked_ids.txt` を Actions cache で保持しつつ `auto_like.py` を実行します
 - `auto_like.yml` の `workflow_dispatch` は `dry_run` を受け付け、対象 tweet 一覧だけを summary / log に出せます
 - `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します

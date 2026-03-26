@@ -281,6 +281,32 @@ class PostSummaryTest(TestCase):
         self.assertEqual(diagnostics["model"], "gpt-5-mini")
         self.assertEqual(diagnostics["usage_lines"], ["Used 1 premium request", "Remaining quota: 99"])
 
+    def test_build_summary_compacts_copilot_output_for_single_post(self) -> None:
+        class FakeCompletedProcess:
+            def __init__(self, stdout: str, stderr: str = "") -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+
+        summary = post_summary.build_summary(
+            "Apple stock rises 3% after strong earnings report",
+            prefix="Xで反応上位: ",
+            language="ja",
+            max_length=120,
+            provider="copilot_cli",
+            copilot_model="gpt-5-mini",
+            command_runner=lambda command, *, working_directory=None: FakeCompletedProcess(
+                "🚨速報\n\n- 米株は続落。\n- VIXは上昇。\n- 出来高も増加。\n\n投資家心理はまだ慎重で、底打ち確認には時間が必要です。"
+            ),
+        )
+
+        self.assertLessEqual(post_summary.estimate_x_post_length(summary), 120)
+        self.assertNotIn("\n", summary)
+        self.assertNotIn("🚨", summary)
+        self.assertNotIn("- ", summary)
+        self.assertIn("米株は続落。", summary)
+        self.assertIn("VIXは上昇。", summary)
+        self.assertTrue(summary.endswith(("。", "…")))
+
     def test_build_thread_posts_splits_naturally_and_appends_link_to_last_post(self) -> None:
         posts = post_summary.build_thread_posts(
             (
