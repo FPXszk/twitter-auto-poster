@@ -35,6 +35,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: twitter-account-diagnostic
   cancel-in-progress: false
@@ -43,10 +46,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      ASSUME_PREMIUM: ${{ github.event_name == 'workflow_dispatch' && inputs.assume_premium || 'true' }}
-      RECENT_POSTS_MAX: ${{ github.event_name == 'workflow_dispatch' && inputs.recent_posts_max || '10' }}
-      TWEET_ID_1: ${{ inputs.tweet_id_1 }}
-      TWEET_ID_2: ${{ inputs.tweet_id_2 }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -55,6 +54,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Resolve run options
+        id: run_options
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          def resolve_input(inputs: dict[str, object], event_name: str, name: str, default: str) -> str:
+              if event_name != "workflow_dispatch":
+                  return default
+              value = inputs.get(name, default)
+              if value is None:
+                  return default
+              return str(value)
+
+          inputs = json.loads(os.environ.get("EVENT_INPUTS_JSON") or "{}") or {}
+          event_name = os.environ["EVENT_NAME"]
+          values = {
+              "assume_premium": resolve_input(inputs, event_name, "assume_premium", "true"),
+              "recent_posts_max": resolve_input(inputs, event_name, "recent_posts_max", "10"),
+              "tweet_id_1": resolve_input(inputs, event_name, "tweet_id_1", ""),
+              "tweet_id_2": resolve_input(inputs, event_name, "tweet_id_2", ""),
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              for name, value in values.items():
+                  handle.write(f"{name}={value}\n")
+          PY
 
       - name: Install runtime dependencies
         run: |
@@ -76,6 +107,11 @@ jobs:
             ${{ runner.os }}-twitter-account-score-history-
 
       - name: Run Twitter diagnostics
+        env:
+          ASSUME_PREMIUM: ${{ steps.run_options.outputs.assume_premium }}
+          RECENT_POSTS_MAX: ${{ steps.run_options.outputs.recent_posts_max }}
+          TWEET_ID_1: ${{ steps.run_options.outputs.tweet_id_1 }}
+          TWEET_ID_2: ${{ steps.run_options.outputs.tweet_id_2 }}
         run: |
           mkdir -p tmp/diagnostics
           touch tmp/diagnostics/account-score-history.jsonl

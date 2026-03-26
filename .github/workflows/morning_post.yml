@@ -44,6 +44,9 @@ permissions:
   actions: read
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: morning-stock-post
   cancel-in-progress: false
@@ -52,11 +55,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-      FORCE_REPOST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_repost || 'false' }}
-      IGNORE_MARKET_DAY: ${{ github.event_name == 'workflow_dispatch' && inputs.ignore_market_day || 'false' }}
-      BREAKOUT_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.breakout_count || '' }}
-      MAX_WEIGHTED_LENGTH: ${{ github.event_name == 'workflow_dispatch' && inputs.max_weighted_length || '' }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -66,34 +64,67 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Resolve run options
+        id: run_options
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          def resolve_input(inputs: dict[str, object], event_name: str, name: str, default: str) -> str:
+              if event_name != "workflow_dispatch":
+                  return default
+              value = inputs.get(name, default)
+              if value is None:
+                  return default
+              return str(value)
+
+          inputs = json.loads(os.environ.get("EVENT_INPUTS_JSON") or "{}") or {}
+          event_name = os.environ["EVENT_NAME"]
+          values = {
+              "dry_run": resolve_input(inputs, event_name, "dry_run", "false"),
+              "force_repost": resolve_input(inputs, event_name, "force_repost", "false"),
+              "ignore_market_day": resolve_input(inputs, event_name, "ignore_market_day", "false"),
+              "breakout_count": resolve_input(inputs, event_name, "breakout_count", ""),
+              "max_weighted_length": resolve_input(inputs, event_name, "max_weighted_length", ""),
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              for name, value in values.items():
+                  handle.write(f"{name}={value}\n")
+          PY
+
       - name: Check JP market day
         id: market_day
         run: python python/check_jpx_business_day.py --github-output
 
       - name: Log skip reason
-        if: steps.market_day.outputs.should_run != 'true' && env.IGNORE_MARKET_DAY != 'true'
+        if: steps.market_day.outputs.should_run != 'true' && steps.run_options.outputs.ignore_market_day != 'true'
         run: echo "Skipping morning stock post on ${{ steps.market_day.outputs.target_date }} (${{ steps.market_day.outputs.reason }})"
 
       - name: Install runtime dependencies
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install yfinance pandas twitter-cli pyyaml
 
       - name: Run runtime diagnostics
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
         run: |
           python/.venv/bin/python python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/morning-runtime.json
 
       - name: Prepare runtime files
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
         run: |
           mkdir -p tmp
           touch tmp/posted_ids.txt
 
       - name: Restore post state
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
         uses: actions/cache/restore@v4
         with:
           path: tmp/posted_ids.txt
@@ -102,7 +133,7 @@ jobs:
             ${{ runner.os }}-morning-stock-state-
 
       - name: Restore stock cache
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -160,7 +191,13 @@ jobs:
           PY
 
       - name: Run morning summary
-        if: steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true'
+        if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
+        env:
+          DRY_RUN: ${{ steps.run_options.outputs.dry_run }}
+          FORCE_REPOST: ${{ steps.run_options.outputs.force_repost }}
+          IGNORE_MARKET_DAY: ${{ steps.run_options.outputs.ignore_market_day }}
+          BREAKOUT_COUNT: ${{ steps.run_options.outputs.breakout_count }}
+          MAX_WEIGHTED_LENGTH: ${{ steps.run_options.outputs.max_weighted_length }}
         run: |
           EXTRA_ARGS=""
           if [ "${FORCE_REPOST}" = "true" ]; then
@@ -187,7 +224,7 @@ jobs:
           SHOULD_RUN: ${{ steps.market_day.outputs.should_run }}
           TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
           SKIP_REASON: ${{ steps.market_day.outputs.reason }}
-          IGNORE_MARKET_DAY: ${{ env.IGNORE_MARKET_DAY }}
+          IGNORE_MARKET_DAY: ${{ steps.run_options.outputs.ignore_market_day }}
         run: |
           python - <<'PY'
           import json
@@ -254,14 +291,14 @@ jobs:
           PY
 
       - name: Save post state
-        if: always() && (steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true')
+        if: always() && (steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true')
         uses: actions/cache/save@v4
         with:
           path: tmp/posted_ids.txt
           key: ${{ runner.os }}-morning-stock-state-${{ github.run_id }}
 
       - name: Upload run artifacts
-        if: always() && (steps.market_day.outputs.should_run == 'true' || env.IGNORE_MARKET_DAY == 'true')
+        if: always() && (steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: morning-stock-run
