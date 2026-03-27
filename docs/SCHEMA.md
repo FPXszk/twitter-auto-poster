@@ -1,11 +1,19 @@
-# CONFIG SCHEMA
+# SCHEMA
 
-このリポジトリでは `config/sources.yaml` と `config/accounts.yaml` を使います。
-実行時には `scripts/lib/common.sh` の validation で基本 schema を検証します。
+## この文書の役割
+
+- この文書は、`twitter-auto-poster` の主要設定ファイルのスキーマ説明です。
+- 設定値の実装上の正本は `scripts/lib/common.sh` の validation と、各処理スクリプトの読み出しロジックです。
+- 実運用手順は `docs/RUNBOOK.md` を参照してください。
+
+## 対象ファイル
+
+- `config/sources.yaml`
+- `config/accounts.yaml`
 
 ## `config/sources.yaml`
 
-トップレベル:
+### トップレベル
 
 - `defaults`: mapping
 - `sources`: list
@@ -16,77 +24,77 @@
 - `timeline`: `top | latest | photos | videos`
 - `exclude_retweets`: boolean
 
-### `sources[]`
+### `sources[]` 共通キー
+
+- `id`: string, 必須
+- `category`: string, 必須
+- `type`: `user | search`, 必須
+- `enabled`: boolean, 任意
+- `max_results`: integer, `> 0`, 任意
+- `exclude_retweets`: boolean, 任意
+- `score_boost`: number, 任意
+- `media_mode`: `any | image | text`, 任意
+- `filters`: mapping, 任意
+
+### `sources[].filters`
+
+- `max_age_hours`: number, `> 0`
+- `required_terms`: list of non-empty string
+- `exclude_keywords`: list of non-empty string
+- `min_author_followers`: integer, `>= 0`
+- `max_author_followers`: integer, `>= 0`
+
+### `type: user` のとき
 
 必須:
 
-- `id`: string
-- `category`: string
-- `type`: `user | search`
-
-任意:
-
-- `enabled`: boolean
-- `max_results`: integer, `> 0`
-- `exclude_retweets`: boolean
-- `score_boost`: number
-- `media_mode`: `any | image | text`
-- `filters`: mapping
-
-`type: user` のとき必須:
-
 - `username`: string
 
-`type: search` のとき必須:
+### `type: search` のとき
+
+必須:
 
 - `query`: string
 
-`type: search` のとき任意:
+任意:
 
 - `timeline`: `top | latest | photos | videos`
 
-### 例
+### `sources.yaml` の意味
 
-```yaml
-defaults:
-  max_results: 5
-  timeline: latest
-  exclude_retweets: true
-
-sources:
-  - id: invest-mu-top-search
-    category: invest
-    type: search
-    enabled: true
-    query: "$MU lang:en"
-    timeline: latest
-    media_mode: image
-    score_boost: 8
-```
+- `sources` は「どこから候補を取るか」を定義します。
+- `score_boost` はソース単位の優先度補正です。
+- `media_mode` は画像候補とテキスト候補の交互運用に使われます。
+- `filters` はソース単位での上書き条件です。
 
 ## `config/accounts.yaml`
 
-トップレベル:
+### トップレベル
 
 - `defaults`: mapping
 - `accounts`: mapping
 
-### 共通キー
+### `defaults` / `accounts.<name>` 共通キー
 
 - `dry_run`: boolean
 - `post_prefix`: string
 - `max_candidates`: integer, `> 0`
 - `summary_prefix`: string
 - `summary_language`: `ja | raw`
+- `summary_provider`: `legacy_google_translate | copilot_cli`
+- `summary_model`: string
+- `summary_prompt_path`: string
 - `summary_max_length`: integer, `1..280`
+- `single_post_max_length`: integer, `1..280`
 - `state_file`: string
 - `media_state_file`: string
 - `selection_mode`: `score | round_robin`
+- `source_reference_mode`: `url | quote`
 - `rotation_state_file`: string
+- `score_weights`: mapping
+- `filters`: mapping
 
 ### `score_weights`
-
-mapping:
 
 - `likes`: number
 - `retweets`: number
@@ -95,45 +103,28 @@ mapping:
 - `velocity`: number
 - `freshness`: number
 - `image_bonus`: number
+- `author_virality`: number
 
 ### `filters`
 
-mapping:
-
 - `max_age_hours`: number, `> 0`
-- `required_terms`: list of string
-- `exclude_keywords`: list of string
+- `required_terms`: list of non-empty string
+- `exclude_keywords`: list of non-empty string
+- `min_author_followers`: integer, `>= 0`
+- `max_author_followers`: integer, `>= 0`
 
-### 例
+### `accounts.yaml` の意味
 
-```yaml
-defaults:
-  dry_run: true
-  summary_prefix: "Xで反応上位: "
-  summary_language: "ja"
-  summary_max_length: 280
-  score_weights:
-    likes: 1
-    retweets: 1
-    views: 1
-    freshness: 0
+- `accounts` はカテゴリごとの投稿ポリシーです。
+- `summary_*` は要約文生成の制御です。
+- `score_weights` は候補選定スコアの重みです。
+- `filters` は候補の除外条件です。
+- `author_virality` は「フォロワー規模に対してどれだけ伸びたか」を加点するための重みです。
 
-  accounts:
-  invest:
-    dry_run: false
-    selection_mode: "score"
-    state_file: "state/invest-posted.txt"
-    media_state_file: "state/invest-hot-selection.json"
-    score_weights:
-      retweets: 4
-      replies: 5
-      views: 0.02
-      velocity: 2
-      freshness: 6
-      image_bonus: 12
-    filters:
-      max_age_hours: 6
-      required_terms:
-        - "$MU"
-        - "Micron"
-```
+## 更新トリガー
+
+次の変更が入ったらこの文書も更新します。
+
+- `scripts/lib/common.sh` の validation 変更
+- `config/*.yaml` の新規キー追加
+- 候補選定や投稿生成に関わる設定項目の意味変更

@@ -1,172 +1,172 @@
 # RUNBOOK
 
-`twitter-auto-poster` を安全に運用するための手順書です。
+## この文書の役割
 
-## 1. GitHub Secrets の設定
+- この文書は `twitter-auto-poster` の運用手順書です。
+- 設定キーの意味は `docs/SCHEMA.md`、戦略判断は `docs/design-docs/STRATEGY.md` を参照してください。
 
-GitHub Actions で必要な Secrets は次の 2 つです。
+## 1. 事前準備
+
+### ローカル認証
+
+最低限確認すること:
+
+1. `twitter status --yaml`
+2. `twitter whoami`
+3. `copilot --version`
+4. `gh auth status`
+
+### GitHub Secrets
+
+GitHub Actions で必要な Secrets:
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
+- `COPILOT_GITHUB_TOKEN`
 
-設定手順:
+## 2. 日常運用フロー
 
-1. GitHub で対象 repository を開く
-2. `Settings` → `Secrets and variables` → `Actions` を開く
-3. `New repository secret` を選ぶ
-4. `TWITTER_AUTH_TOKEN` を作成して保存
-5. 同じ手順で `TWITTER_CT0` を作成して保存
+### invest 投稿の preview
 
-値の取得方法:
+```bash
+bash scripts/fetch_and_post.sh --category invest --dry-run true
+```
 
-1. ブラウザで `x.com` にログインする
-2. 開発者ツールを開き、任意の `x.com` リクエストを選ぶ
-3. `Cookie` から `auth_token` と `ct0` を抜き出す
-4. 認証情報なので、平文で共有しない
+見る場所:
 
-補足:
+- `tmp/runs/candidate-invest.*`
+- `tmp/raw/invest/`
+- `tmp/runs/fetch-search-invest.json`
 
-- shell script 群は既定で `python/.venv/bin/python3` を使う
-- ローカル事情で切り替えたい場合だけ `PYTHON_BIN=/path/to/python3` を指定する
+確認ポイント:
 
-## 2. ローカル → 手動実行 → 定期実行の流れ
+- `selected.text`
+- `selected.score`
+- `selected.score_breakdown`
+- `selected.author_followers`
+- `selected.author_verified`
+- `selected.image_urls`
+- `skipped_candidates`
+- `warnings`
 
-### JPX 銘柄更新
+### invest 投稿の live 実行
 
-JPX 銘柄更新 workflow (`update_tickers_jp.yml`) には Secrets は不要です。
+```bash
+bash scripts/fetch_and_post.sh --category invest --post
+```
 
-ローカル確認:
+live 前に必ず確認すること:
 
-1. `python/.venv/bin/pip install xlrd pyyaml` を実行する
-2. `python/.venv/bin/python python/update_tickers_jp.py` を実行する
-3. `config/tickers_jp.csv` と `config/tickers_jp.csv.bak` を確認する
-4. `tmp/tickers_jp_update_summary.json` の件数・差分要約を確認する
-5. `name_changed` や `rules_sha256` も確認し、想定外のルール変更が混ざっていないかを見る
+- 直前 preview の候補が投資テーマとして妥当
+- 要約が 280 文字以内に収まっている
+- 画像付き候補なら添付画像が妥当
+- 不要な転載・誇張になっていない
 
-GitHub Actions の手動実行:
+### news 投稿の preview / live
 
-1. Actions で `Update JP tickers` を開く
-2. `Run workflow` から実行する
-3. `Job summary` の件数・追加/削除/業種変更を確認する
-4. artifact `tickers-jp-update` から `config/tickers_jp.csv` と `tmp/tickers_jp_update_summary.json` を確認する
+```bash
+bash scripts/fetch_and_post.sh --category news --dry-run true
+bash scripts/fetch_and_post.sh --category news --post
+```
 
-### ローカル確認
+## 3. 日本株サマリー運用
 
-1. `python/.venv/bin/twitter status --yaml` で認証確認
-2. `bash scripts/fetch_search.sh --category invest` で JSON 取得確認
-3. `bash scripts/fetch_and_post.sh --category invest --dry-run true` で候補文確認
-4. `tmp/runs/fetch-user-*.json` / `tmp/runs/fetch-search-*.json` を見て、空振りなのか収集失敗なのかを確認
-5. `tmp/runs/` と `tmp/raw/` を見て、候補と元データが妥当か確認
+### 手動確認
 
-### GitHub Actions の手動実行
+```bash
+python3 -m venv python/.venv
+python/.venv/bin/pip install --upgrade pip
+python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml googletrans==4.0.0rc1
+python/.venv/bin/python python/update_tickers_jp.py
+python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
+python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
+python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json
+```
 
-1. Actions で `Post invest` を開く
-2. `Run workflow` から実行する
-3. `Job summary` で payload 件数と user/search の収集成否を確認
-4. artifact の `tmp/` を確認
-5. summary の候補文、score 内訳、rotation index が期待どおりなら次へ進む
+### 確認ポイント
 
-### 定期実行へ移る前
+- `tmp/stock_cache_summary.json`
+- `tmp/morning_summary.json`
+- `tmp/evening_summary.json`
+- 文字数上限
+- 採用された variant
+- stale cache や skipped reasons
 
-1. まず `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にして preview 実行する
-2. 問題がなければ `accounts.invest.dry_run` を `false` に戻すか、`workflow_dispatch` の `dry_run=false` で 1 回だけ実行する
-3. 実際の投稿内容と `tmp/state/invest-posted.txt` / `tmp/state/invest-robin.txt` の更新を確認
-4. 問題がなければ schedule に任せる
+## 4. GitHub Actions の見方
 
-## 3. 障害時の復旧手順
+主に見る workflow:
 
-### JPX XLS の列構成変更
+- `post_invest.yml`
+- `morning_post.yml`
+- `evening_post.yml`
+- `update_tickers_jp.yml`
 
-症状:
+`post_invest.yml` で見るポイント:
 
-- `update_tickers_jp.py` が header mismatch で失敗する
-- Actions の `Job summary` に missing columns が表示される
+- Posting window
+- Requested mode / Result mode
+- collection.user / collection.search
+- Selected source / tweet / author
+- Score breakdown
+- Summary provider / model
+- skipped candidates count
 
-対応:
-
-1. artifact の `tmp/tickers_jp_update_summary.json` を開く
-2. `error` の missing columns と sheet 名を確認する
-3. JPX の XLS 列名変更であれば `config/tickers_jp_rules.yaml` と `python/update_tickers_jp.py` の想定を更新する
-4. 既存の `config/tickers_jp.csv` は維持されていることを確認してから再実行する
-
-### 認証エラー
-
-症状:
-
-- `twitter status` 失敗
-- GitHub Actions で 401 / 403 / 226 が出る
-
-対応:
-
-1. ブラウザで X に再ログインする
-2. `auth_token` と `ct0` を再取得する
-3. GitHub Secrets を更新する
-4. `accounts.invest.dry_run: true` を確認してから `workflow_dispatch` を再実行する
-
-### 重複候補・不適切候補の調査
+## 5. 不適切候補が出たとき
 
 確認場所:
 
 - `tmp/runs/candidate-<category>.*`
-- `tmp/runs/fetch-user-<category>.json`
-- `tmp/runs/fetch-search-<category>.json`
 - `tmp/raw/<category>/`
-- workflow の `Job summary`
+- workflow summary
 
-見るポイント:
+主な調整先:
 
-- `selected.id`
-- `selected.score`
-- `selected.score_breakdown`
-- `skipped_candidates`
-- `warnings`
-- `collection.user`
-- `collection.search`
+- `config/sources.yaml`
+- `config/accounts.yaml`
 
-必要なら `config/accounts.yaml` の `filters` / `score_weights` / `selection_mode` と `config/sources.yaml` の `score_boost` / source 単位 `filters` を調整する。
+## 6. 障害時の復旧
 
-### アカウント診断と日次スコア確認
+### X 認証エラー
 
-`twitter_diagnostic.yml` は毎朝 04:00 JST に走り、`docs/POSTING_STRATEGY.md` を元にした推定アカウントスコアを出します。
+1. X に再ログイン
+2. `auth_token` と `ct0` を再取得
+3. GitHub Secrets 更新
+4. preview 実行で復旧確認
 
-確認場所:
+### Copilot 要約失敗
 
-- workflow の `Job summary`
-- artifact `twitter-diagnostic`
-- `tmp/diagnostics/account-score.json`
-- `tmp/diagnostics/account-score-history.jsonl`
+1. `COPILOT_GITHUB_TOKEN` を確認
+2. `copilot --version` と認証状態を確認
+3. preview 実行で再確認
+4. 必要なら summary provider を一時的に切り替える
 
-見るポイント:
+### JPX XLS 変更
 
-- `score_prediction.score`
-- `score_prediction.distribution`
-- `score_prediction.components`
-- `score_prediction.warnings`
-- `score_prediction.suggestions`
+1. `tmp/tickers_jp_update_summary.json` を確認
+2. 列名変更を特定
+3. `config/tickers_jp_rules.yaml` とスクリプトを更新
 
-### state のリセット
-
-invest:
+## 7. state の扱い
 
 ```bash
-rm -f tmp/state/invest-posted.txt tmp/state/invest-robin.txt
-```
-
-news:
-
-```bash
+rm -f tmp/state/invest-posted.txt
+rm -f tmp/state/invest-hot-selection.json
 rm -f tmp/state/news-posted.txt
 ```
 
-GitHub Actions 上の cache をリセットしたい場合は、新しい run を流して最新 state を上書きする。
+## 8. session logs
 
-## 4. live 投稿前チェックリスト
+- `just dev` で起動した Copilot CLI 終了時に `docs/working-memory/session-logs/` へ best-effort で要約を書き出します。
+- これらのログは working memory 用であり、Git 追跡対象ではありません。
+- 完全強制終了では保存されないことがあります。
 
-- `python/.venv/bin/twitter status --yaml` が成功する
+## 9. live 投稿前チェックリスト
+
+- 認証が成功している
 - 対象 category が正しい
-- 直前に `--dry-run true` または `accounts.invest.dry_run: true` で preview 実行した
-- `Job summary` の score と要約文が妥当
-- `Job summary` の rotation index が意図どおり進んでいる
-- stock workflow では `trade_date`、`variant`、`text_length`、`fetch_report.skipped_reasons` が妥当
-- state ファイルに直近投稿 ID が入っている
-- schedule を有効にする前に手動で 1 回だけ本番投稿を確認した
+- preview を直前に確認した
+- 候補が投資/ニュースとして妥当
+- 要約がそのまま転載になっていない
+- score と skipped reasons に違和感がない
+- state 更新先を把握している
+- 手動の 1 回目 live 実行で実際の投稿を確認済み

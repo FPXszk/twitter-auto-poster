@@ -89,3 +89,5 @@ python/output/job_runs
 python/output/backtest
 python/cache/
 _pending/
+docs/working-memory/session-logs/*.md
+!docs/working-memory/session-logs/.gitkeep

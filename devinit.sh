@@ -96,7 +96,7 @@ start_commands() {
 
   gh auth status >/dev/null 2>&1 || gh auth login --hostname github.com --git-protocol ssh --web
 
-  copilot_cmd="cd $(escape "${ROOT_DIR}") && copilot --yolo --add-github-mcp-toolset all --add-dir ~/code/twitter-auto-poster"
+  copilot_cmd="cd $(escape "${ROOT_DIR}") && scripts/dev/copilot-session-wrapper.sh --yolo --add-github-mcp-toolset all --add-dir ~/code/twitter-auto-poster"
   logs_cmd="cd ${ROOT_DIR} && touch $(escape "${LOG_FILE}") && tail -F $(escape "${LOG_FILE}")"
   git_cmd="cd ${ROOT_DIR} && echo 'Launching lazygit...' && lazygit"
 
