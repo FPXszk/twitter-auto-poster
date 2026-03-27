@@ -325,6 +325,8 @@ for index, item in enumerate(sources, start=1):
             float(item["score_boost"])
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"{source_id}: score_boost must be numeric") from exc
+    if "media_mode" in item and str(item["media_mode"]).strip() not in {"any", "image", "text"}:
+        raise SystemExit(f"{source_id}: media_mode must be 'any', 'image', or 'text'")
 
     validate_filters(f"{source_id}.filters", item.get("filters"))
 
@@ -533,6 +535,7 @@ for item in sources:
         "type": str(item.get("type") or "").strip(),
         "username": str(item.get("username") or "").strip().lstrip("@"),
         "score_boost": float(item.get("score_boost") or 0),
+        "media_mode": str(item.get("media_mode") or "any").strip().lower(),
         "filters": item.get("filters") or {},
     }
 
@@ -587,14 +590,18 @@ payload = {
     "summary_max_length": int(account.get("summary_max_length") or defaults.get("summary_max_length") or 280),
     "single_post_max_length": int(account.get("single_post_max_length") or defaults.get("single_post_max_length") or 280),
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
+    "media_state_file": str(account.get("media_state_file") or defaults.get("media_state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
     "source_reference_mode": str(account.get("source_reference_mode") or defaults.get("source_reference_mode") or "url"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),
     "score_weights": {
         "likes": float(account_score_weights.get("likes", default_score_weights.get("likes", 1))),
         "retweets": float(account_score_weights.get("retweets", default_score_weights.get("retweets", 1))),
+        "replies": float(account_score_weights.get("replies", default_score_weights.get("replies", 1))),
         "views": float(account_score_weights.get("views", default_score_weights.get("views", 1))),
+        "velocity": float(account_score_weights.get("velocity", default_score_weights.get("velocity", 0))),
         "freshness": float(account_score_weights.get("freshness", default_score_weights.get("freshness", 0))),
+        "image_bonus": float(account_score_weights.get("image_bonus", default_score_weights.get("image_bonus", 0))),
     },
     "filters": {
         "max_age_hours": account_filters.get("max_age_hours", default_filters.get("max_age_hours")),

@@ -9,8 +9,11 @@ from post_filters import parse_created_at
 DEFAULT_SCORE_WEIGHTS = {
     "likes": 1.0,
     "retweets": 1.0,
+    "replies": 1.0,
     "views": 1.0,
+    "velocity": 0.0,
     "freshness": 0.0,
+    "image_bonus": 0.0,
 }
 
 
@@ -49,6 +52,7 @@ def extract_candidate_metrics(item: Mapping[str, Any]) -> dict[str, int]:
     return {
         "likes": extract_metric(item, [("metrics", "likes"), ("likes",), ("legacy", "favorite_count")]),
         "retweets": extract_metric(item, [("metrics", "retweets"), ("retweets",), ("legacy", "retweet_count")]),
+        "replies": extract_metric(item, [("metrics", "replies"), ("replies",), ("legacy", "reply_count")]),
         "views": extract_metric(
             item,
             [
@@ -98,6 +102,31 @@ def calculate_freshness_bonus(
     return remaining_hours * freshness_weight
 
 
+def calculate_velocity_bonus(
+    metrics: Mapping[str, int],
+    *,
+    created_at: str,
+    velocity_weight: float,
+    now: datetime | None = None,
+) -> float:
+    if velocity_weight <= 0:
+        return 0.0
+
+    parsed = parse_created_at(created_at)
+    if parsed is None:
+        return 0.0
+
+    current = now or datetime.now(timezone.utc)
+    age_hours = max((current - parsed).total_seconds() / 3600, 1.0)
+    weighted_interactions = (
+        metrics.get("likes", 0)
+        + (metrics.get("retweets", 0) * 2.0)
+        + (metrics.get("replies", 0) * 3.0)
+        + (metrics.get("views", 0) * 0.01)
+    )
+    return (weighted_interactions / age_hours) * velocity_weight
+
+
 def calculate_score(
     metrics: Mapping[str, int],
     raw_weights: Mapping[str, Any] | None = None,
@@ -106,6 +135,7 @@ def calculate_score(
     max_age_hours: float | None = None,
     source_boost: float = 0.0,
     now: datetime | None = None,
+    has_image: bool = False,
 ) -> tuple[float, dict[str, float]]:
     weights = normalize_score_weights(raw_weights)
     freshness = calculate_freshness_bonus(
@@ -114,11 +144,20 @@ def calculate_score(
         max_age_hours=max_age_hours,
         now=now,
     )
+    velocity = calculate_velocity_bonus(
+        metrics,
+        created_at=created_at,
+        velocity_weight=weights["velocity"],
+        now=now,
+    )
     breakdown = {
         "likes": metrics.get("likes", 0) * weights["likes"],
         "retweets": metrics.get("retweets", 0) * weights["retweets"],
+        "replies": metrics.get("replies", 0) * weights["replies"],
         "views": metrics.get("views", 0) * weights["views"],
+        "velocity": velocity,
         "freshness": freshness,
+        "image_bonus": weights["image_bonus"] if has_image else 0.0,
         "source_boost": float(source_boost),
     }
     score = sum(breakdown.values())

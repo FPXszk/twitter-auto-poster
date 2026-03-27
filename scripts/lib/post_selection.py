@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
+from post_media import normalize_media_mode
 
-def candidate_sort_key(item: Mapping[str, Any]) -> tuple[float, int, int, int, str]:
+
+def candidate_sort_key(item: Mapping[str, Any]) -> tuple[float, int, int, int, int, str]:
     return (
         float(item.get("score", 0)),
         int(item.get("views", 0)),
+        int(item.get("replies", 0)),
         int(item.get("retweets", 0)),
         int(item.get("likes", 0)),
         str(item.get("created_at", "")),
@@ -30,6 +33,48 @@ def normalize_rotation_source(raw_value: str | None, source_order: Sequence[str]
     return value, (index + 1) % len(normalized_source_order)
 
 
+def preferred_media_mode_from_previous(raw_value: str | None) -> str:
+    previous_mode = normalize_media_mode(raw_value)
+    if previous_mode == "image":
+        return "text"
+    return "image"
+
+
+def apply_media_preference(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    preferred_media_mode: str,
+    limit: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    target_mode = normalize_media_mode(preferred_media_mode)
+    ordered_candidates = [dict(item) for item in candidates]
+    if target_mode == "any":
+        selected = ordered_candidates[:limit]
+        return selected, {
+            "target_media_mode": "any",
+            "selected_media_mode": selected[0].get("media_mode") if selected else None,
+            "media_preference_satisfied": False,
+        }
+
+    preferred = [
+        dict(item)
+        for item in ordered_candidates
+        if normalize_media_mode(str(item.get("media_mode") or "")) == target_mode
+    ]
+    fallback = [
+        dict(item)
+        for item in ordered_candidates
+        if normalize_media_mode(str(item.get("media_mode") or "")) != target_mode
+    ]
+    selected = (preferred or fallback)[:limit]
+    selected_media_mode = selected[0].get("media_mode") if selected else None
+    return selected, {
+        "target_media_mode": target_mode,
+        "selected_media_mode": selected_media_mode,
+        "media_preference_satisfied": bool(preferred),
+    }
+
+
 def select_candidates(
     candidates: Sequence[Mapping[str, Any]],
     *,
@@ -37,18 +82,25 @@ def select_candidates(
     max_candidates: int,
     selection_mode: str,
     previous_source: str = "",
+    preferred_media_mode: str = "any",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     ordered_candidates = sort_candidates(candidates)
     limit = max(max_candidates, 1)
 
     if selection_mode != "round_robin" or not source_order:
-        return ordered_candidates[:limit], {
+        selected, media = apply_media_preference(
+            ordered_candidates,
+            preferred_media_mode=preferred_media_mode,
+            limit=limit,
+        )
+        return selected, {
             "selection_mode": "score",
             "source_order": list(source_order),
             "previous_source": "",
             "start_index": 0,
             "selected_source": None,
             "next_source": None,
+            **media,
         }
 
     normalized_source_order = [item for item in source_order if item]
@@ -65,13 +117,19 @@ def select_candidates(
         source_key = normalized_source_order[source_index]
         source_candidates = candidates_by_source.get(source_key) or []
         if source_candidates:
-            return source_candidates[:limit], {
+            selected, media = apply_media_preference(
+                source_candidates,
+                preferred_media_mode=preferred_media_mode,
+                limit=limit,
+            )
+            return selected, {
                 "selection_mode": "round_robin",
                 "source_order": normalized_source_order,
                 "previous_source": normalized_previous_source,
                 "start_index": start_index,
                 "selected_source": source_key,
                 "next_source": normalized_source_order[(source_index + 1) % len(normalized_source_order)],
+                **media,
             }
 
     return [], {
@@ -81,4 +139,7 @@ def select_candidates(
         "start_index": start_index,
         "selected_source": None,
         "next_source": normalized_source_order[start_index] if normalized_source_order else None,
+        "target_media_mode": normalize_media_mode(preferred_media_mode),
+        "selected_media_mode": None,
+        "media_preference_satisfied": False,
     }

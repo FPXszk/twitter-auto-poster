@@ -30,6 +30,7 @@
 - `max_results`: integer, `> 0`
 - `exclude_retweets`: boolean
 - `score_boost`: number
+- `media_mode`: `any | image | text`
 - `filters`: mapping
 
 `type: user` のとき必須:
@@ -59,6 +60,7 @@ sources:
     enabled: true
     query: "$MU lang:en"
     timeline: latest
+    media_mode: image
     score_boost: 8
 ```
 
@@ -78,6 +80,7 @@ sources:
 - `summary_language`: `ja | raw`
 - `summary_max_length`: integer, `1..280`
 - `state_file`: string
+- `media_state_file`: string
 - `selection_mode`: `score | round_robin`
 - `rotation_state_file`: string
 
@@ -87,8 +90,11 @@ mapping:
 
 - `likes`: number
 - `retweets`: number
+- `replies`: number
 - `views`: number
+- `velocity`: number
 - `freshness`: number
+- `image_bonus`: number
 
 ### `filters`
 
@@ -112,18 +118,21 @@ defaults:
     views: 1
     freshness: 0
 
-accounts:
+  accounts:
   invest:
     dry_run: false
-    selection_mode: "round_robin"
+    selection_mode: "score"
     state_file: "state/invest-posted.txt"
-    rotation_state_file: "state/invest-robin.txt"
+    media_state_file: "state/invest-hot-selection.json"
     score_weights:
       retweets: 4
+      replies: 5
       views: 0.02
+      velocity: 2
       freshness: 6
+      image_bonus: 12
     filters:
-      max_age_hours: 18
+      max_age_hours: 6
       required_terms:
         - "$MU"
         - "Micron"

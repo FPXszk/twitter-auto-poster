@@ -6,7 +6,8 @@
 # - summary_model / summary_prompt_path: copilot provider 用のモデルと指示文
 # - single_post_max_length: 単発投稿の上限。twitter-cli 実投稿経路に合わせて 280 以内
 # - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
-# - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点）
+# - media_state_file: 画像あり/なし交互選択の state
+# - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点、velocity は反応速度）
 defaults:
   dry_run: true
   post_prefix: "Auto update:"
@@ -19,13 +20,17 @@ defaults:
   summary_max_length: 280
   single_post_max_length: 280
   state_file: ""
+  media_state_file: ""
   selection_mode: "score"
   rotation_state_file: ""
   score_weights:
     likes: 1
     retweets: 1
+    replies: 1
     views: 1
+    velocity: 0
     freshness: 0
+    image_bonus: 0
   filters:
     max_age_hours: 48
     required_terms: []
@@ -42,23 +47,29 @@ accounts:
     summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     summary_max_length: 280
     single_post_max_length: 280
-    selection_mode: "round_robin"
-    source_reference_mode: "quote"
+    selection_mode: "score"
+    source_reference_mode: "url"
     state_file: "state/invest-posted.txt"
-    rotation_state_file: "state/invest-robin.txt"
+    media_state_file: "state/invest-hot-selection.json"
     score_weights:
-      likes: 1
-      retweets: 4
-      views: 0.02
-      freshness: 6
+      likes: 1.0
+      retweets: 3.5
+      replies: 4.5
+      views: 0.015
+      velocity: 2.0
+      freshness: 1.5
+      image_bonus: 12
     filters:
-      max_age_hours: 18
+      max_age_hours: 6
       exclude_keywords:
         - "options flow"
         - "premium members"
         - "free trial"
         - "join now"
         - "whatsapp"
+        - "フォロー"
+        - "プレゼント企画"
+        - "キャンペーン"
 
   news:
     dry_run: true

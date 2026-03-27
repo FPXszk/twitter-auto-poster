@@ -9,7 +9,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: "0 1,3,5,7,9,11,13,15,21,23 * * *"
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
@@ -36,11 +36,29 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Evaluate posting window
+        id: posting_window
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
+          should_run = 8 <= now.hour < 24
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"should_run={str(should_run).lower()}\n")
+              handle.write(f"now_jst={now.isoformat()}\n")
+          PY
+
       - uses: actions/setup-node@v4
+        if: steps.posting_window.outputs.should_run == 'true'
         with:
           node-version: "24"
 
       - name: Install runtime dependencies
+        if: steps.posting_window.outputs.should_run == 'true'
         run: |
           npm install -g @github/copilot
           python -m venv python/.venv
@@ -49,6 +67,7 @@ jobs:
 
       - name: Load account mode
         id: account_mode
+        if: steps.posting_window.outputs.should_run == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
@@ -86,6 +105,7 @@ jobs:
           PY
 
       - name: Run runtime diagnostics
+        if: steps.posting_window.outputs.should_run == 'true'
         run: |
           mkdir -p tmp
           if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
@@ -96,11 +116,13 @@ jobs:
           python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/invest-runtime.json
 
       - name: Prepare scripts
+        if: steps.posting_window.outputs.should_run == 'true'
         run: |
           chmod +x scripts/*.sh scripts/lib/common.sh
           mkdir -p tmp/state
 
       - name: Restore post state
+        if: steps.posting_window.outputs.should_run == 'true'
         uses: actions/cache/restore@v4
         with:
           path: tmp/state
@@ -109,10 +131,14 @@ jobs:
             ${{ runner.os }}-post-invest-state-
 
       - name: Fetch candidates and process mode
+        if: steps.posting_window.outputs.should_run == 'true'
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
 
       - name: Write run summary
         if: always()
+        env:
+          POSTING_WINDOW: ${{ steps.posting_window.outputs.should_run }}
+          POSTING_WINDOW_JST: ${{ steps.posting_window.outputs.now_jst }}
         run: |
           python - <<'PY'
           import json
@@ -122,9 +148,15 @@ jobs:
           category = os.environ["CATEGORY"]
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
           candidate_files = sorted(Path("tmp/runs").glob(f"candidate-{category}.*"))
+          posting_window = os.environ.get("POSTING_WINDOW", "")
+          posting_window_jst = os.environ.get("POSTING_WINDOW_JST", "")
 
           lines = [f"## {category} run summary", ""]
-          if not candidate_files:
+          lines.append(f"- Posting window allowed: `{posting_window}`")
+          lines.append(f"- Current JST: `{posting_window_jst}`")
+          if posting_window != "true":
+              lines.extend(["", "- Skipped because current JST is outside the 08:00-24:00 posting window."])
+          elif not candidate_files:
               lines.append("candidate file was not created.")
           else:
               payload = json.loads(candidate_files[-1].read_text(encoding="utf-8"))
@@ -143,9 +175,12 @@ jobs:
               if rotation:
                   lines.extend(
                       [
-                          f"- Previous account: `{rotation.get('previous_source', '')}`",
-                          f"- Selected account: `{rotation.get('selected_source', '')}`",
-                          f"- Next account: `{rotation.get('next_source', '')}`",
+                          f"- Previous source: `{rotation.get('previous_source', '')}`",
+                          f"- Selected source: `{rotation.get('selected_source', '')}`",
+                          f"- Next source: `{rotation.get('next_source', '')}`",
+                          f"- Target media mode: `{rotation.get('target_media_mode', payload.get('target_media_mode', ''))}`",
+                          f"- Selected media mode: `{rotation.get('selected_media_mode', '')}`",
+                          f"- Media preference satisfied: `{rotation.get('media_preference_satisfied', False)}`",
                       ]
                   )
               selected = payload.get("selected")
@@ -162,13 +197,15 @@ jobs:
                       [
                           f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
                           f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
-                          f"- Selected tweet ID: `{selected.get('id', '')}`",
-                          f"- Author: `{author}`",
-                          f"- Score: `{selected.get('score', 0)}`",
-                          f"- Likes / Retweets / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('views', 0)}`",
-                          f"- Score breakdown: `{formatted_breakdown}`",
-                          f"- Summary provider: `{summary_generation.get('provider', '')}`",
-                          f"- Summary model: `{summary_generation.get('model', '')}`",
+                           f"- Selected tweet ID: `{selected.get('id', '')}`",
+                           f"- Author: `{author}`",
+                           f"- Score: `{selected.get('score', 0)}`",
+                           f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
+                           f"- Has image: `{selected.get('has_image', False)}`",
+                           f"- Media classification: `{selected.get('media_classification_source', '')}`",
+                           f"- Score breakdown: `{formatted_breakdown}`",
+                           f"- Summary provider: `{summary_generation.get('provider', '')}`",
+                           f"- Summary model: `{summary_generation.get('model', '')}`",
                           f"- Summary: {payload.get('post_text', '')}",
                           "",
                           "### Source snippet",
@@ -195,7 +232,7 @@ jobs:
           PY
 
       - name: Save post state
-        if: steps.account_mode.outputs.dry_run != 'true'
+        if: steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/save@v4
         with:
           path: tmp/state

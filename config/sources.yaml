@@ -5,45 +5,65 @@ defaults:
   exclude_retweets: true
 
 sources:
-  - id: invest-user-markminervini
+  - id: invest-ja-buzz-top-image
     category: invest
-    type: user
+    type: search
     enabled: true
-    username: markminervini
-    max_results: 5
-    exclude_retweets: false
+    query: "(の OR です OR ます OR する) lang:ja has:images min_faves:500 min_retweets:50 -is:retweet -is:reply"
+    timeline: Top
+    max_results: 20
+    media_mode: image
+    score_boost: 10
 
-  - id: invest-user-hypertechinvest
+  - id: invest-ja-buzz-top-text
     category: invest
-    type: user
+    type: search
     enabled: true
-    username: hypertechinvest
-    max_results: 5
-    exclude_retweets: false
+    query: "(の OR です OR ます OR する) lang:ja -has:images min_faves:500 min_retweets:50 -is:retweet -is:reply"
+    timeline: Top
+    max_results: 20
+    media_mode: text
+    score_boost: 8
 
-  - id: invest-user-stocksavvyshay
+  - id: invest-ja-buzz-latest-image
     category: invest
-    type: user
+    type: search
     enabled: true
-    username: stocksavvyshay
-    max_results: 5
-    exclude_retweets: false
+    query: "(の OR です OR ます OR する) lang:ja has:images min_faves:150 min_retweets:20 -is:retweet -is:reply"
+    timeline: Latest
+    max_results: 30
+    media_mode: image
+    score_boost: 6
 
-  - id: invest-user-marionawfal
+  - id: invest-ja-buzz-latest-text
     category: invest
-    type: user
+    type: search
     enabled: true
-    username: marionawfal
-    max_results: 5
-    exclude_retweets: false
+    query: "(の OR です OR ます OR する) lang:ja -has:images min_faves:150 min_retweets:20 -is:retweet -is:reply"
+    timeline: Latest
+    max_results: 30
+    media_mode: text
+    score_boost: 5
 
-  - id: invest-user-aleabitoreddit
+  - id: invest-ja-buzz-news-image
     category: invest
-    type: user
+    type: search
     enabled: true
-    username: aleabitoreddit
-    max_results: 5
-    exclude_retweets: false
+    query: "(速報 OR 発表 OR 話題 OR 注目 OR 炎上 OR 新作) lang:ja has:images min_faves:200 -is:retweet -is:reply"
+    timeline: Latest
+    max_results: 20
+    media_mode: image
+    score_boost: 4
+
+  - id: invest-ja-buzz-news-text
+    category: invest
+    type: search
+    enabled: true
+    query: "(速報 OR 発表 OR 話題 OR 注目 OR 炎上 OR 新作) lang:ja -has:images min_faves:200 -is:retweet -is:reply"
+    timeline: Latest
+    max_results: 20
+    media_mode: text
+    score_boost: 3
 
   - id: news-breaking-search
     category: news

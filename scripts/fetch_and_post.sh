@@ -97,6 +97,32 @@ else:
 PY
 }
 
+resolve_media_state_file() {
+  local output_dir="$1"
+  local category="$2"
+  local account_json="$3"
+
+  python_cmd - "${output_dir}" "${category}" "${account_json}" <<'PY'
+import json
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+account = json.loads(sys.argv[3])
+configured = str(account.get("media_state_file") or "").strip()
+
+if configured:
+    state_path = pathlib.Path(configured)
+    if not state_path.is_absolute():
+        state_path = output_dir / state_path
+else:
+    state_path = output_dir / "state" / f"{category}-media-selection.json"
+
+print(state_path)
+PY
+}
+
 emit_candidate_warnings() {
   local candidate_file="$1"
 
@@ -178,6 +204,37 @@ path.write_text(f"{selected_source}\n", encoding="utf-8")
 PY
 }
 
+update_media_state() {
+  local media_state_file="$1"
+  local selected_media_mode="$2"
+  local selected_tweet_id="$3"
+
+  [[ -n "${media_state_file}" ]] || return 0
+  python_cmd - "${media_state_file}" "${selected_media_mode}" "${selected_tweet_id}" <<'PY'
+import json
+import pathlib
+import sys
+from datetime import datetime, timezone
+
+path = pathlib.Path(sys.argv[1])
+selected_media_mode = sys.argv[2].strip() or "text"
+selected_tweet_id = sys.argv[3].strip()
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(
+    json.dumps(
+        {
+            "last_media_mode": selected_media_mode,
+            "last_tweet_id": selected_tweet_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 main() {
   local category=""
   local sources_config="${DEFAULT_SOURCES_CONFIG}"
@@ -194,6 +251,7 @@ main() {
   local rotation_state_file=""
   local selection_mode=""
   local selected_source_name=""
+  local selected_media_mode=""
   local source_reference_mode="url"
   local single_post_max_length="280"
   local source_root=""
@@ -206,6 +264,7 @@ main() {
   local source_config_json=""
   local requested_mode="live"
   local post_error=""
+  local media_state_file=""
 
   while (($# > 0)); do
     case "$1" in
@@ -318,6 +377,9 @@ PY
   source_state_file="$(resolve_source_state_file "${state_file}")"
   mkdir -p "$(dirname "${source_state_file}")"
   touch "${source_state_file}"
+  media_state_file="$(resolve_media_state_file "${output_dir}" "${category}" "${account_json}")"
+  mkdir -p "$(dirname "${media_state_file}")"
+  touch "${media_state_file}"
   rotation_state_file="$(resolve_rotation_state_file "${output_dir}" "${category}" "${account_json}")"
   if [[ -n "${rotation_state_file}" ]]; then
     mkdir -p "$(dirname "${rotation_state_file}")"
@@ -325,24 +387,26 @@ PY
   fi
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
 import json
 import pathlib
 import re
 import sys
 from post_filters import candidate_rejection_reasons, merge_filters
-from post_selection import normalize_rotation_source, select_candidates
+from post_media import extract_candidate_media
+from post_selection import normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
 from post_summary import build_source_tweet_url, build_summary, clean_post_source_text, clean_source_text
 
 category = sys.argv[1]
 source_state_file = pathlib.Path(sys.argv[2])
 rotation_state_file = pathlib.Path(sys.argv[3]) if sys.argv[3] else None
-account = json.loads(sys.argv[4])
-source_configs = json.loads(sys.argv[5])
-collection = json.loads(sys.argv[6])
-requested_mode = sys.argv[7]
-payload_files = [pathlib.Path(item) for item in sys.argv[8:]]
+media_state_file = pathlib.Path(sys.argv[4])
+account = json.loads(sys.argv[5])
+source_configs = json.loads(sys.argv[6])
+collection = json.loads(sys.argv[7])
+requested_mode = sys.argv[8]
+payload_files = [pathlib.Path(item) for item in sys.argv[9:]]
 
 posted_ids = {line.strip() for line in source_state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
@@ -367,6 +431,14 @@ rotation_raw = ""
 if rotation_state_file is not None:
     rotation_raw = rotation_state_file.read_text(encoding="utf-8").strip()
 previous_source, _ = normalize_rotation_source(rotation_raw, source_order)
+previous_media_mode = ""
+if media_state_file.is_file():
+    try:
+        media_state = json.loads(media_state_file.read_text(encoding="utf-8"))
+        previous_media_mode = str(media_state.get("last_media_mode") or "").strip().lower()
+    except Exception as exc:
+        warnings.append(f"{media_state_file.name}: failed to parse media state ({exc})")
+target_media_mode = preferred_media_mode_from_previous(previous_media_mode)
 
 
 for payload_path in payload_files:
@@ -376,6 +448,7 @@ for payload_path in payload_files:
     source_type = str(source_config.get("type") or "")
     source_score_boost = float(source_config.get("score_boost") or 0)
     source_username = str(source_config.get("username") or "")
+    source_media_mode = str(source_config.get("media_mode") or "any")
     effective_filters = merge_filters(account_filters, source_filters)
     try:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -410,12 +483,14 @@ for payload_path in payload_files:
 
         author = item.get("author") or {}
         metrics = extract_candidate_metrics(item)
+        media = extract_candidate_media(item, fallback_mode=source_media_mode)
         score, score_breakdown = calculate_score(
             metrics,
             score_weights,
             created_at=created_at,
             max_age_hours=effective_filters.get("max_age_hours"),
             source_boost=source_score_boost,
+            has_image=bool(media.get("has_image")),
         )
 
         candidates.append(
@@ -431,7 +506,12 @@ for payload_path in payload_files:
                 "author_name": str(author.get("name") or ""),
                 "likes": metrics["likes"],
                 "retweets": metrics["retweets"],
+                "replies": metrics["replies"],
                 "views": metrics["views"],
+                "has_image": bool(media.get("has_image")),
+                "media_mode": str(media.get("media_mode") or "text"),
+                "media_types": media.get("media_types") or [],
+                "media_classification_source": str(media.get("classification_source") or "default"),
                 "score": round(score, 2),
                 "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
                 "created_at": created_at,
@@ -447,6 +527,7 @@ selected_candidates, rotation = select_candidates(
     max_candidates=max_candidates,
     selection_mode=selection_mode,
     previous_source=previous_source,
+    preferred_media_mode=target_media_mode,
 )
 selected = selected_candidates[0] if selected_candidates else None
 post_text = ""
@@ -491,6 +572,8 @@ payload = {
     "selection_mode": selection_mode,
     "source_reference_mode": source_reference_mode,
     "single_post_max_length": int(account.get("single_post_max_length") or 280),
+    "target_media_mode": target_media_mode,
+    "previous_media_mode": previous_media_mode or None,
     "rotation": rotation,
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
@@ -571,6 +654,16 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(payload.get("source_url", ""))
 PY
   )"
+  selected_media_mode="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+selected = payload.get("selected") or {}
+print(selected.get("media_mode", ""))
+PY
+  )"
 
   info "prepared post candidate for '${category}'"
   printf '%s\n' "${post_text}"
@@ -590,6 +683,7 @@ PY
   if [[ "${selection_mode}" == "round_robin" && -n "${selected_source_name}" ]]; then
     update_rotation_state "${rotation_state_file}" "${selected_source_name}"
   fi
+  update_media_state "${media_state_file}" "${selected_media_mode}" "${selected_tweet_id}"
   update_candidate_result "${candidate_file}" "posted" "${post_result_file}"
 }
 
