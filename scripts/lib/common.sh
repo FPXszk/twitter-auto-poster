@@ -281,6 +281,10 @@ def validate_filters(label, value):
         raise SystemExit(f"{label} must be a mapping")
     if "max_age_hours" in value and value["max_age_hours"] is not None and float(value["max_age_hours"]) <= 0:
         raise SystemExit(f"{label}.max_age_hours must be > 0")
+    if "min_author_followers" in value and value["min_author_followers"] is not None and int(value["min_author_followers"]) < 0:
+        raise SystemExit(f"{label}.min_author_followers must be >= 0")
+    if "max_author_followers" in value and value["max_author_followers"] is not None and int(value["max_author_followers"]) < 0:
+        raise SystemExit(f"{label}.max_author_followers must be >= 0")
     ensure_string_list(f"{label}.required_terms", value.get("required_terms"))
     ensure_string_list(f"{label}.exclude_keywords", value.get("exclude_keywords"))
 
@@ -430,6 +434,10 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
             raise SystemExit(f"{label}.filters must be a mapping")
         if "max_age_hours" in filters and filters["max_age_hours"] is not None and float(filters["max_age_hours"]) <= 0:
             raise SystemExit(f"{label}.filters.max_age_hours must be > 0")
+        if "min_author_followers" in filters and filters["min_author_followers"] is not None and int(filters["min_author_followers"]) < 0:
+            raise SystemExit(f"{label}.filters.min_author_followers must be >= 0")
+        if "max_author_followers" in filters and filters["max_author_followers"] is not None and int(filters["max_author_followers"]) < 0:
+            raise SystemExit(f"{label}.filters.max_author_followers must be >= 0")
         ensure_string_list(f"{label}.filters.required_terms", filters.get("required_terms"))
         ensure_string_list(f"{label}.filters.exclude_keywords", filters.get("exclude_keywords"))
 PY
@@ -602,11 +610,14 @@ payload = {
         "velocity": float(account_score_weights.get("velocity", default_score_weights.get("velocity", 0))),
         "freshness": float(account_score_weights.get("freshness", default_score_weights.get("freshness", 0))),
         "image_bonus": float(account_score_weights.get("image_bonus", default_score_weights.get("image_bonus", 0))),
+        "author_virality": float(account_score_weights.get("author_virality", default_score_weights.get("author_virality", 0))),
     },
     "filters": {
         "max_age_hours": account_filters.get("max_age_hours", default_filters.get("max_age_hours")),
         "required_terms": account_filters.get("required_terms", default_filters.get("required_terms", [])) or [],
         "exclude_keywords": account_filters.get("exclude_keywords", default_filters.get("exclude_keywords", [])) or [],
+        "min_author_followers": account_filters.get("min_author_followers", default_filters.get("min_author_followers")),
+        "max_author_followers": account_filters.get("max_author_followers", default_filters.get("max_author_followers")),
     },
 }
 

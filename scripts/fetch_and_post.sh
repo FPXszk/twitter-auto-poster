@@ -252,6 +252,7 @@ main() {
   local selection_mode=""
   local selected_source_name=""
   local selected_media_mode=""
+  local selected_image_urls_json="[]"
   local source_reference_mode="url"
   local single_post_max_length="280"
   local source_root=""
@@ -392,6 +393,7 @@ import json
 import pathlib
 import re
 import sys
+from post_author import enrich_author_metrics
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_media import extract_candidate_media
 from post_selection import normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
@@ -414,6 +416,7 @@ skipped_candidates = []
 seen_ids = set()
 seen_text = set()
 candidates = []
+author_cache = {}
 
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
@@ -478,12 +481,20 @@ for payload_path in payload_files:
             continue
 
         created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
-        rejection_reasons = candidate_rejection_reasons(text=text, created_at=created_at, raw_filters=effective_filters)
+        author = item.get("author") or {}
+        author_metrics, author_warning = enrich_author_metrics(item, cache=author_cache)
+        if author_warning:
+            warnings.append(f"{source_id}:{tweet_id}: {author_warning}")
+        rejection_reasons = candidate_rejection_reasons(
+            text=text,
+            created_at=created_at,
+            raw_filters=effective_filters,
+            author_metrics=author_metrics,
+        )
         if rejection_reasons:
             skipped_candidates.append({"id": tweet_id, "source_id": source_id, "text": text[:2000], "reasons": rejection_reasons})
             continue
 
-        author = item.get("author") or {}
         metrics = extract_candidate_metrics(item)
         media = extract_candidate_media(item, fallback_mode=source_media_mode)
         score, score_breakdown = calculate_score(
@@ -493,6 +504,7 @@ for payload_path in payload_files:
             max_age_hours=effective_filters.get("max_age_hours"),
             source_boost=source_score_boost,
             has_image=bool(media.get("has_image")),
+            author_metrics=author_metrics,
         )
 
         candidates.append(
@@ -504,13 +516,17 @@ for payload_path in payload_files:
                 "source_username": source_username,
                 "text": text,
                 "post_source_text": post_source_text or text,
-                "screen_name": str(author.get("screenName") or ""),
+                "screen_name": str(author_metrics.get("screen_name") or author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
+                "author_followers": int(author_metrics.get("followers") or 0),
+                "author_following": int(author_metrics.get("following") or 0),
+                "author_verified": bool(author_metrics.get("verified")),
                 "likes": metrics["likes"],
                 "retweets": metrics["retweets"],
                 "replies": metrics["replies"],
                 "views": metrics["views"],
                 "has_image": bool(media.get("has_image")),
+                "image_urls": media.get("image_urls") or [],
                 "media_mode": str(media.get("media_mode") or "text"),
                 "media_types": media.get("media_types") or [],
                 "media_classification_source": str(media.get("classification_source") or "default"),
@@ -666,6 +682,16 @@ selected = payload.get("selected") or {}
 print(selected.get("media_mode", ""))
 PY
   )"
+  selected_image_urls_json="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+selected = payload.get("selected") or {}
+print(json.dumps(selected.get("image_urls") or [], ensure_ascii=False))
+PY
+  )"
 
   info "prepared post candidate for '${category}'"
   printf '%s\n' "${post_text}"
@@ -677,7 +703,7 @@ PY
   fi
 
   post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${single_post_max_length}" "${state_file}" "${source_state_file}" "${post_result_file}"; then
+  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${single_post_max_length}" "${state_file}" "${source_state_file}" "${post_result_file}" "${selected_image_urls_json}"; then
     post_error="$(summarize_post_result_file "${post_result_file}")"
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
     exit 1

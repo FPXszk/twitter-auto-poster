@@ -69,6 +69,42 @@ class PostFiltersTest(unittest.TestCase):
 
         self.assertIn("tweet is older than max_age_hours", reasons)
 
+    def test_candidate_rejection_rejects_author_with_too_many_followers(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="急に伸びた投資メモです。",
+            created_at=created_at,
+            raw_filters={"max_author_followers": 50000},
+            author_metrics={"followers": 120000},
+        )
+
+        self.assertIn("author exceeds max_author_followers", reasons)
+
+    def test_candidate_rejection_rejects_author_with_too_few_followers(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="急に伸びた投資メモです。",
+            created_at=created_at,
+            raw_filters={"min_author_followers": 500},
+            author_metrics={"followers": 120},
+        )
+
+        self.assertIn("author is below min_author_followers", reasons)
+
+    def test_candidate_rejection_rejects_author_when_follower_count_is_unavailable(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="急に伸びた投資メモです。",
+            created_at=created_at,
+            raw_filters={"max_author_followers": 50000},
+            author_metrics={"followers": 0},
+        )
+
+        self.assertIn("author follower count unavailable", reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

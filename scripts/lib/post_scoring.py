@@ -14,6 +14,7 @@ DEFAULT_SCORE_WEIGHTS = {
     "velocity": 0.0,
     "freshness": 0.0,
     "image_bonus": 0.0,
+    "author_virality": 0.0,
 }
 
 
@@ -136,6 +137,7 @@ def calculate_score(
     source_boost: float = 0.0,
     now: datetime | None = None,
     has_image: bool = False,
+    author_metrics: Mapping[str, Any] | None = None,
 ) -> tuple[float, dict[str, float]]:
     weights = normalize_score_weights(raw_weights)
     freshness = calculate_freshness_bonus(
@@ -150,6 +152,14 @@ def calculate_score(
         velocity_weight=weights["velocity"],
         now=now,
     )
+    followers = max(coerce_int((author_metrics or {}).get("followers")), 1)
+    weighted_author_engagement = (
+        metrics.get("likes", 0)
+        + (metrics.get("retweets", 0) * 3.0)
+        + (metrics.get("replies", 0) * 4.0)
+        + (metrics.get("views", 0) * 0.02)
+    )
+    author_virality = (weighted_author_engagement / followers) * weights["author_virality"]
     breakdown = {
         "likes": metrics.get("likes", 0) * weights["likes"],
         "retweets": metrics.get("retweets", 0) * weights["retweets"],
@@ -158,6 +168,7 @@ def calculate_score(
         "velocity": velocity,
         "freshness": freshness,
         "image_bonus": weights["image_bonus"] if has_image else 0.0,
+        "author_virality": author_virality,
         "source_boost": float(source_boost),
     }
     score = sum(breakdown.values())

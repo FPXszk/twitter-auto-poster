@@ -185,6 +185,54 @@ print(estimate_x_post_length(posts[int(sys.argv[2])]))
 PY
 }
 
+prepare_image_attachments() {
+  local image_urls_json="$1"
+  local temp_dir="${2:-}"
+
+  python_cmd - "${image_urls_json}" "${temp_dir}" <<'PY'
+import json
+import pathlib
+import sys
+import urllib.parse
+import urllib.request
+
+urls = json.loads(sys.argv[1] or "[]")
+temp_dir = pathlib.Path(sys.argv[2] or ".")
+temp_dir.mkdir(parents=True, exist_ok=True)
+paths = []
+
+for index, raw_url in enumerate(urls[:4], start=1):
+    url = str(raw_url or "").strip()
+    if not url:
+        continue
+    parsed = urllib.parse.urlparse(url)
+    suffix = pathlib.Path(parsed.path).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        suffix = ".jpg"
+    output_path = temp_dir / f"image-{index}{suffix}"
+    with urllib.request.urlopen(url, timeout=30) as response, output_path.open("wb") as handle:
+        handle.write(response.read())
+    paths.append(str(output_path))
+
+print(json.dumps(paths, ensure_ascii=False))
+PY
+}
+
+cleanup_image_attachments() {
+  local media_paths_json="$1"
+
+  python_cmd - "${media_paths_json}" <<'PY'
+import json
+import pathlib
+import sys
+
+for raw_path in json.loads(sys.argv[1] or "[]"):
+    path = pathlib.Path(str(raw_path))
+    if path.exists():
+        path.unlink()
+PY
+}
+
 resolve_publish_action_name() {
   local thread_count="$1"
   local source_reference_mode="$2"
@@ -228,6 +276,7 @@ publish_selected_post() {
   local state_file="$7"
   local source_state_file="$8"
   local post_result_file="$9"
+  local image_urls_json="${10:-[]}"
   local thread_plan_stdout="${post_result_file}.plan.stdout"
   local thread_plan_stderr="${post_result_file}.plan.stderr"
   local thread_plan_source_url="${source_url}"
@@ -248,6 +297,19 @@ publish_selected_post() {
   local planning_single_post_max_length="${single_post_max_length}"
   local did_quote_length_fallback="false"
   local first_post_length=0
+  local media_paths_json="[]"
+  local image_temp_dir="${post_result_file}.images"
+
+  cleanup_publish_temp() {
+    if [[ -n "${media_paths_json}" && "${media_paths_json}" != "[]" ]]; then
+      if ! cleanup_image_attachments "${media_paths_json}"; then
+        warn "failed to clean up image attachments for '${category}'"
+      fi
+    fi
+    rm -rf "${image_temp_dir}"
+  }
+
+  trap cleanup_publish_temp RETURN
 
   if [[ "${source_reference_mode}" == "quote" && -z "${source_tweet_id}" ]]; then
     write_post_failure_file \
@@ -328,6 +390,15 @@ publish_selected_post() {
   fi
   action_name="$(resolve_publish_action_name "${thread_count}" "${effective_source_reference_mode}")"
 
+  if [[ -n "${image_urls_json}" && "${image_urls_json}" != "[]" ]]; then
+    if media_paths_json="$(prepare_image_attachments "${image_urls_json}" "${image_temp_dir}")"; then
+      :
+    else
+      warn "failed to prepare image attachments for '${category}'; posting text only"
+      media_paths_json="[]"
+    fi
+  fi
+
   for ((index = 0; index < thread_count; index++)); do
     current_post_text="$(python_cmd - "${thread_posts_json}" "${index}" <<'PY'
 import json
@@ -345,7 +416,14 @@ PY
       current_quote_tweet_id="${source_tweet_id}"
     fi
 
-    execute_twitter_post "${category}" "${current_post_text}" "${reply_to_id}" "${current_quote_tweet_id}" "${current_output_file}" "${current_stderr_file}"
+    execute_twitter_post \
+      "${category}" \
+      "${current_post_text}" \
+      "${reply_to_id}" \
+      "${current_quote_tweet_id}" \
+      "$([[ "${index}" -eq 0 ]] && printf '%s' "${media_paths_json}" || printf '%s' "[]")" \
+      "${current_output_file}" \
+      "${current_stderr_file}"
     exit_code=$?
     if (( exit_code != 0 )); then
       if [[ "${did_quote_length_fallback}" != "true" && "${source_reference_mode}" == "quote" ]] \
@@ -514,11 +592,27 @@ execute_twitter_post() {
   local post_text="$2"
   local reply_to_id="${3:-}"
   local quote_tweet_id="${4:-}"
-  local output_file="$5"
-  local stderr_file="$6"
+  local media_paths_json="${5:-[]}"
+  local output_file="$6"
+  local stderr_file="$7"
   local attempt=1
   local exit_code=0
   local -a quote_command=()
+  local -a image_args=()
+
+  if [[ -n "${media_paths_json}" && "${media_paths_json}" != "[]" ]]; then
+    while IFS= read -r image_path; do
+      [[ -n "${image_path}" ]] || continue
+      image_args+=(--image "${image_path}")
+    done < <(python_cmd - "${media_paths_json}" <<'PY'
+import json
+import sys
+
+for item in json.loads(sys.argv[1] or "[]"):
+    print(str(item))
+PY
+    )
+  fi
 
   while true; do
     if [[ -n "${quote_tweet_id}" ]]; then
@@ -537,13 +631,13 @@ execute_twitter_post() {
         exit_code=$?
       fi
     elif [[ -n "${reply_to_id}" ]]; then
-      if twitter_cmd post "${post_text}" --reply-to "${reply_to_id}" --json > "${output_file}" 2> "${stderr_file}"; then
+      if twitter_cmd post "${post_text}" --reply-to "${reply_to_id}" "${image_args[@]}" --json > "${output_file}" 2> "${stderr_file}"; then
         return 0
       else
         exit_code=$?
       fi
     else
-      if twitter_cmd post "${post_text}" --json > "${output_file}" 2> "${stderr_file}"; then
+      if twitter_cmd post "${post_text}" "${image_args[@]}" --json > "${output_file}" 2> "${stderr_file}"; then
         return 0
       else
         exit_code=$?

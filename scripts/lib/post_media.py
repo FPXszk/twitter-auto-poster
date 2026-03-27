@@ -71,6 +71,14 @@ def media_type(media: Mapping[str, Any]) -> str:
     return raw_value
 
 
+def media_url(media: Mapping[str, Any]) -> str:
+    for key in ("url", "media_url_https", "media_url", "mediaUrlHttps", "mediaUrl", "expanded_url"):
+        value = str(media.get(key) or "").strip()
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+    return ""
+
+
 def extract_candidate_media(
     item: Mapping[str, Any],
     *,
@@ -79,6 +87,11 @@ def extract_candidate_media(
     entries = extract_media_entries(item)
     media_types = [media_type(media) for media in entries if media_type(media)]
     has_image = any(media_type_name in IMAGE_MEDIA_TYPES for media_type_name in media_types)
+    image_urls = [
+        media_url(entry)
+        for entry in entries
+        if media_type(entry) in IMAGE_MEDIA_TYPES and media_url(entry)
+    ]
     normalized_fallback = normalize_media_mode(fallback_mode)
 
     if has_image:
@@ -99,5 +112,6 @@ def extract_candidate_media(
         "has_image": selected_mode == "image",
         "has_media": bool(entries),
         "media_types": sorted(set(media_types)),
+        "image_urls": list(dict.fromkeys(image_urls)),
         "classification_source": classification_source,
     }

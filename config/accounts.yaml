@@ -8,6 +8,7 @@
 # - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
 # - media_state_file: 画像あり/なし交互選択の state
 # - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点、velocity は反応速度）
+#   min_author_followers / max_author_followers で極端なアカウント規模を弾き、author_virality でフォロワー比の伸びを加点する
 defaults:
   dry_run: true
   post_prefix: "Auto update:"
@@ -59,8 +60,11 @@ accounts:
       velocity: 2.0
       freshness: 1.5
       image_bonus: 12
+      author_virality: 30
     filters:
       max_age_hours: 6
+      min_author_followers: 500
+      max_author_followers: 50000
       exclude_keywords:
         - "options flow"
         - "premium members"

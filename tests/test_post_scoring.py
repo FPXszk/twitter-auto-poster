@@ -11,14 +11,15 @@ from post_scoring import calculate_score, normalize_score_weights
 
 
 class PostScoringTest(unittest.TestCase):
-    def test_normalize_score_weights_includes_freshness(self) -> None:
-        weights = normalize_score_weights({"retweets": 3, "velocity": 2, "freshness": 5})
+    def test_normalize_score_weights_includes_freshness_and_author_virality(self) -> None:
+        weights = normalize_score_weights({"retweets": 3, "velocity": 2, "freshness": 5, "author_virality": 40})
 
         self.assertEqual(weights["likes"], 1.0)
         self.assertEqual(weights["retweets"], 3.0)
         self.assertEqual(weights["replies"], 1.0)
         self.assertEqual(weights["velocity"], 2.0)
         self.assertEqual(weights["freshness"], 5.0)
+        self.assertEqual(weights["author_virality"], 40.0)
 
     def test_calculate_score_adds_velocity_freshness_and_source_boost(self) -> None:
         metrics = {"likes": 10, "retweets": 4, "replies": 2, "views": 500}
@@ -56,6 +57,16 @@ class PostScoringTest(unittest.TestCase):
         self.assertEqual(breakdown["freshness"], 0.0)
         self.assertEqual(breakdown["velocity"], 0.0)
         self.assertEqual(score, 2.0)
+
+    def test_calculate_score_adds_author_virality_bonus(self) -> None:
+        score, breakdown = calculate_score(
+            {"likes": 40, "retweets": 10, "replies": 5, "views": 1500},
+            {"likes": 1, "retweets": 1, "replies": 1, "views": 0.01, "author_virality": 30},
+            author_metrics={"followers": 900},
+        )
+
+        self.assertGreater(breakdown["author_virality"], 0.0)
+        self.assertGreater(score, 70.0)
 
 
 if __name__ == "__main__":
