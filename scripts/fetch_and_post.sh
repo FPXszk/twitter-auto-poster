@@ -434,8 +434,10 @@ previous_source, _ = normalize_rotation_source(rotation_raw, source_order)
 previous_media_mode = ""
 if media_state_file.is_file():
     try:
-        media_state = json.loads(media_state_file.read_text(encoding="utf-8"))
-        previous_media_mode = str(media_state.get("last_media_mode") or "").strip().lower()
+        raw_media_state = media_state_file.read_text(encoding="utf-8").strip()
+        if raw_media_state:
+            media_state = json.loads(raw_media_state)
+            previous_media_mode = str(media_state.get("last_media_mode") or "").strip().lower()
     except Exception as exc:
         warnings.append(f"{media_state_file.name}: failed to parse media state ({exc})")
 target_media_mode = preferred_media_mode_from_previous(previous_media_mode)
