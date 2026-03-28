@@ -144,6 +144,11 @@ jobs:
           import json
           import os
           from pathlib import Path
+          import sys
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+
+          from workflow_summary import load_latest_candidate_payload
 
           category = os.environ["CATEGORY"]
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
@@ -159,74 +164,79 @@ jobs:
           elif not candidate_files:
               lines.append("candidate file was not created.")
           else:
-              payload = json.loads(candidate_files[-1].read_text(encoding="utf-8"))
-              collection = payload.get("collection") or {}
-              rotation = payload.get("rotation") or {}
-              lines.extend(
-                  [
-                      f"- Requested mode: `{payload.get('requested_mode', 'unknown')}`",
-                      f"- Result mode: `{payload.get('result_mode', 'unknown')}`",
-                      f"- Selection mode: `{payload.get('selection_mode', 'score')}`",
-                      f"- Payload files: `{payload.get('payload_count', 0)}`",
-                      f"- User fetch status: `{collection.get('user', {})}`",
-                      f"- Search fetch status: `{collection.get('search', {})}`",
-                  ]
-              )
-              if rotation:
-                  lines.extend(
-                      [
-                          f"- Previous source: `{rotation.get('previous_source', '')}`",
-                          f"- Selected source: `{rotation.get('selected_source', '')}`",
-                          f"- Next source: `{rotation.get('next_source', '')}`",
-                          f"- Target media mode: `{rotation.get('target_media_mode', payload.get('target_media_mode', ''))}`",
-                          f"- Selected media mode: `{rotation.get('selected_media_mode', '')}`",
-                          f"- Media preference satisfied: `{rotation.get('media_preference_satisfied', False)}`",
-                      ]
-                  )
-              selected = payload.get("selected")
-              if not selected:
-                  lines.append("no eligible candidate was selected.")
+              payload, candidate_error = load_latest_candidate_payload(candidate_files)
+              if candidate_error:
+                  lines.append(f"- Candidate payload error: `{candidate_error}`")
+              elif payload is None:
+                  lines.append("candidate file was not created.")
               else:
-                  summary_generation = selected.get("summary_generation") or payload.get("summary_generation") or {}
-                  score_breakdown = selected.get("score_breakdown") or {}
-                  formatted_breakdown = ", ".join(
-                      f"{key}={value}" for key, value in score_breakdown.items()
-                  ) or "n/a"
-                  author = selected.get("screen_name") or selected.get("author_name") or "unknown"
+                  collection = payload.get("collection") or {}
+                  rotation = payload.get("rotation") or {}
                   lines.extend(
                       [
-                          f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
-                          f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
-                          f"- Selected tweet ID: `{selected.get('id', '')}`",
-                          f"- Author: `{author}`",
-                          f"- Score: `{selected.get('score', 0)}`",
-                          f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
-                          f"- Has image: `{selected.get('has_image', False)}`",
-                          f"- Media classification: `{selected.get('media_classification_source', '')}`",
-                          f"- Score breakdown: `{formatted_breakdown}`",
-                          f"- Summary provider: `{summary_generation.get('provider', '')}`",
-                          f"- Summary model: `{summary_generation.get('model', '')}`",
-                          f"- Summary: {payload.get('post_text', '')}",
-                          "",
-                          "### Source snippet",
-                          "",
-                          f"> {selected.get('text', '')}",
+                          f"- Requested mode: `{payload.get('requested_mode', 'unknown')}`",
+                          f"- Result mode: `{payload.get('result_mode', 'unknown')}`",
+                          f"- Selection mode: `{payload.get('selection_mode', 'score')}`",
+                          f"- Payload files: `{payload.get('payload_count', 0)}`",
+                          f"- User fetch status: `{collection.get('user', {})}`",
+                          f"- Search fetch status: `{collection.get('search', {})}`",
                       ]
                   )
-                  usage_lines = summary_generation.get("usage_lines") or []
-                  if usage_lines:
-                      lines.extend(["", "### Copilot usage hints", ""])
-                      lines.extend(f"- `{item}`" for item in usage_lines)
-                  if summary_generation.get("stderr"):
-                      lines.extend(["", "### Copilot stderr", "", "```text", str(summary_generation.get("stderr")), "```"])
+                  if rotation:
+                      lines.extend(
+                          [
+                              f"- Previous source: `{rotation.get('previous_source', '')}`",
+                              f"- Selected source: `{rotation.get('selected_source', '')}`",
+                              f"- Next source: `{rotation.get('next_source', '')}`",
+                              f"- Target media mode: `{rotation.get('target_media_mode', payload.get('target_media_mode', ''))}`",
+                              f"- Selected media mode: `{rotation.get('selected_media_mode', '')}`",
+                              f"- Media preference satisfied: `{rotation.get('media_preference_satisfied', False)}`",
+                          ]
+                      )
+                  selected = payload.get("selected")
+                  if not selected:
+                      lines.append("no eligible candidate was selected.")
+                  else:
+                      summary_generation = selected.get("summary_generation") or payload.get("summary_generation") or {}
+                      score_breakdown = selected.get("score_breakdown") or {}
+                      formatted_breakdown = ", ".join(
+                          f"{key}={value}" for key, value in score_breakdown.items()
+                      ) or "n/a"
+                      author = selected.get("screen_name") or selected.get("author_name") or "unknown"
+                      lines.extend(
+                          [
+                              f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
+                              f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
+                              f"- Selected tweet ID: `{selected.get('id', '')}`",
+                              f"- Author: `{author}`",
+                              f"- Score: `{selected.get('score', 0)}`",
+                              f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
+                              f"- Has image: `{selected.get('has_image', False)}`",
+                              f"- Media classification: `{selected.get('media_classification_source', '')}`",
+                              f"- Score breakdown: `{formatted_breakdown}`",
+                              f"- Summary provider: `{summary_generation.get('provider', '')}`",
+                              f"- Summary model: `{summary_generation.get('model', '')}`",
+                              f"- Summary: {payload.get('post_text', '')}",
+                              "",
+                              "### Source snippet",
+                              "",
+                              f"> {selected.get('text', '')}",
+                          ]
+                      )
+                      usage_lines = summary_generation.get("usage_lines") or []
+                      if usage_lines:
+                          lines.extend(["", "### Copilot usage hints", ""])
+                          lines.extend(f"- `{item}`" for item in usage_lines)
+                      if summary_generation.get("stderr"):
+                          lines.extend(["", "### Copilot stderr", "", "```text", str(summary_generation.get("stderr")), "```"])
 
-              skipped = payload.get("skipped_candidates") or []
-              if skipped:
-                  lines.extend(["", f"- Skipped candidates logged: `{len(skipped)}`"])
-              if payload.get("post_error"):
-                  lines.append(f"- Error: `{payload.get('post_error')}`")
-              if payload.get("post_result_file"):
-                  lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
+                  skipped = payload.get("skipped_candidates") or []
+                  if skipped:
+                      lines.extend(["", f"- Skipped candidates logged: `{len(skipped)}`"])
+                  if payload.get("post_error"):
+                      lines.append(f"- Error: `{payload.get('post_error')}`")
+                  if payload.get("post_result_file"):
+                      lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY

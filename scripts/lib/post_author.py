@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_TWITTER_BIN = PROJECT_ROOT / "python" / ".venv" / "bin" / "twitter"
 
 
 def coerce_int(value: Any) -> int:
@@ -42,6 +48,42 @@ def nested_get(mapping: Any, *path: str) -> Any:
     return current
 
 
+def is_executable_file(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def resolve_twitter_bin(
+    *,
+    env: Mapping[str, str] | None = None,
+    default_bin: Path = DEFAULT_TWITTER_BIN,
+    which: Callable[[str], str | None] | None = None,
+) -> str:
+    env_map = os.environ if env is None else env
+    which_fn = shutil.which if which is None else which
+
+    configured_bin = str(env_map.get("TWITTER_BIN") or "").strip()
+    if configured_bin:
+        if "/" in configured_bin:
+            candidate = Path(configured_bin).expanduser()
+            if is_executable_file(candidate):
+                return str(candidate)
+            raise RuntimeError(f"twitter-cli executable not found: {configured_bin}")
+
+        resolved = which_fn(configured_bin)
+        if resolved:
+            return resolved
+        raise RuntimeError(f"required command not found: {configured_bin}")
+
+    if is_executable_file(default_bin):
+        return str(default_bin)
+
+    fallback = which_fn("twitter")
+    if fallback:
+        return fallback
+
+    raise RuntimeError(f"twitter-cli not found. expected {default_bin} or a TWITTER_BIN override")
+
+
 def extract_author_metrics(item: Mapping[str, Any]) -> dict[str, Any]:
     author = item.get("author") if isinstance(item.get("author"), Mapping) else {}
     return {
@@ -61,13 +103,22 @@ def extract_author_metrics(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_author_metrics(screen_name: str) -> dict[str, Any]:
-    result = subprocess.run(
-        ["twitter", "user", screen_name, "--json"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+def fetch_author_metrics(
+    screen_name: str,
+    *,
+    command_runner: Callable[..., Any] = subprocess.run,
+) -> dict[str, Any]:
+    twitter_bin = resolve_twitter_bin()
+    try:
+        result = command_runner(
+            [twitter_bin, "user", screen_name, "--json"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"twitter user lookup failed for @{screen_name}: {exc}") from exc
+
     if result.returncode != 0:
         stderr = " ".join(result.stderr.split())
         stdout = " ".join(result.stdout.split())

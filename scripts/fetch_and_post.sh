@@ -387,8 +387,9 @@ PY
     touch "${rotation_state_file}"
   fi
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
+  candidate_tmp_file="$(make_run_file "${output_dir}" "candidate-${category}.tmp")"
 
-  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_file}" <<'PY'
+  if ! PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_tmp_file}" <<'PY'
 import json
 import pathlib
 import re
@@ -600,8 +601,14 @@ payload = {
 }
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
+  then
+    rm -f "${candidate_tmp_file}"
+    return 1
+  fi
 
-summary_warnings="$(emit_candidate_warnings "${candidate_file}")"
+  mv "${candidate_tmp_file}" "${candidate_file}"
+
+  summary_warnings="$(emit_candidate_warnings "${candidate_file}")"
 
   if [[ -n "${summary_warnings}" ]]; then
     while IFS= read -r summary_warning; do
