@@ -127,6 +127,20 @@ def build_recorded_username_set(entries: Iterable[dict[str, object]]) -> set[str
     return usernames
 
 
+def build_active_followed_username_set(entries: Iterable[dict[str, object]]) -> set[str]:
+    usernames: set[str] = set()
+    for entry in entries:
+        username = _normalize_text(entry.get("username")).lstrip("@").lower()
+        if not username:
+            continue
+        if not _normalize_text(entry.get("followed_at")):
+            continue
+        if bool(entry.get("unfollowed")):
+            continue
+        usernames.add(username)
+    return usernames
+
+
 def upsert_state_entry(entries: list[dict[str, object]], username: str, values: dict[str, object]) -> None:
     normalized_username = username.lstrip("@")
     for entry in entries:
@@ -139,13 +153,19 @@ def upsert_state_entry(entries: list[dict[str, object]], username: str, values: 
     entries.append(payload)
 
 
-def record_follow(entries: list[dict[str, object]], username: str, current_date: str) -> None:
+def record_follow(
+    entries: list[dict[str, object]],
+    username: str,
+    current_date: str,
+    follow_type: str = "new_follow",
+) -> None:
     upsert_state_entry(
         entries,
         username,
         {
             "followed_at": current_date,
             "unfollowed": False,
+            "follow_type": follow_type,
         },
     )
 
@@ -237,6 +257,38 @@ def evaluate_candidate(
     return None
 
 
+def evaluate_followback_candidate(
+    user: dict[str, object],
+    *,
+    following_usernames: set[str],
+    recorded_usernames: set[str],
+) -> str | None:
+    """Evaluate a followback candidate with minimal filters only."""
+    username = extract_username(user)
+    if not username:
+        return "missing_username"
+
+    normalized_username = username.lower()
+    if normalized_username in following_usernames:
+        return "already_following"
+    if normalized_username in recorded_usernames:
+        return "already_recorded"
+    return None
+
+
+def collect_followback_usernames(
+    my_follower_usernames: set[str],
+    *,
+    following_usernames: set[str],
+    active_followed_usernames: set[str],
+) -> list[str]:
+    """Return sorted list of my followers I should follow back."""
+    return sorted(
+        u for u in my_follower_usernames
+        if u not in following_usernames and u not in active_followed_usernames
+    )
+
+
 def has_japanese_signal(profile_text: str, recent_post_texts: list[str]) -> bool:
     if has_japanese_text(profile_text):
         return True
@@ -290,13 +342,19 @@ def main() -> int:
     configure_logging(args.log_level)
     now = current_jst_datetime()
     current_date = now.date().isoformat()
-    target_follow_count = random.randint(1, 7)
+    target_follow_count = random.randint(10, 15)
 
     try:
         state_entries = load_follow_state(args.state_path)
         recorded_usernames = build_recorded_username_set(state_entries)
+        active_followed_usernames = build_active_followed_username_set(state_entries)
         auth_username = fetch_authenticated_username(args.twitter_bin)
-        following_usernames = fetch_usernames(args.twitter_bin, "following", auth_username, args.following_max)
+        following_usernames = fetch_usernames(
+            args.twitter_bin, "following", auth_username, args.following_max,
+        )
+        my_follower_usernames = fetch_usernames(
+            args.twitter_bin, "followers", auth_username, args.followers_max,
+        )
         follower_payload = run_twitter_json(
             args.twitter_bin,
             "followers",
@@ -317,17 +375,66 @@ def main() -> int:
         LOGGER.error("%s", error)
         return 1
 
-    eligible_candidates: list[dict[str, object]] = []
+    # Phase 1: followback candidates (my followers I'm not following back)
+    followback_pool = collect_followback_usernames(
+        my_follower_usernames,
+        following_usernames=following_usernames,
+        active_followed_usernames=active_followed_usernames,
+    )
+    random.shuffle(followback_pool)
+    followback_candidates = followback_pool[:target_follow_count]
+
     skipped: list[dict[str, object]] = []
     scanned_followers = 0
     recent_post_lookups = 0
+
+    # Phase 2: execute followbacks first so remaining slots reflect actual success count.
+    followed_back: list[str] = []
+    followed_new: list[str] = []
+    attempted_followback_usernames = {u.lower() for u in followback_candidates}
+
+    def _total_followed() -> int:
+        return len(followed_back) + len(followed_new)
+
+    def _sleep_between_follows() -> None:
+        if _total_followed() < target_follow_count:
+            sleep_seconds = random.randint(3, 8)
+            LOGGER.info("sleeping %s seconds before next follow", sleep_seconds)
+            time.sleep(sleep_seconds)
+
+    for username in followback_candidates:
+        if _total_followed() >= target_follow_count:
+            break
+        try:
+            run_twitter_write(args.twitter_bin, "follow", username)
+        except Exception as error:
+            LOGGER.warning("failed to follow back @%s: %s", username, error)
+            skipped.append({"username": username, "reason": "follow_failed"})
+            continue
+
+        LOGGER.info("followed back @%s", username)
+        record_follow(state_entries, username, current_date, follow_type="followback")
+        recorded_usernames.add(username.lower())
+        active_followed_usernames.add(username.lower())
+        following_usernames.add(username.lower())
+        followed_back.append(username)
+        save_follow_state(args.state_path, state_entries)
+        _sleep_between_follows()
+
+    # Phase 3: gather new follow candidates for the remaining slots.
+    remaining_slots = max(0, target_follow_count - _total_followed())
+    new_follow_candidates: list[dict[str, object]] = []
+
     for candidate in follower_candidates:
-        if len(eligible_candidates) >= target_follow_count:
+        if len(new_follow_candidates) >= remaining_slots:
             break
         username = extract_username(candidate)
         if not username:
             continue
         scanned_followers += 1
+        if username.lower() in attempted_followback_usernames:
+            continue
+
         recent_post_texts: list[str] = []
         profile_text = extract_profile_text(candidate)
         reason = evaluate_candidate(
@@ -344,7 +451,9 @@ def main() -> int:
 
         if not has_japanese_text(profile_text) or not contains_stock_keywords(profile_text):
             try:
-                recent_post_texts = fetch_recent_post_texts(args.twitter_bin, username, args.recent_post_max)
+                recent_post_texts = fetch_recent_post_texts(
+                    args.twitter_bin, username, args.recent_post_max,
+                )
                 recent_post_lookups += 1
             except Exception as error:
                 reason = "recent_posts_error"
@@ -364,7 +473,7 @@ def main() -> int:
             skipped.append({"username": username, "reason": "no_stock_keyword"})
             continue
 
-        eligible_candidates.append(
+        new_follow_candidates.append(
             {
                 "username": username,
                 "description": profile_text,
@@ -372,15 +481,9 @@ def main() -> int:
             }
         )
 
-    followed: list[str] = []
-    search_stopped_reason = (
-        "enough_eligible_candidates"
-        if len(eligible_candidates) >= target_follow_count
-        else "scan_limit_reached"
-    )
-
-    for candidate in eligible_candidates:
-        if len(followed) >= target_follow_count:
+    # Phase 4: use new follows to fill any remaining slots.
+    for candidate in new_follow_candidates:
+        if _total_followed() >= target_follow_count:
             break
         username = str(candidate["username"])
         try:
@@ -391,16 +494,13 @@ def main() -> int:
             continue
 
         LOGGER.info("followed @%s", username)
-        record_follow(state_entries, username, current_date)
+        record_follow(state_entries, username, current_date, follow_type="new_follow")
         recorded_usernames.add(username.lower())
-        followed.append(username)
+        followed_new.append(username)
         save_follow_state(args.state_path, state_entries)
+        _sleep_between_follows()
 
-        if len(followed) < target_follow_count:
-            sleep_seconds = random.randint(3, 8)
-            LOGGER.info("sleeping %s seconds before next follow", sleep_seconds)
-            time.sleep(sleep_seconds)
-
+    followed = followed_back + followed_new
     save_follow_state(args.state_path, state_entries)
     write_summary(
         args.summary_output,
@@ -414,8 +514,12 @@ def main() -> int:
             "scanned_followers": scanned_followers,
             "scan_limit": args.followers_max,
             "recent_post_lookups": recent_post_lookups,
-            "search_stopped_reason": search_stopped_reason,
-            "eligible_candidates": len(eligible_candidates),
+            "followback_candidates": len(followback_candidates),
+            "followed_back_count": len(followed_back),
+            "followed_back_usernames": followed_back,
+            "new_follow_candidates": len(new_follow_candidates),
+            "followed_new_count": len(followed_new),
+            "followed_new_usernames": followed_new,
             "followed_count": len(followed),
             "followed_usernames": followed,
             "skipped": skipped,

@@ -204,7 +204,7 @@ python/.venv/bin/python python/auto_follow.py --target-username tkzwgrs
 python/.venv/bin/python python/auto_unfollow.py
 ```
 
-`auto_follow.py` は `@tkzwgrs` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
+`auto_follow.py` は `@tkzwgrs` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。自分のフォロワーのうちフォロー返しが済んでいない相手を優先的にフォローバックし、残り枠を新規フォロー条件（認証済み・日本語・株関連）で埋めます。1 回あたりの合計フォロー件数は 10〜15 件です。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
 ### auto like を手動確認する
 
@@ -298,7 +298,7 @@ PY
 - `post_buz.yml` は `from:account` クエリで特定アカウントのバズツイートを収集します
 - 候補選定は `likes` / `retweets` / `replies` / `views` / `velocity` / `freshness` / source ごとの `score_boost` を合算します
 - 候補選定は最近の投稿実績から計算した `feedback_boost` も加味します
-- `post_buz.yml` は `round_robin` モードで 6 ソースをローテーションします
+- `post_buz.yml` は `round_robin` モードで 18 ソースをローテーションします
 - 実投稿経路は単発投稿（引用ツイート・スレッドなし）です
 - Copilot 要約は 280 文字以内・改行なし の 1 投稿向け本文へ整形します
 - 要約生成後に summary evaluator を通し、不正な本文は次候補へ fallback します

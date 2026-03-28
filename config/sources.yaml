@@ -59,6 +59,114 @@ sources:
     max_results: 20
     score_boost: 6
 
+  - id: buz-sakenmilove-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-sakenmilove-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-bovccgdlap95845-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-bovccgdlap95845-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-fuwaraidou_2525-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-fuwaraidou_2525-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-yeskiri-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-yeskiri-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-romi_hoshino-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-romi_hoshino-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-aigare01-big
+    category: buz
+    type: search
+    enabled: true
+    query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-aigare01-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
   - id: news-breaking-search
     category: news
     type: search
