@@ -295,7 +295,11 @@ publish_selected_post() {
     [[ -n "${resolved_image_temp_dir}" ]] && rm -rf "${resolved_image_temp_dir}"
   }
 
-  trap cleanup_publish_temp RETURN
+  finalize_publish() {
+    :
+  }
+
+  trap 'cleanup_publish_temp; trap - RETURN' RETURN
 
   if [[ "${source_reference_mode}" == "quote" && -z "${source_tweet_id}" ]]; then
     write_post_failure_file \
@@ -305,6 +309,7 @@ publish_selected_post() {
       "/dev/null" \
       "/dev/null"
     warn "quote mode requires a source tweet id for '${category}'"
+    finalize_publish
     return 1
   fi
 
@@ -331,6 +336,7 @@ publish_selected_post() {
     response_preview="$(summarize_post_result_file "${post_result_file}")"
     [[ -n "${response_preview}" ]] && warn "${response_preview}"
     rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+    finalize_publish
     return 1
   fi
 
@@ -345,6 +351,7 @@ publish_selected_post() {
       "/dev/null" \
       "/dev/null"
     warn "thread plan did not produce any posts for '${category}'"
+    finalize_publish
     return 1
   fi
   if [[ "${effective_source_reference_mode}" == "quote" && "${thread_count}" -eq 1 ]]; then
@@ -437,6 +444,7 @@ PY
           response_preview="$(summarize_post_result_file "${post_result_file}")"
           [[ -n "${response_preview}" ]] && warn "${response_preview}"
           rm -f "${thread_plan_stdout}" "${thread_plan_stderr}"
+          finalize_publish
           return 1
         fi
 
@@ -451,6 +459,7 @@ PY
             "/dev/null" \
             "/dev/null"
           warn "fallback thread plan did not split '${category}' into multiple posts"
+          finalize_publish
           return 1
         fi
 
@@ -472,6 +481,7 @@ PY
       response_preview="$(summarize_post_result_file "${post_result_file}")"
       [[ -n "${response_preview}" ]] && warn "${response_preview}"
       rm -f "${current_stderr_file}" "${current_output_file}"
+      finalize_publish
       return 1
     fi
 
@@ -484,6 +494,7 @@ PY
         "${current_stderr_file}"
       warn "twitter post did not create result file for '${category}': ${current_output_file}"
       rm -f "${current_stderr_file}" "${current_output_file}"
+      finalize_publish
       return 1
     fi
     if [[ ! -s "${current_output_file}" ]]; then
@@ -495,6 +506,7 @@ PY
         "${current_stderr_file}"
       warn "twitter post created an empty result file for '${category}': ${current_output_file}"
       rm -f "${current_stderr_file}" "${current_output_file}"
+      finalize_publish
       return 1
     fi
     if ! assert_structured_success "${current_output_file}" "post:${category}:segment-$((index + 1))"; then
@@ -503,6 +515,7 @@ PY
       warn "twitter post response validation failed for '${category}' at thread segment $((index + 1))"
       [[ -n "${response_preview}" ]] && warn "twitter post raw response preview: ${response_preview}"
       rm -f "${current_output_file}" "${current_stderr_file}"
+      finalize_publish
       return 1
     fi
 
@@ -525,6 +538,7 @@ PY
         "${current_output_file}" \
         "${current_stderr_file}"
       rm -f "${current_output_file}" "${current_stderr_file}"
+      finalize_publish
       return 1
     fi
     posted_tweet_ids+=("${current_post_id}")
@@ -540,6 +554,7 @@ PY
           "/dev/null"
         warn "posted '${category}' but failed to update ${source_state_file}"
         rm -f "${current_output_file}" "${current_stderr_file}"
+        finalize_publish
         return 1
       fi
 
@@ -552,6 +567,7 @@ PY
           "/dev/null"
         warn "posted '${category}' but failed to update ${state_file}"
         rm -f "${current_output_file}" "${current_stderr_file}"
+        finalize_publish
         return 1
       fi
     fi
@@ -567,12 +583,14 @@ PY
       "/dev/null" \
       "/dev/null"
     warn "posted '${category}' but the first posted tweet id was empty"
+    finalize_publish
     return 1
   fi
 
   write_publish_success_file "${post_result_file}" "${action_name}" "${posted_tweet_ids[@]}"
 
   info "posted category '${category}' and updated ${state_file} and ${source_state_file}"
+  finalize_publish
 }
 
 execute_twitter_post() {

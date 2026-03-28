@@ -238,6 +238,67 @@ PY
             self.assertIn("status=0", result.stdout, msg=result.stderr)
             self.assertEqual(cleanup_path.read_text(encoding="utf-8").strip(), '["/tmp/copied-1.jpg"]')
 
+    def test_publish_selected_post_clears_return_trap_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            result_path = temp_path / "post-result.json"
+            state_path = temp_path / "posted.txt"
+            source_state_path = temp_path / "source-posted.txt"
+
+            result = self.run_bash(
+                f'''
+                source "{self.common_sh}"
+                source "{self.post_publish_sh}"
+
+                python_cmd() {{
+                  python3 "$@"
+                }}
+
+                build_thread_plan_json() {{
+                  local stdout_path="$5"
+                  local stderr_path="$6"
+                  printf '%s' '["single-post"]' > "${{stdout_path}}"
+                  : > "${{stderr_path}}"
+                }}
+
+                count_thread_posts() {{
+                  printf '1\\n'
+                }}
+
+                execute_twitter_post() {{
+                  local output_file="$6"
+                  local stderr_file="$7"
+                  printf '%s' '{{"ok":true,"data":{{"id":"posted-1"}}}}' > "${{output_file}}"
+                  : > "${{stderr_file}}"
+                }}
+
+                assert_structured_success() {{
+                  return 0
+                }}
+
+                set +e
+                publish_selected_post \
+                  "buz" \
+                  "要約済みの単独ポスト" \
+                  "12345" \
+                  "https://x.com/example/status/12345" \
+                  "none" \
+                  "280" \
+                  "{state_path}" \
+                  "{source_state_path}" \
+                  "{result_path}"
+                status="$?"
+                return_trap="$(trap -p RETURN)"
+                printf 'status=%s\\n' "${{status}}"
+                printf 'return_trap=%s\\n' "${{return_trap}}"
+                '''
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertIn("status=0", result.stdout, msg=result.stderr)
+            self.assertIn("return_trap=", result.stdout, msg=result.stderr)
+            self.assertNotIn("cleanup_publish_temp", result.stdout, msg=result.stderr)
+
     def test_publish_selected_post_omits_source_url_in_none_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
