@@ -112,6 +112,147 @@ class WorkflowSummaryTest(TestCase):
         self.assertIn("Post failure alert", rendered)
         self.assertIn("twitter post failed", rendered)
 
+    def test_render_run_summary_highlights_summary_exhausted(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "summary_exhausted",
+                "selection_mode": "round_robin_account",
+                "payload_count": 3,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [],
+                "selected_candidates": [{"id": "100"}, {"id": "200"}],
+                "alerts": [
+                    {
+                        "level": "warning",
+                        "code": "summary_generation_failed",
+                        "message": "copilot CLI failed: Error: Classic Personal Access Tokens (ghp_) are not supported by Copilot.",
+                        "tweet_id": "100",
+                    },
+                    {
+                        "level": "warning",
+                        "code": "summary_generation_failed",
+                        "message": "copilot CLI failed: Error: Classic Personal Access Tokens (ghp_) are not supported by Copilot.",
+                        "tweet_id": "200",
+                    },
+                ],
+                "diagnostics": {
+                    "summary_attempts": [
+                        {"tweet_id": "100", "ok": False, "error": "copilot CLI failed", "stage": "generation"},
+                        {"tweet_id": "200", "ok": False, "error": "copilot CLI failed", "stage": "generation"},
+                    ],
+                },
+                "post_error": None,
+            },
+        )
+
+        rendered = "\n".join(lines)
+        self.assertIn("summary_exhausted", rendered)
+        self.assertIn("Summary exhausted", rendered)
+        self.assertIn("summary_generation_failed", rendered)
+        self.assertNotIn("no eligible candidate was selected.", rendered)
+
+    def test_render_run_summary_no_candidate_does_not_show_exhausted_alert(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "no_candidate",
+                "selection_mode": "score",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [],
+                "alerts": [],
+                "diagnostics": {},
+            },
+        )
+
+        rendered = "\n".join(lines)
+        self.assertIn("no_candidate", rendered)
+        self.assertNotIn("Summary exhausted", rendered)
+
+    def test_classify_candidate_result_genuine_no_candidate(self) -> None:
+        payload = {
+            "result_mode": "candidate_ready",
+            "selected_candidates": [],
+            "post_candidates": [],
+            "diagnostics": {"summary_attempts": []},
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "no_candidate")
+
+    def test_classify_candidate_result_summary_exhausted(self) -> None:
+        payload = {
+            "result_mode": "candidate_ready",
+            "selected_candidates": [{"id": "100"}, {"id": "200"}],
+            "post_candidates": [],
+            "diagnostics": {
+                "summary_attempts": [
+                    {"tweet_id": "100", "ok": False, "error": "copilot CLI failed", "stage": "generation"},
+                    {"tweet_id": "200", "ok": False, "error": "copilot CLI failed", "stage": "generation"},
+                ],
+            },
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "summary_exhausted")
+
+    def test_classify_candidate_result_candidate_ready(self) -> None:
+        payload = {
+            "result_mode": "candidate_ready",
+            "selected": {"id": "100"},
+            "selected_candidates": [{"id": "100"}],
+            "post_candidates": [{"id": "100"}],
+            "diagnostics": {
+                "summary_attempts": [{"tweet_id": "100", "ok": True}],
+            },
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "candidate_ready")
+
+    def test_classify_candidate_result_preserves_non_candidate_ready(self) -> None:
+        payload = {
+            "result_mode": "posted",
+            "selected_candidates": [{"id": "100"}],
+            "post_candidates": [{"id": "100"}],
+            "diagnostics": {"summary_attempts": []},
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "posted")
+
+    def test_classify_candidate_result_ignores_evaluator_only_failures(self) -> None:
+        payload = {
+            "result_mode": "candidate_ready",
+            "selected_candidates": [{"id": "100"}],
+            "post_candidates": [],
+            "diagnostics": {
+                "summary_attempts": [
+                    {"tweet_id": "100", "ok": False, "error": "contains_url", "stage": "evaluator"},
+                ],
+            },
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "no_candidate")
+
+    def test_classify_candidate_result_ignores_mixed_generation_and_evaluator_failures(self) -> None:
+        payload = {
+            "result_mode": "candidate_ready",
+            "selected_candidates": [{"id": "100"}, {"id": "200"}],
+            "post_candidates": [],
+            "diagnostics": {
+                "summary_attempts": [
+                    {"tweet_id": "100", "ok": False, "error": "copilot CLI failed", "stage": "generation"},
+                    {"tweet_id": "200", "ok": False, "error": "contains_url", "stage": "evaluator"},
+                ],
+            },
+        }
+        result = workflow_summary.classify_candidate_result(payload)
+        self.assertEqual(result, "no_candidate")
+
 
 if __name__ == "__main__":
     main()

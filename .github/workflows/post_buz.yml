@@ -108,10 +108,41 @@ jobs:
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
           mkdir -p tmp
-          if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
-            echo "COPILOT_GITHUB_TOKEN secret is required for Copilot summary generation." >&2
-            exit 1
+
+          summary_provider="$(python/.venv/bin/python - <<'PY'
+          import os
+          import yaml
+          from pathlib import Path
+
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          category = os.environ["CATEGORY"]
+          accounts = raw.get("accounts") or {}
+          defaults = raw.get("defaults") or {}
+          account = accounts.get(category) or {}
+          provider = str(account.get("summary_provider") or defaults.get("summary_provider") or "legacy_google_translate").strip().lower()
+          aliases = {
+              "": "legacy_google_translate",
+              "googletrans": "legacy_google_translate",
+              "google_translate": "legacy_google_translate",
+              "legacy_google_translate": "legacy_google_translate",
+              "copilot": "copilot_cli",
+              "copilot_cli": "copilot_cli",
+          }
+          print(aliases.get(provider, provider))
+          PY
+          )"
+
+          if [[ "${summary_provider}" == "copilot_cli" ]]; then
+            if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+              echo "COPILOT_GITHUB_TOKEN secret is required for Copilot summary generation." >&2
+              exit 1
+            fi
+            if [[ "${COPILOT_GITHUB_TOKEN}" == ghp_* ]]; then
+              echo "::error::COPILOT_GITHUB_TOKEN is a classic ghp_ PAT which is not supported by Copilot CLI. Use a fine-grained PAT or GitHub App token with Copilot Requests permission."
+              exit 1
+            fi
           fi
+
           copilot --version
           python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/buz-runtime.json
 

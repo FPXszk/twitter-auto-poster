@@ -22,7 +22,7 @@ GitHub Actions で必要な Secrets:
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
-- `COPILOT_GITHUB_TOKEN`
+- `COPILOT_GITHUB_TOKEN` — **Classic PAT（`ghp_`）は非対応**。fine-grained PAT または GitHub App token（Copilot Requests permission 付き）を使用すること
 
 ## 2. 日常運用フロー
 
@@ -130,10 +130,23 @@ bash scripts/fetch_and_post.sh --category news --post
 ### Copilot 要約失敗
 
 1. `COPILOT_GITHUB_TOKEN` を確認
-2. `copilot --version` と認証状態を確認
-3. preview 実行で再確認
-4. 必要なら summary provider を一時的に切り替える
-5. `post_candidates` と `diagnostics.summary_attempts` を見て fallback がどこで止まったか確認する
+2. Classic PAT（`ghp_` 形式）は Copilot CLI が拒否する。fine-grained PAT または GitHub App トークン（Copilot Requests 権限付き）に差し替えること
+3. `copilot --version` と認証状態を確認
+4. preview 実行で再確認
+5. 必要なら summary provider を一時的に切り替える
+6. `post_candidates` と `diagnostics.summary_attempts` を見て fallback がどこで止まったか確認する
+
+### summary_exhausted で workflow が失敗した場合
+
+`result_mode: summary_exhausted` は、候補ツイートは存在したが全件の要約生成が失敗したことを示す。
+
+1. workflow summary の「Summary exhausted alert」セクションを確認
+2. `diagnostics.summary_attempts` の各エラーメッセージを確認
+3. 最も多い原因は `COPILOT_GITHUB_TOKEN` が Classic PAT（`ghp_`）であること
+4. 復旧手順:
+   - fine-grained PAT を生成（`Copilot Requests` permission を付与）
+   - GitHub Secrets の `COPILOT_GITHUB_TOKEN` を更新
+   - `workflow_dispatch` で手動 dry-run 実行して要約が成功することを確認
 
 ## 6. state の扱い
 

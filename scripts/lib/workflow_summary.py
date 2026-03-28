@@ -5,6 +5,30 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
+def classify_candidate_result(payload: Mapping[str, Any]) -> str:
+    """Classify the final result_mode, distinguishing genuine no-candidate from summary exhaustion."""
+    current = str(payload.get("result_mode") or "unknown")
+    if current != "candidate_ready":
+        return current
+
+    selected_candidates = payload.get("selected_candidates") or []
+    post_candidates = payload.get("post_candidates") or []
+    diagnostics = payload.get("diagnostics") or {}
+    summary_attempts = diagnostics.get("summary_attempts") or []
+    exhausted_by_generation = bool(summary_attempts) and all(
+        (not a.get("ok")) and a.get("stage") != "evaluator"
+        for a in summary_attempts
+    )
+
+    if len(selected_candidates) > 0 and len(post_candidates) == 0 and exhausted_by_generation:
+        return "summary_exhausted"
+
+    if payload.get("selected") is None:
+        return "no_candidate"
+
+    return current
+
+
 def load_latest_candidate_payload(
     candidate_files: Sequence[Path],
 ) -> tuple[dict[str, Any] | None, str | None]:
@@ -51,6 +75,7 @@ def render_run_summary(
         lines.append("candidate file was not created.")
         return lines
 
+    result_mode = classify_candidate_result(payload)
     collection = payload.get("collection") or {}
     rotation = payload.get("rotation") or {}
     diagnostics = payload.get("diagnostics") or {}
@@ -65,7 +90,7 @@ def render_run_summary(
     lines.extend(
         [
             f"- Requested mode: `{payload.get('requested_mode', 'unknown')}`",
-            f"- Result mode: `{payload.get('result_mode', 'unknown')}`",
+            f"- Result mode: `{result_mode}`",
             f"- Selection mode: `{payload.get('selection_mode', 'score')}`",
             f"- Payload files: `{payload.get('payload_count', 0)}`",
             f"- User fetch status: `{collection.get('user', {})}`",
@@ -112,45 +137,46 @@ def render_run_summary(
         )
 
     selected = payload.get("selected")
-    if not selected:
+    if not selected and result_mode != "summary_exhausted":
         lines.append("no eligible candidate was selected.")
     else:
-        summary_generation = selected.get("summary_generation") or payload.get("summary_generation") or {}
-        score_breakdown = selected.get("score_breakdown") or {}
-        formatted_breakdown = ", ".join(f"{key}={value}" for key, value in score_breakdown.items()) or "n/a"
-        author = selected.get("screen_name") or selected.get("author_name") or "unknown"
-        lines.extend(
-            [
-                f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
-                f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
-                f"- Selected tweet ID: `{selected.get('id', '')}`",
-                f"- Author: `{author}`",
-                f"- Score: `{selected.get('score', 0)}`",
-                f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
-                f"- Has image: `{selected.get('has_image', False)}`",
-                f"- Media classification: `{selected.get('media_classification_source', '')}`",
-                f"- Score breakdown: `{formatted_breakdown}`",
-                f"- Feedback boost: `{selected.get('feedback_boost', 0)}`",
-                f"- Summary provider: `{summary_generation.get('provider', '')}`",
-                f"- Summary model: `{summary_generation.get('model', '')}`",
-                f"- Summary: {payload.get('post_text', '')}",
-                "",
-                "### Source snippet",
-                "",
-                f"> {selected.get('text', '')}",
-            ]
-        )
-        summary_validation = selected.get("summary_validation") or {}
-        if summary_validation:
-            lines.append(f"- Summary validation: `{'ok' if summary_validation.get('ok') else 'failed'}`")
-            if summary_validation.get("reasons"):
-                lines.append(f"- Summary validation reasons: `{', '.join(summary_validation.get('reasons') or [])}`")
-        usage_lines = summary_generation.get("usage_lines") or []
-        if usage_lines:
-            lines.extend(["", "### Copilot usage hints", ""])
-            lines.extend(f"- `{item}`" for item in usage_lines)
-        if summary_generation.get("stderr"):
-            lines.extend(["", "### Copilot stderr", "", "```text", str(summary_generation.get("stderr")), "```"])
+        if selected:
+            summary_generation = selected.get("summary_generation") or payload.get("summary_generation") or {}
+            score_breakdown = selected.get("score_breakdown") or {}
+            formatted_breakdown = ", ".join(f"{key}={value}" for key, value in score_breakdown.items()) or "n/a"
+            author = selected.get("screen_name") or selected.get("author_name") or "unknown"
+            lines.extend(
+                [
+                    f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
+                    f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
+                    f"- Selected tweet ID: `{selected.get('id', '')}`",
+                    f"- Author: `{author}`",
+                    f"- Score: `{selected.get('score', 0)}`",
+                    f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
+                    f"- Has image: `{selected.get('has_image', False)}`",
+                    f"- Media classification: `{selected.get('media_classification_source', '')}`",
+                    f"- Score breakdown: `{formatted_breakdown}`",
+                    f"- Feedback boost: `{selected.get('feedback_boost', 0)}`",
+                    f"- Summary provider: `{summary_generation.get('provider', '')}`",
+                    f"- Summary model: `{summary_generation.get('model', '')}`",
+                    f"- Summary: {payload.get('post_text', '')}",
+                    "",
+                    "### Source snippet",
+                    "",
+                    f"> {selected.get('text', '')}",
+                ]
+            )
+            summary_validation = selected.get("summary_validation") or {}
+            if summary_validation:
+                lines.append(f"- Summary validation: `{'ok' if summary_validation.get('ok') else 'failed'}`")
+                if summary_validation.get("reasons"):
+                    lines.append(f"- Summary validation reasons: `{', '.join(summary_validation.get('reasons') or [])}`")
+            usage_lines = summary_generation.get("usage_lines") or []
+            if usage_lines:
+                lines.extend(["", "### Copilot usage hints", ""])
+                lines.extend(f"- `{item}`" for item in usage_lines)
+            if summary_generation.get("stderr"):
+                lines.extend(["", "### Copilot stderr", "", "```text", str(summary_generation.get("stderr")), "```"])
 
     if alerts:
         lines.extend(["", "### Alerts", ""])
@@ -176,7 +202,7 @@ def render_run_summary(
         lines.extend(["", f"- Skipped candidates logged: `{len(skipped)}`"])
     if payload.get("post_error"):
         lines.append(f"- Error: `{payload.get('post_error')}`")
-    if payload.get("result_mode") == "post_failed":
+    if result_mode == "post_failed":
         lines.extend(
             [
                 "",
@@ -186,6 +212,25 @@ def render_run_summary(
                 f"- Last publish error: `{payload.get('post_error') or 'unknown'}`",
             ]
         )
+    if result_mode == "summary_exhausted":
+        failed_count = sum(
+            1
+            for a in summary_attempts
+            if (not a.get("ok")) and a.get("stage") != "evaluator"
+        )
+        lines.extend(
+            [
+                "",
+                "### Summary exhausted alert",
+                "",
+                "⚠️ All selected candidates failed during summary generation.",
+                f"- Selected candidates: `{len(payload.get('selected_candidates') or [])}`",
+                f"- Failed summary attempts: `{failed_count}`",
+                f"- Post candidates produced: `{len(post_candidates)}`",
+            ]
+        )
+        if payload.get("post_error"):
+            lines.append(f"- Post error: `{payload.get('post_error')}`")
     if payload.get("post_result_file"):
         lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
     return lines

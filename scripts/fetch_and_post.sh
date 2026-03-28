@@ -721,7 +721,7 @@ for candidate in selected_candidates:
                 "source_id": candidate["source_id"],
             }
         )
-        summary_attempts.append({"tweet_id": candidate["id"], "ok": False, "error": str(exc)})
+        summary_attempts.append({"tweet_id": candidate["id"], "ok": False, "error": str(exc), "stage": "generation"})
         continue
 
     candidate["summary_text"] = post_text
@@ -798,6 +798,16 @@ payload = {
     "post_result_file": None,
     "post_error": None,
 }
+
+# Detect summary exhaustion: candidates existed but all failed summary generation
+if (
+    len(selected_candidates) > 0
+    and len(post_candidates) == 0
+    and summary_attempts
+    and all((not a.get("ok")) and a.get("stage") != "evaluator" for a in summary_attempts)
+):
+    payload["result_mode"] = "summary_exhausted"
+
 print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
   then
@@ -826,6 +836,21 @@ PY
   )"
 
   if [[ "${selected_count}" -eq 0 ]]; then
+    payload_result_mode="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(payload.get("result_mode") or "candidate_ready")
+PY
+    )"
+
+    if [[ "${payload_result_mode}" == "summary_exhausted" ]]; then
+      warn "all selected candidates failed summary generation for category '${category}'"
+      exit 1
+    fi
+
     update_candidate_result "${candidate_file}" "no_candidate"
     info "no eligible candidates found for category '${category}'"
     exit 0

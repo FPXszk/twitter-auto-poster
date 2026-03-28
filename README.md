@@ -134,7 +134,7 @@ twitter whoami
 
 これが失敗する場合、各スクリプトも失敗します。
 
-GitHub Actions で Copilot 要約を使う場合は、`COPILOT_GITHUB_TOKEN` secret に Copilot Requests 権限付きトークンを設定してください。
+GitHub Actions で Copilot 要約を使う場合は、`COPILOT_GITHUB_TOKEN` secret に **fine-grained PAT** または **GitHub App トークン**（Copilot Requests 権限付き）を設定してください。Classic Personal Access Token（`ghp_` 形式）は Copilot CLI が拒否するため使用できません。
 
 シェルスクリプトは既定で `python/.venv/bin/python3` を優先し、必要なら `PYTHON_BIN` で override できます。
 
@@ -309,7 +309,7 @@ PY
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
-- `COPILOT_GITHUB_TOKEN`（Copilot 要約を使う場合）
+- `COPILOT_GITHUB_TOKEN`（Copilot 要約を使う場合。**Classic PAT（`ghp_`）は非対応**、fine-grained PAT または GitHub App token を使用すること）
 
 ### 使い方
 
