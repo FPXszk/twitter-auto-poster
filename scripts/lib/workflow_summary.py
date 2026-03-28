@@ -56,7 +56,11 @@ def render_run_summary(
     diagnostics = payload.get("diagnostics") or {}
     summary_attempts = diagnostics.get("summary_attempts") or []
     author_lookup = diagnostics.get("author_lookup") or {}
+    feedback_refresh = diagnostics.get("feedback_refresh") or {}
+    feedback_boosts = diagnostics.get("feedback_boosts") or {}
+    summary_evaluator = diagnostics.get("summary_evaluator") or {}
     post_candidates = payload.get("post_candidates") or []
+    alerts = payload.get("alerts") or []
 
     lines.extend(
         [
@@ -90,6 +94,22 @@ def render_run_summary(
                 f"- Author lookup failed: `{author_lookup.get('lookup_failed', 0)}`",
             ]
         )
+    if feedback_refresh:
+        lines.extend(
+            [
+                f"- Feedback refresh: `{feedback_refresh.get('status', 'unknown')}`",
+                f"- Feedback refreshed entries: `{feedback_refresh.get('refreshed_entries', 0)}`",
+                f"- Feedback refresh failures: `{feedback_refresh.get('failed_entries', 0)}`",
+                f"- Feedback-enabled sources: `{len(feedback_boosts)}`",
+            ]
+        )
+    if summary_evaluator:
+        lines.extend(
+            [
+                f"- Summary evaluator accepted: `{summary_evaluator.get('accepted', 0)}`",
+                f"- Summary evaluator rejected: `{summary_evaluator.get('rejected', 0)}`",
+            ]
+        )
 
     selected = payload.get("selected")
     if not selected:
@@ -110,6 +130,7 @@ def render_run_summary(
                 f"- Has image: `{selected.get('has_image', False)}`",
                 f"- Media classification: `{selected.get('media_classification_source', '')}`",
                 f"- Score breakdown: `{formatted_breakdown}`",
+                f"- Feedback boost: `{selected.get('feedback_boost', 0)}`",
                 f"- Summary provider: `{summary_generation.get('provider', '')}`",
                 f"- Summary model: `{summary_generation.get('model', '')}`",
                 f"- Summary: {payload.get('post_text', '')}",
@@ -119,12 +140,29 @@ def render_run_summary(
                 f"> {selected.get('text', '')}",
             ]
         )
+        summary_validation = selected.get("summary_validation") or {}
+        if summary_validation:
+            lines.append(f"- Summary validation: `{'ok' if summary_validation.get('ok') else 'failed'}`")
+            if summary_validation.get("reasons"):
+                lines.append(f"- Summary validation reasons: `{', '.join(summary_validation.get('reasons') or [])}`")
         usage_lines = summary_generation.get("usage_lines") or []
         if usage_lines:
             lines.extend(["", "### Copilot usage hints", ""])
             lines.extend(f"- `{item}`" for item in usage_lines)
         if summary_generation.get("stderr"):
             lines.extend(["", "### Copilot stderr", "", "```text", str(summary_generation.get("stderr")), "```"])
+
+    if alerts:
+        lines.extend(["", "### Alerts", ""])
+        for item in alerts:
+            if not isinstance(item, Mapping):
+                continue
+            level = str(item.get("level") or "info")
+            code = str(item.get("code") or "unknown")
+            message = str(item.get("message") or "")
+            tweet_id = str(item.get("tweet_id") or "")
+            suffix = f" ({tweet_id})" if tweet_id else ""
+            lines.append(f"- `{level}` `{code}`{suffix}: {message}".rstrip())
 
     if summary_attempts:
         lines.extend(["", "### Summary attempts", ""])
@@ -138,6 +176,16 @@ def render_run_summary(
         lines.extend(["", f"- Skipped candidates logged: `{len(skipped)}`"])
     if payload.get("post_error"):
         lines.append(f"- Error: `{payload.get('post_error')}`")
+    if payload.get("result_mode") == "post_failed":
+        lines.extend(
+            [
+                "",
+                "### Post failure alert",
+                "",
+                f"- Post candidates exhausted: `{len(post_candidates)}`",
+                f"- Last publish error: `{payload.get('post_error') or 'unknown'}`",
+            ]
+        )
     if payload.get("post_result_file"):
         lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
     return lines

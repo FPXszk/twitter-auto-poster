@@ -71,8 +71,14 @@ class WorkflowSummaryTest(TestCase):
                 "post_candidates": [{"id": "123"}],
                 "diagnostics": {
                     "author_lookup": {"payload_metrics": 1, "cache_hits": 2, "lookup_success": 3, "lookup_failed": 4},
+                    "feedback_refresh": {"status": "ok", "refreshed_entries": 2, "failed_entries": 0},
+                    "feedback_boosts": {"alpha-big": {"feedback_boost": 2.5, "history_count": 2}},
                     "summary_attempts": [{"tweet_id": "123", "ok": False, "error": "boom"}, {"tweet_id": "456", "ok": True, "provider": "copilot"}],
+                    "summary_evaluator": {"accepted": 1, "rejected": 1},
                 },
+                "alerts": [
+                    {"level": "warning", "code": "summary_validation_failed", "message": "contains_url", "tweet_id": "789"}
+                ],
             },
         )
 
@@ -80,7 +86,31 @@ class WorkflowSummaryTest(TestCase):
         self.assertIn("Post candidates ready", rendered)
         self.assertIn("Author cache hits", rendered)
         self.assertIn("Summary attempts", rendered)
+        self.assertIn("Feedback refresh", rendered)
+        self.assertIn("Feedback-enabled sources", rendered)
+        self.assertIn("summary_validation_failed", rendered)
         self.assertIn("123", rendered)
+
+    def test_render_run_summary_highlights_post_failure(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "post_failed",
+                "selection_mode": "score",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [{"id": "123"}, {"id": "456"}],
+                "post_error": "twitter post failed",
+                "alerts": [],
+            },
+        )
+
+        rendered = "\n".join(lines)
+        self.assertIn("Post failure alert", rendered)
+        self.assertIn("twitter post failed", rendered)
 
 
 if __name__ == "__main__":

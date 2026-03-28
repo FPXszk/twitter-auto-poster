@@ -97,7 +97,10 @@ bash scripts/fetch_and_post.sh --category news --post
 - Score breakdown
 - Summary provider / model
 - summary attempts / fallback candidates
+- summary evaluator accepted / rejected
 - author lookup diagnostics
+- feedback refresh / feedback-enabled sources
+- alerts
 - skipped candidates count
 - rotation（ラウンドロビン状態）
 
@@ -108,6 +111,7 @@ bash scripts/fetch_and_post.sh --category news --post
 - `tmp/runs/candidate-<category>.*`
 - `tmp/raw/<category>/`
 - workflow summary
+- `tmp/state/<category>-feedback-history.jsonl`
 
 主な調整先:
 

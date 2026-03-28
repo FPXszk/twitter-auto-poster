@@ -256,6 +256,8 @@ PY
   - 投稿済み ID の簡易 state
 - `tmp/state/buz-robin.txt`
   - `post_buz.yml` が前回投稿ソースを保持する round-robin state
+- `tmp/state/<category>-feedback-history.jsonl`
+  - 投稿後の実績履歴と source ごとの feedback boost 計算元データ
 - `tmp/state/liked_ids.txt`
   - `auto_like.py` が 7 日分の like 済み tweet ID と日時を保持する state
 
@@ -295,9 +297,12 @@ PY
 - `post_buz.yml` は既定で live-post です
 - `post_buz.yml` は `from:account` クエリで特定アカウントのバズツイートを収集します
 - 候補選定は `likes` / `retweets` / `replies` / `views` / `velocity` / `freshness` / source ごとの `score_boost` を合算します
+- 候補選定は最近の投稿実績から計算した `feedback_boost` も加味します
 - `post_buz.yml` は `round_robin` モードで 6 ソースをローテーションします
 - 実投稿経路は単発投稿（引用ツイート・スレッドなし）です
 - Copilot 要約は 280 文字以内・改行なし の 1 投稿向け本文へ整形します
+- 要約生成後に summary evaluator を通し、不正な本文は次候補へ fallback します
+- workflow summary には alerts、feedback refresh、summary evaluator の結果が表示されます
 - `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避けます
 
 ### 投稿系 workflow に必要な Secrets

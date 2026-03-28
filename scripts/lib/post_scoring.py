@@ -135,6 +135,7 @@ def calculate_score(
     created_at: str = "",
     max_age_hours: float | None = None,
     source_boost: float = 0.0,
+    feedback_boost: float = 0.0,
     now: datetime | None = None,
     has_image: bool = False,
     author_metrics: Mapping[str, Any] | None = None,
@@ -170,6 +171,7 @@ def calculate_score(
         "image_bonus": weights["image_bonus"] if has_image else 0.0,
         "author_virality": author_virality,
         "source_boost": float(source_boost),
+        "feedback_boost": float(feedback_boost),
     }
     score = sum(breakdown.values())
     return score, breakdown

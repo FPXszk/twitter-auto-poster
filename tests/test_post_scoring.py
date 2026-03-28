@@ -68,6 +68,16 @@ class PostScoringTest(unittest.TestCase):
         self.assertGreater(breakdown["author_virality"], 0.0)
         self.assertGreater(score, 70.0)
 
+    def test_calculate_score_includes_feedback_boost(self) -> None:
+        score, breakdown = calculate_score(
+            {"likes": 10, "retweets": 0, "replies": 0, "views": 100},
+            {"likes": 1, "views": 0.01},
+            feedback_boost=3.5,
+        )
+
+        self.assertEqual(breakdown["feedback_boost"], 3.5)
+        self.assertEqual(score, 14.5)
+
 
 if __name__ == "__main__":
     unittest.main()

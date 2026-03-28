@@ -123,6 +123,20 @@ print(state_path)
 PY
 }
 
+resolve_feedback_history_file() {
+  local output_dir="$1"
+  local category="$2"
+
+  python_cmd - "${output_dir}" "${category}" <<'PY'
+import pathlib
+import sys
+
+output_dir = pathlib.Path(sys.argv[1])
+category = sys.argv[2]
+print(output_dir / "state" / f"{category}-feedback-history.jsonl")
+PY
+}
+
 emit_candidate_warnings() {
   local candidate_file="$1"
 
@@ -258,6 +272,60 @@ path.write_text(
 PY
 }
 
+refresh_feedback_history_summary() {
+  local feedback_history_file="$1"
+  local twitter_bin_path="$2"
+
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${feedback_history_file}" "${twitter_bin_path}" <<'PY'
+import json
+import pathlib
+import sys
+
+from post_feedback import refresh_feedback_history_file
+
+summary = refresh_feedback_history_file(pathlib.Path(sys.argv[1]), sys.argv[2])
+print(json.dumps(summary, ensure_ascii=False))
+PY
+}
+
+append_feedback_history_record() {
+  local feedback_history_file="$1"
+  local candidate_file="$2"
+  local post_result_file="$3"
+
+  PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${feedback_history_file}" "${candidate_file}" "${post_result_file}" <<'PY'
+import json
+import pathlib
+import sys
+from datetime import datetime, timezone
+
+from post_feedback import append_feedback_history, build_feedback_entry, extract_posted_tweet_id
+
+history_path = pathlib.Path(sys.argv[1])
+candidate_path = pathlib.Path(sys.argv[2])
+post_result_path = pathlib.Path(sys.argv[3])
+
+candidate_payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+selected = candidate_payload.get("selected") or {}
+if not selected:
+    raise SystemExit("selected candidate was not present in candidate payload")
+
+post_result_payload = json.loads(post_result_path.read_text(encoding="utf-8"))
+posted_tweet_id = extract_posted_tweet_id(post_result_payload)
+if not posted_tweet_id:
+    raise SystemExit("posted tweet id was not present in post result payload")
+
+entry = build_feedback_entry(
+    selected,
+    posted_tweet_id,
+    posted_at=datetime.now(timezone.utc).isoformat(),
+)
+append_feedback_history(history_path, entry)
+PY
+}
+
 main() {
   local category=""
   local sources_config="${DEFAULT_SOURCES_CONFIG}"
@@ -289,6 +357,8 @@ main() {
   local requested_mode="live"
   local post_error=""
   local media_state_file=""
+  local feedback_history_file=""
+  local feedback_refresh_summary_json='{}'
 
   while (($# > 0)); do
     case "$1" in
@@ -404,6 +474,9 @@ PY
   media_state_file="$(resolve_media_state_file "${output_dir}" "${category}" "${account_json}")"
   mkdir -p "$(dirname "${media_state_file}")"
   touch "${media_state_file}"
+  feedback_history_file="$(resolve_feedback_history_file "${output_dir}" "${category}")"
+  mkdir -p "$(dirname "${feedback_history_file}")"
+  touch "${feedback_history_file}"
   rotation_state_file="$(resolve_rotation_state_file "${output_dir}" "${category}" "${account_json}")"
   if [[ -n "${rotation_state_file}" ]]; then
     mkdir -p "$(dirname "${rotation_state_file}")"
@@ -412,12 +485,19 @@ PY
   candidate_file="$(make_run_file "${output_dir}" "candidate-${category}")"
   candidate_tmp_file="$(make_run_file "${output_dir}" "candidate-${category}.tmp")"
 
-  if ! PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_tmp_file}" <<'PY'
+  if ! feedback_refresh_summary_json="$(refresh_feedback_history_summary "${feedback_history_file}" "$(resolve_twitter_bin)")"; then
+    warn "feedback history refresh failed for '${category}'"
+    feedback_refresh_summary_json='{"status":"error","history_entries":0,"refreshed_entries":0,"failed_entries":0,"active_sources":0,"error":"feedback_refresh_failed"}'
+  fi
+
+  if ! PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${feedback_history_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${feedback_refresh_summary_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_tmp_file}" <<'PY'
 import json
 import pathlib
 import re
 import sys
 from post_author import enrich_author_metrics
+from post_evaluator import evaluate_summary
+from post_feedback import build_feedback_boost_map, load_feedback_history
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_media import extract_candidate_media
 from post_selection import normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
@@ -428,11 +508,13 @@ category = sys.argv[1]
 source_state_file = pathlib.Path(sys.argv[2])
 rotation_state_file = pathlib.Path(sys.argv[3]) if sys.argv[3] else None
 media_state_file = pathlib.Path(sys.argv[4])
-account = json.loads(sys.argv[5])
-source_configs = json.loads(sys.argv[6])
-collection = json.loads(sys.argv[7])
-requested_mode = sys.argv[8]
-payload_files = [pathlib.Path(item) for item in sys.argv[9:]]
+feedback_history_file = pathlib.Path(sys.argv[5])
+account = json.loads(sys.argv[6])
+source_configs = json.loads(sys.argv[7])
+collection = json.loads(sys.argv[8])
+feedback_refresh = json.loads(sys.argv[9])
+requested_mode = sys.argv[10]
+payload_files = [pathlib.Path(item) for item in sys.argv[11:]]
 
 posted_ids = {line.strip() for line in source_state_file.read_text(encoding="utf-8").splitlines() if line.strip()}
 warnings = []
@@ -441,6 +523,7 @@ seen_ids = set()
 seen_text = set()
 candidates = []
 author_cache = {}
+alerts = []
 
 summary_prefix = str(account.get("summary_prefix") or account.get("post_prefix") or "Xで反応上位: ")
 summary_language = str(account.get("summary_language") or "ja")
@@ -461,6 +544,25 @@ if rotation_state_file is not None:
 previous_source, _ = normalize_rotation_source(rotation_raw, source_order)
 previous_media_mode = ""
 author_diagnostics = {}
+feedback_history = load_feedback_history(feedback_history_file)
+feedback_boosts = build_feedback_boost_map(feedback_history)
+summary_evaluator = {"accepted": 0, "rejected": 0}
+if feedback_refresh.get("status") != "ok":
+    alerts.append(
+        {
+            "level": "warning",
+            "code": "feedback_refresh_failed",
+            "message": str(feedback_refresh.get("error") or "feedback history refresh failed"),
+        }
+    )
+elif int(feedback_refresh.get("failed_entries") or 0) > 0:
+    alerts.append(
+        {
+            "level": "warning",
+            "code": "feedback_refresh_partial_failure",
+            "message": f"failed_entries={int(feedback_refresh.get('failed_entries') or 0)}",
+        }
+    )
 if media_state_file.is_file():
     try:
         raw_media_state = media_state_file.read_text(encoding="utf-8").strip()
@@ -478,6 +580,8 @@ for payload_path in payload_files:
     source_filters = source_config.get("filters") or {}
     source_type = str(source_config.get("type") or "")
     source_score_boost = float(source_config.get("score_boost") or 0)
+    source_feedback = feedback_boosts.get(source_id) or {}
+    feedback_boost = float(source_feedback.get("feedback_boost") or 0.0)
     source_username = str(source_config.get("username") or "")
     source_media_mode = str(source_config.get("media_mode") or "any")
     effective_filters = merge_filters(account_filters, source_filters)
@@ -529,6 +633,7 @@ for payload_path in payload_files:
             created_at=created_at,
             max_age_hours=effective_filters.get("max_age_hours"),
             source_boost=source_score_boost,
+            feedback_boost=feedback_boost,
             has_image=bool(media.get("has_image")),
             author_metrics=author_metrics,
         )
@@ -559,6 +664,8 @@ for payload_path in payload_files:
                 "media_classification_source": str(media.get("classification_source") or "default"),
                 "score": round(score, 2),
                 "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
+                "feedback_boost": round(feedback_boost, 2),
+                "feedback_history_count": int(source_feedback.get("history_count") or 0),
                 "created_at": created_at,
                 "source_score_boost": round(source_score_boost, 2),
             }
@@ -605,10 +712,47 @@ for candidate in selected_candidates:
         )
     except Exception as exc:
         warnings.append(f"{candidate['source_id']}:{candidate['id']}: summary generation failed ({exc})")
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "summary_generation_failed",
+                "message": str(exc),
+                "tweet_id": candidate["id"],
+                "source_id": candidate["source_id"],
+            }
+        )
         summary_attempts.append({"tweet_id": candidate["id"], "ok": False, "error": str(exc)})
         continue
 
     candidate["summary_text"] = post_text
+    summary_validation = evaluate_summary(
+        post_text,
+        source_text=candidate.get("post_source_text") or candidate["text"],
+        max_length=summary_max_length,
+    )
+    candidate["summary_validation"] = summary_validation
+    if not summary_validation.get("ok"):
+        summary_evaluator["rejected"] += 1
+        reason_text = ", ".join(summary_validation.get("reasons") or ["summary rejected"])
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "summary_validation_failed",
+                "message": reason_text,
+                "tweet_id": candidate["id"],
+                "source_id": candidate["source_id"],
+            }
+        )
+        summary_attempts.append(
+            {
+                "tweet_id": candidate["id"],
+                "ok": False,
+                "error": f"summary validation failed: {reason_text}",
+                "stage": "evaluator",
+            }
+        )
+        continue
+    summary_evaluator["accepted"] += 1
     if summary_generation:
         candidate["summary_generation"] = summary_generation
     post_candidates.append(candidate)
@@ -638,13 +782,18 @@ payload = {
     "single_post_max_length": int(account.get("single_post_max_length") or 280),
     "target_media_mode": target_media_mode,
     "previous_media_mode": previous_media_mode or None,
+    "feedback_history_file": str(feedback_history_file),
     "rotation": rotation,
     "diagnostics": {
         "author_lookup": author_diagnostics,
+        "feedback_refresh": feedback_refresh,
+        "feedback_boosts": feedback_boosts,
         "summary_attempts": summary_attempts,
+        "summary_evaluator": summary_evaluator,
         "fallback_candidates": fallback_candidates,
     },
     "skipped_candidates": skipped_candidates[:20],
+    "alerts": alerts[:20],
     "warnings": warnings,
     "post_result_file": None,
     "post_error": None,
@@ -816,6 +965,9 @@ PY
     update_rotation_state "${rotation_state_file}" "${selected_source_name}"
   fi
   update_media_state "${media_state_file}" "${selected_media_mode}" "${selected_tweet_id}"
+  if ! append_feedback_history_record "${feedback_history_file}" "${candidate_file}" "${post_result_file}"; then
+    warn "failed to append feedback history for category '${category}'"
+  fi
   update_candidate_result "${candidate_file}" "posted" "${post_result_file}"
 }
 
