@@ -33,8 +33,10 @@ PRIMARY_WINDOW_MINUTES = 30
 EXPANDED_WINDOW_MINUTES = 60
 MIN_PRIMARY_WINDOW_TWEETS = 5
 DAILY_LIKE_LIMIT = 100
-MIN_LIKE_SLEEP_SECONDS = 5
-MAX_LIKE_SLEEP_SECONDS = 20
+MIN_LIKE_SLEEP_SECONDS = 2
+MAX_LIKE_SLEEP_SECONDS = 8
+MAX_EXCLUDED_FEED_CANDIDATE_LIKES = 300
+RECENCY_BUCKET_MINUTES = 10
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class TweetCandidate:
     text: str
     created_at: datetime
     username: str = ""
+    like_count: int = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,6 +69,13 @@ def parse_args() -> argparse.Namespace:
 
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").split())
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return max(int(str(value).strip()), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def parse_datetime(value: object) -> datetime | None:
@@ -117,6 +127,35 @@ def _collect_tweet_objects(node: object, collected: list[dict[str, object]]) -> 
         _collect_tweet_objects(value, collected)
 
 
+def _extract_first_int(node: dict[str, object], paths: Sequence[tuple[str, ...]]) -> int:
+    for path in paths:
+        current: object = node
+        for segment in path:
+            if not isinstance(current, dict) or segment not in current:
+                break
+            current = current[segment]
+        else:
+            return _safe_int(current)
+    return 0
+
+
+def extract_like_count(node: dict[str, object]) -> int:
+    return _extract_first_int(
+        node,
+        (
+            ("metrics", "likes"),
+            ("metrics", "like_count"),
+            ("public_metrics", "like_count"),
+            ("likes",),
+            ("like_count",),
+            ("legacy", "favorite_count"),
+            ("legacy", "favourite_count"),
+            ("favorite_count",),
+            ("favourite_count",),
+        ),
+    )
+
+
 def extract_tweet_candidates(payload: dict[str, object]) -> list[TweetCandidate]:
     raw_candidates: list[dict[str, object]] = []
     _collect_tweet_objects(payload.get("data") or payload, raw_candidates)
@@ -136,6 +175,7 @@ def extract_tweet_candidates(payload: dict[str, object]) -> list[TweetCandidate]
                 text=_normalize_text(item.get("text")),
                 created_at=created_at,
                 username=_extract_username(item),
+                like_count=extract_like_count(item),
             )
         )
         seen_ids.add(tweet_id)
@@ -174,6 +214,28 @@ def pick_latest_account_candidates(
             continue
         latest_candidates.append(sorted_candidates[0])
     return latest_candidates
+
+
+def _candidate_recency_bucket(candidate: TweetCandidate, *, now: datetime) -> int:
+    age_seconds = max((now - candidate.created_at).total_seconds(), 0)
+    return int(age_seconds // (RECENCY_BUCKET_MINUTES * 60))
+
+
+def prioritize_feed_candidates(
+    candidates: Sequence[TweetCandidate],
+    *,
+    now: datetime,
+) -> list[TweetCandidate]:
+    eligible_candidates = [candidate for candidate in candidates if candidate.like_count < MAX_EXCLUDED_FEED_CANDIDATE_LIKES]
+    return sorted(
+        eligible_candidates,
+        key=lambda item: (
+            _candidate_recency_bucket(item, now=now),
+            item.like_count,
+            -item.created_at.timestamp(),
+            item.tweet_id,
+        ),
+    )
 
 
 def parse_state_line(line: str) -> LikedStateEntry:
@@ -232,6 +294,7 @@ def candidate_preview(candidate: TweetCandidate) -> dict[str, object]:
         "tweet_id": candidate.tweet_id,
         "username": candidate.username,
         "created_at": candidate.created_at.isoformat(),
+        "like_count": candidate.like_count,
         "text_snippet": candidate.text[:140] + ("…" if len(candidate.text) > 140 else ""),
     }
 
@@ -316,7 +379,10 @@ def main() -> int:
         return 1
 
     eligible_candidates = [candidate for candidate in candidates if candidate.tweet_id not in liked_ids]
-    random.shuffle(eligible_candidates)
+    if source_mode == "feed":
+        eligible_candidates = prioritize_feed_candidates(eligible_candidates, now=now)
+    else:
+        random.shuffle(eligible_candidates)
     selected_count = determine_like_count(requested_like_count, remaining_daily_capacity, len(eligible_candidates))
     selected_candidates = eligible_candidates[:selected_count]
 

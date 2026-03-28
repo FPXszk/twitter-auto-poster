@@ -211,7 +211,7 @@ python/.venv/bin/python python/auto_like.py --dry-run
 python/.venv/bin/python python/auto_like.py
 ```
 
-`auto_like.py` は for-you タイムラインから新着順で候補を作り、1 回ごとに 5〜15 件の like をします。
+`auto_like.py` は for-you タイムラインから直近候補を集め、`300` 以上いいね済みの投稿を除外しつつ、できるだけ「新しく・まだいいね数が少ない」投稿を優先して 1 回ごとに `5〜15` 件の like をします。連続 like の待機は `2〜8秒` です。
 
 ## 保守・確認コマンド
 

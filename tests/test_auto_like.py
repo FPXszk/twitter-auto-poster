@@ -16,8 +16,10 @@ from auto_like import (
     TweetCandidate,
     count_daily_likes,
     determine_like_count,
+    extract_tweet_candidates,
     main,
     pick_latest_account_candidates,
+    prioritize_feed_candidates,
     prune_liked_state,
     select_timeline_candidates,
 )
@@ -25,12 +27,18 @@ from auto_like import (
 JST = ZoneInfo("Asia/Tokyo")
 
 
-def build_candidate(tweet_id: str, created_at: datetime, username: str = "sample") -> TweetCandidate:
+def build_candidate(
+    tweet_id: str,
+    created_at: datetime,
+    username: str = "sample",
+    like_count: int = 0,
+) -> TweetCandidate:
     return TweetCandidate(
         tweet_id=tweet_id,
         text=f"tweet {tweet_id}",
         created_at=created_at,
         username=username,
+        like_count=like_count,
     )
 
 
@@ -107,11 +115,56 @@ class AutoLikeTests(unittest.TestCase):
         self.assertEqual(determine_like_count(12, 10, 3), 3)
         self.assertEqual(determine_like_count(12, 0, 10), 0)
 
-    def test_main_sleeps_between_attempts_even_when_a_like_fails(self) -> None:
+    def test_extract_tweet_candidates_reads_like_count_from_known_paths(self) -> None:
+        payload = {
+            "data": [
+                {
+                    "id": "1",
+                    "text": "first",
+                    "createdAtISO": "2026-03-24T02:55:00+00:00",
+                    "metrics": {"likes": 12},
+                    "author": {"username": "alice"},
+                },
+                {
+                    "id": "2",
+                    "text": "second",
+                    "createdAtISO": "2026-03-24T02:50:00+00:00",
+                    "legacy": {"favorite_count": 7},
+                    "author": {"username": "bob"},
+                },
+                {
+                    "id": "3",
+                    "text": "third",
+                    "createdAtISO": "2026-03-24T02:45:00+00:00",
+                    "public_metrics": {"like_count": 4},
+                    "author": {"username": "carol"},
+                },
+            ]
+        }
+
+        candidates = extract_tweet_candidates(payload)
+
+        self.assertEqual([(item.tweet_id, item.like_count) for item in candidates], [("1", 12), ("2", 7), ("3", 4)])
+
+    def test_prioritize_feed_candidates_prefers_low_like_counts_within_recent_buckets(self) -> None:
         now = datetime(2026, 3, 24, 12, 0, tzinfo=JST)
         candidates = [
-            build_candidate("1", datetime(2026, 3, 24, 11, 55, tzinfo=JST)),
-            build_candidate("2", datetime(2026, 3, 24, 11, 50, tzinfo=JST)),
+            build_candidate("popular", datetime(2026, 3, 24, 11, 59, tzinfo=JST), like_count=300),
+            build_candidate("fresh-mid", datetime(2026, 3, 24, 11, 58, tzinfo=JST), like_count=20),
+            build_candidate("fresh-low", datetime(2026, 3, 24, 11, 57, tzinfo=JST), like_count=5),
+            build_candidate("older-low", datetime(2026, 3, 24, 11, 49, tzinfo=JST), like_count=1),
+        ]
+
+        prioritized = prioritize_feed_candidates(candidates, now=now)
+
+        self.assertEqual([item.tweet_id for item in prioritized], ["fresh-low", "fresh-mid", "older-low"])
+
+    def test_main_prefers_recent_low_like_feed_candidates_and_uses_shorter_sleep(self) -> None:
+        now = datetime(2026, 3, 24, 12, 0, tzinfo=JST)
+        candidates = [
+            build_candidate("1", datetime(2026, 3, 24, 11, 58, tzinfo=JST), like_count=20),
+            build_candidate("2", datetime(2026, 3, 24, 11, 57, tzinfo=JST), like_count=5),
+            build_candidate("3", datetime(2026, 3, 24, 11, 59, tzinfo=JST), like_count=300),
         ]
 
         with TemporaryDirectory() as tmp_dir:
@@ -134,8 +187,8 @@ class AutoLikeTests(unittest.TestCase):
                 patch("auto_like.load_liked_state", return_value=[]),
                 patch("auto_like.fetch_feed_candidates", return_value=candidates),
                 patch("auto_like.select_timeline_candidates", return_value=(candidates, 30)),
-                patch("auto_like.random.randint", side_effect=[2, 20]),
-                patch("auto_like.random.shuffle", side_effect=lambda items: None),
+                patch("auto_like.random.randint", side_effect=[2, 8]) as randint_mock,
+                patch("auto_like.random.shuffle") as shuffle_mock,
                 patch("auto_like.run_twitter_write", side_effect=[RuntimeError("boom"), None]) as like_mock,
                 patch("auto_like.time.sleep") as sleep_mock,
                 patch("auto_like.save_liked_state"),
@@ -145,7 +198,11 @@ class AutoLikeTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(like_mock.call_count, 2)
-        sleep_mock.assert_called_once_with(20)
+        self.assertEqual([call.args[2] for call in like_mock.call_args_list], ["2", "1"])
+        sleep_mock.assert_called_once_with(8)
+        self.assertEqual(randint_mock.call_args_list[0].args, (5, 15))
+        self.assertEqual(randint_mock.call_args_list[1].args, (2, 8))
+        shuffle_mock.assert_not_called()
 
 
 if __name__ == "__main__":

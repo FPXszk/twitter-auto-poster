@@ -125,7 +125,8 @@ jobs:
                       for item in selected_candidates:
                           username = str(item.get("username") or "").strip() or "unknown"
                           lines.append(
-                              f"- `{item.get('tweet_id', '')}` by `@{username}` at `{item.get('created_at', '')}`: "
+                              f"- `{item.get('tweet_id', '')}` by `@{username}` at `{item.get('created_at', '')}` "
+                              f"(likes=`{item.get('like_count', 0)}`): "
                               f"{item.get('text_snippet', '')}"
                           )
 
