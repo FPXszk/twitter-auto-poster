@@ -48,7 +48,8 @@ accounts:
     summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     summary_max_length: 280
     single_post_max_length: 280
-    selection_mode: "round_robin"
+    selection_mode: "round_robin_account"
+    fallback_candidates: 3
     rotation_state_file: "state/buz-robin.txt"
     source_reference_mode: "none"
     state_file: "state/buz-posted.txt"

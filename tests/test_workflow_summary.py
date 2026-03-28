@@ -41,6 +41,47 @@ class WorkflowSummaryTest(TestCase):
         self.assertIsNone(payload)
         self.assertIn("invalid JSON", error or "")
 
+    def test_render_run_summary_includes_diagnostics_and_attempts(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "post",
+                "result_mode": "candidate_ready",
+                "selection_mode": "round_robin_account",
+                "payload_count": 2,
+                "collection": {"user": {}, "search": {}},
+                "rotation": {"selected_source": "alpha", "next_source": "beta"},
+                "selected": {
+                    "id": "123",
+                    "source_id": "alpha-big",
+                    "source_type": "search",
+                    "screen_name": "alpha",
+                    "score": 10,
+                    "likes": 1,
+                    "retweets": 2,
+                    "replies": 3,
+                    "views": 4,
+                    "has_image": True,
+                    "media_classification_source": "payload",
+                    "text": "snippet",
+                },
+                "post_text": "summary body",
+                "post_candidates": [{"id": "123"}],
+                "diagnostics": {
+                    "author_lookup": {"payload_metrics": 1, "cache_hits": 2, "lookup_success": 3, "lookup_failed": 4},
+                    "summary_attempts": [{"tweet_id": "123", "ok": False, "error": "boom"}, {"tweet_id": "456", "ok": True, "provider": "copilot"}],
+                },
+            },
+        )
+
+        rendered = "\n".join(lines)
+        self.assertIn("Post candidates ready", rendered)
+        self.assertIn("Author cache hits", rendered)
+        self.assertIn("Summary attempts", rendered)
+        self.assertIn("123", rendered)
+
 
 if __name__ == "__main__":
     main()

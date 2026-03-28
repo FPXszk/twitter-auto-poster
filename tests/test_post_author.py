@@ -88,6 +88,47 @@ class PostAuthorTest(TestCase):
             with self.assertRaisesRegex(RuntimeError, "lookup failed"):
                 post_author.fetch_author_metrics("tester", command_runner=fake_runner)
 
+    def test_enrich_author_metrics_updates_diagnostics_for_payload_cache_and_lookup(self) -> None:
+        diagnostics: dict[str, object] = {}
+        cache: dict[str, dict[str, object]] = {}
+
+        payload_metrics, warning = post_author.enrich_author_metrics(
+            {"author": {"screenName": "tester", "followersCount": 10}},
+            cache=cache,
+            diagnostics=diagnostics,
+        )
+        self.assertIsNone(warning)
+        self.assertEqual(payload_metrics["followers"], 10)
+        self.assertEqual(diagnostics["payload_metrics"], 1)
+
+        cached_metrics, warning = post_author.enrich_author_metrics(
+            {"author": {"screenName": "tester"}},
+            cache=cache,
+            diagnostics=diagnostics,
+        )
+        self.assertIsNone(warning)
+        self.assertEqual(cached_metrics["followers"], 10)
+        self.assertEqual(diagnostics["cache_hits"], 1)
+
+        with patch.object(post_author, "fetch_author_metrics", return_value={"screen_name": "lookup", "followers": 20, "following": 3, "verified": True}):
+            fetched_metrics, warning = post_author.enrich_author_metrics(
+                {"author": {"screenName": "lookup"}},
+                cache={},
+                diagnostics=diagnostics,
+            )
+        self.assertIsNone(warning)
+        self.assertEqual(fetched_metrics["followers"], 20)
+        self.assertEqual(diagnostics["lookup_success"], 1)
+
+        with patch.object(post_author, "fetch_author_metrics", side_effect=RuntimeError("boom")):
+            _, warning = post_author.enrich_author_metrics(
+                {"author": {"screenName": "broken"}},
+                cache={},
+                diagnostics=diagnostics,
+            )
+        self.assertEqual(warning, "boom")
+        self.assertEqual(diagnostics["lookup_failed"], 1)
+
 
 if __name__ == "__main__":
     main()

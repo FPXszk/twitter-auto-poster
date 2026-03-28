@@ -419,12 +419,19 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
             raise SystemExit(f"{label}.single_post_max_length must be <= 280")
     if "summary_language" in block and str(block["summary_language"]).strip() not in {"ja", "raw"}:
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
-    if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
-        raise SystemExit(f"{label}.selection_mode must be 'score' or 'round_robin'")
+    if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin", "round_robin_account"}:
+        raise SystemExit(f"{label}.selection_mode must be 'score', 'round_robin', or 'round_robin_account'")
     if "source_reference_mode" in block and str(block["source_reference_mode"]).strip() not in {"url", "quote", "none"}:
         raise SystemExit(f"{label}.source_reference_mode must be 'url', 'quote', or 'none'")
     if "dry_run" in block:
         parse_bool(f"{label}.dry_run", block["dry_run"])
+    if "fallback_candidates" in block and int(block["fallback_candidates"]) <= 0:
+        raise SystemExit(f"{label}.fallback_candidates must be > 0")
+    if "summary_provider" in block and str(block["summary_provider"]).strip() not in {"legacy_google_translate", "googletrans", "copilot_cli", "copilot"}:
+        raise SystemExit(f"{label}.summary_provider must be a supported provider")
+    prompt_path = str(block.get("summary_prompt_path") or "").strip()
+    if prompt_path and not pathlib.Path(prompt_path).exists():
+        raise SystemExit(f"{label}.summary_prompt_path does not exist: {prompt_path}")
 
     ensure_number_mapping(f"{label}.score_weights", block.get("score_weights"))
 
@@ -513,6 +520,7 @@ category_sources_json() {
   python_cmd - "${sources_config}" "${category}" <<'PY'
 import json
 import pathlib
+import re
 import sys
 
 import yaml
@@ -538,10 +546,18 @@ for item in sources:
     if not source_id:
         raise SystemExit("source entry is missing id")
 
+    query = " ".join(str(item.get("query") or "").split())
+    inferred_rotation_key = ""
+    if query:
+        match = re.search(r"(?:^|\s)from:([A-Za-z0-9_]+)", query)
+        if match:
+            inferred_rotation_key = match.group(1).lstrip("@")
+
     payload[source_id] = {
         "id": source_id,
         "type": str(item.get("type") or "").strip(),
         "username": str(item.get("username") or "").strip().lstrip("@"),
+        "rotation_key": str(item.get("rotation_key") or item.get("username") or inferred_rotation_key or source_id).strip().lstrip("@"),
         "score_boost": float(item.get("score_boost") or 0),
         "media_mode": str(item.get("media_mode") or "any").strip().lower(),
         "filters": item.get("filters") or {},
@@ -600,8 +616,12 @@ payload = {
     "state_file": str(account.get("state_file") or defaults.get("state_file") or ""),
     "media_state_file": str(account.get("media_state_file") or defaults.get("media_state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
+    "fallback_candidates": int(account.get("fallback_candidates") or defaults.get("fallback_candidates") or 1),
     "source_reference_mode": str(account.get("source_reference_mode") or defaults.get("source_reference_mode") or "url"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),
+    "summary_provider": str(account.get("summary_provider") or defaults.get("summary_provider") or "legacy_google_translate"),
+    "summary_model": str(account.get("summary_model") or defaults.get("summary_model") or "gpt-5-mini"),
+    "summary_prompt_path": str(account.get("summary_prompt_path") or defaults.get("summary_prompt_path") or ""),
     "score_weights": {
         "likes": float(account_score_weights.get("likes", default_score_weights.get("likes", 1))),
         "retweets": float(account_score_weights.get("retweets", default_score_weights.get("retweets", 1))),

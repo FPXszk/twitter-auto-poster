@@ -188,6 +188,29 @@ payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 PY
 }
 
+update_selected_candidate() {
+  local candidate_file="$1"
+  local tweet_id="$2"
+
+  python_cmd - "${candidate_file}" "${tweet_id}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload_path = pathlib.Path(sys.argv[1])
+tweet_id = sys.argv[2]
+payload = json.loads(payload_path.read_text(encoding="utf-8"))
+for item in payload.get("post_candidates") or []:
+    if str(item.get("id") or "") == tweet_id:
+        payload["selected"] = item
+        payload["post_text"] = item.get("summary_text") or ""
+        payload["source_url"] = item.get("source_url") or ""
+        payload["summary_generation"] = item.get("summary_generation") or None
+        break
+payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 update_rotation_state() {
   local rotation_state_file="$1"
   local selected_source="$2"
@@ -430,12 +453,14 @@ source_reference_mode = str(account.get("source_reference_mode") or "url").strip
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
-source_order = [str((source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()]
+fallback_candidates = max(int(account.get("fallback_candidates") or max_candidates or 1), 1)
+source_order = [str((source_configs.get(source_id) or {}).get("rotation_key") or (source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()]
 rotation_raw = ""
 if rotation_state_file is not None:
     rotation_raw = rotation_state_file.read_text(encoding="utf-8").strip()
 previous_source, _ = normalize_rotation_source(rotation_raw, source_order)
 previous_media_mode = ""
+author_diagnostics = {}
 if media_state_file.is_file():
     try:
         raw_media_state = media_state_file.read_text(encoding="utf-8").strip()
@@ -483,7 +508,7 @@ for payload_path in payload_files:
 
         created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
         author = item.get("author") or {}
-        author_metrics, author_warning = enrich_author_metrics(item, cache=author_cache)
+        author_metrics, author_warning = enrich_author_metrics(item, cache=author_cache, diagnostics=author_diagnostics)
         if author_warning:
             warnings.append(f"{source_id}:{tweet_id}: {author_warning}")
         rejection_reasons = candidate_rejection_reasons(
@@ -515,6 +540,7 @@ for payload_path in payload_files:
                 "source_type": source_type,
                 "source_key": source_username or source_id,
                 "source_username": source_username,
+                "rotation_key": str(source_config.get("rotation_key") or source_username or source_id),
                 "text": text,
                 "post_source_text": post_source_text or text,
                 "screen_name": str(author_metrics.get("screen_name") or author.get("screenName") or ""),
@@ -543,39 +569,57 @@ for payload_path in payload_files:
 selected_candidates, rotation = select_candidates(
     candidates,
     source_order=source_order,
-    max_candidates=max_candidates,
+    max_candidates=max(max_candidates, fallback_candidates),
     selection_mode=selection_mode,
     previous_source=previous_source,
     preferred_media_mode=target_media_mode,
 )
-selected = selected_candidates[0] if selected_candidates else None
+post_candidates = []
+summary_attempts = []
+selected = None
 post_text = ""
 source_url = ""
 summary_generation = {}
-if selected:
+for candidate in selected_candidates:
     source_url = build_source_tweet_url(
-        selected["screen_name"],
-        selected["id"],
-        source_username=selected["source_username"],
+        candidate["screen_name"],
+        candidate["id"],
+        source_username=candidate["source_username"],
     )
-    selected["source_url"] = source_url
-    post_text = build_summary(
-        selected.get("post_source_text") or selected["text"],
-        prefix=summary_prefix,
-        language=summary_language,
-        max_length=summary_max_length,
-        screen_name=selected["screen_name"],
-        tweet_id=selected["id"],
-        source_username=selected["source_username"],
-        provider=summary_provider,
-        copilot_model=summary_model,
-        copilot_prompt_path=summary_prompt_path,
-        working_directory=pathlib.Path.cwd(),
-        diagnostics_sink=summary_generation,
-    )
-    selected["summary_text"] = post_text
+    candidate["source_url"] = source_url
+    summary_generation = {}
+    try:
+        post_text = build_summary(
+            candidate.get("post_source_text") or candidate["text"],
+            prefix=summary_prefix,
+            language=summary_language,
+            max_length=summary_max_length,
+            screen_name=candidate["screen_name"],
+            tweet_id=candidate["id"],
+            source_username=candidate["source_username"],
+            provider=summary_provider,
+            copilot_model=summary_model,
+            copilot_prompt_path=summary_prompt_path,
+            working_directory=pathlib.Path.cwd(),
+            diagnostics_sink=summary_generation,
+        )
+    except Exception as exc:
+        warnings.append(f"{candidate['source_id']}:{candidate['id']}: summary generation failed ({exc})")
+        summary_attempts.append({"tweet_id": candidate["id"], "ok": False, "error": str(exc)})
+        continue
+
+    candidate["summary_text"] = post_text
     if summary_generation:
-        selected["summary_generation"] = summary_generation
+        candidate["summary_generation"] = summary_generation
+    post_candidates.append(candidate)
+    summary_attempts.append({"tweet_id": candidate["id"], "ok": True, "provider": summary_generation.get("provider"), "model": summary_generation.get("model")})
+    if selected is None:
+        selected = candidate
+        source_url = candidate["source_url"]
+        post_text = candidate["summary_text"]
+        summary_generation = candidate.get("summary_generation") or {}
+    if len(post_candidates) >= fallback_candidates:
+        break
 
 payload = {
     "category": category,
@@ -587,6 +631,7 @@ payload = {
     "source_url": source_url,
     "selected": selected,
     "selected_candidates": selected_candidates,
+    "post_candidates": post_candidates,
     "summary_generation": summary_generation or None,
     "selection_mode": selection_mode,
     "source_reference_mode": source_reference_mode,
@@ -594,6 +639,11 @@ payload = {
     "target_media_mode": target_media_mode,
     "previous_media_mode": previous_media_mode or None,
     "rotation": rotation,
+    "diagnostics": {
+        "author_lookup": author_diagnostics,
+        "summary_attempts": summary_attempts,
+        "fallback_candidates": fallback_candidates,
+    },
     "skipped_candidates": skipped_candidates[:20],
     "warnings": warnings,
     "post_result_file": None,
@@ -709,13 +759,60 @@ PY
     exit 0
   fi
 
-  post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
-  if ! publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${single_post_max_length}" "${state_file}" "${source_state_file}" "${post_result_file}" "${selected_image_urls_json}"; then
+  post_candidates_count="$(python_cmd - "${candidate_file}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(len(payload.get("post_candidates") or []))
+PY
+  )"
+
+  publish_succeeded="false"
+  post_result_file=""
+  post_error=""
+  for ((post_candidate_index=0; post_candidate_index<post_candidates_count; post_candidate_index++)); do
+    mapfile -t post_candidate_fields < <(python_cmd - "${candidate_file}" "${post_candidate_index}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+items = payload.get("post_candidates") or []
+index = int(sys.argv[2])
+item = items[index]
+print(item.get("summary_text") or "")
+print(item.get("id") or "")
+print(item.get("source_url") or "")
+print(item.get("media_mode") or "")
+print(json.dumps(item.get("image_urls") or [], ensure_ascii=False))
+PY
+    )
+
+    post_text="${post_candidate_fields[0]:-}"
+    selected_tweet_id="${post_candidate_fields[1]:-}"
+    source_url="${post_candidate_fields[2]:-}"
+    selected_media_mode="${post_candidate_fields[3]:-}"
+    selected_image_urls_json="${post_candidate_fields[4]:-[]}"
+    post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
+    update_selected_candidate "${candidate_file}" "${selected_tweet_id}"
+
+    if publish_selected_post "${category}" "${post_text}" "${selected_tweet_id}" "${source_url}" "${source_reference_mode}" "${single_post_max_length}" "${state_file}" "${source_state_file}" "${post_result_file}" "${selected_image_urls_json}"; then
+      publish_succeeded="true"
+      break
+    fi
+
     post_error="$(summarize_post_result_file "${post_result_file}")"
+    warn "publish failed for tweet '${selected_tweet_id}'; trying next candidate"
+  done
+
+  if [[ "${publish_succeeded}" != "true" ]]; then
     update_candidate_result "${candidate_file}" "post_failed" "${post_result_file}" "${post_error}"
     exit 1
   fi
-  if [[ "${selection_mode}" == "round_robin" && -n "${selected_source_name}" ]]; then
+
+  if [[ "${selection_mode}" == "round_robin" || "${selection_mode}" == "round_robin_account" ]] && -n "${selected_source_name}" ]]; then
     update_rotation_state "${rotation_state_file}" "${selected_source_name}"
   fi
   update_media_state "${media_state_file}" "${selected_media_mode}" "${selected_tweet_id}"

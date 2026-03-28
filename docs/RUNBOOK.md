@@ -45,6 +45,9 @@ bash scripts/fetch_and_post.sh --category buz --dry-run true
 - `selected.score_breakdown`
 - `selected.author_followers`
 - `selected.image_urls`
+- `post_candidates`
+- `diagnostics.author_lookup`
+- `diagnostics.summary_attempts`
 - `skipped_candidates`
 - `warnings`
 - `rotation.selected_source`（どのアカウントのソースが選ばれたか）
@@ -84,6 +87,8 @@ bash scripts/fetch_and_post.sh --category news --post
 - Selected source / tweet / author
 - Score breakdown
 - Summary provider / model
+- summary attempts / fallback candidates
+- author lookup diagnostics
 - skipped candidates count
 - rotation（ラウンドロビン状態）
 
@@ -115,6 +120,7 @@ bash scripts/fetch_and_post.sh --category news --post
 2. `copilot --version` と認証状態を確認
 3. preview 実行で再確認
 4. 必要なら summary provider を一時的に切り替える
+5. `post_candidates` と `diagnostics.summary_attempts` を見て fallback がどこで止まったか確認する
 
 ## 6. state の扱い
 

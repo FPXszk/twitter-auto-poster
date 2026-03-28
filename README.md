@@ -10,7 +10,7 @@
 
 1. `config/sources.yaml` から収集対象を読む（バズ系アカウントの人気ツイート）
 2. `twitter-cli` で検索結果を取得する
-3. 投稿済み ID を避けながらラウンドロビンで候補を選ぶ
+3. 投稿済み ID を避けながらスコア順またはラウンドロビンで候補を選ぶ
 4. `dry-run` では候補文だけ表示する
 5. Copilot CLI が 280 文字以内に整形する
 6. 対象 category の設定が live-post のときだけ `twitter post` を実行する（単発投稿）
@@ -73,8 +73,10 @@
 - `config/accounts.yaml`
   - カテゴリ別の投稿ポリシーと workflow 実行モードの設定元
   - `dry_run`
-  - `selection_mode`（round_robin）
+  - `selection_mode`（`score` / `round_robin` / `round_robin_account`）
+  - `fallback_candidates`
   - `rotation_state_file`
+  - `summary_provider` / `summary_model` / `summary_prompt_path`
 - `config/copilot_summary_prompt_ja.txt`
   - 280 文字以内整形用の Copilot プロンプト
 - `config/follow_state.json`
@@ -337,11 +339,15 @@ PY
 - `single_post_max_length`
 - `state_file`
 - `selection_mode`
+- `fallback_candidates`
 - `rotation_state_file`
+- `summary_provider`
+- `summary_model`
+- `summary_prompt_path`
 - `score_weights`
 - `filters`
 
-`post_invest.yml` はこの `dry_run` を読んで実行モードを決め、`selection_mode: round_robin` のときは `rotation_state_file` を使って前回投稿アカウント名を保持します。
+`post_buz.yml` / `post_invest.yml` はこの `dry_run` を読んで実行モードを決めます。`selection_mode: round_robin` は source 単位、`selection_mode: round_robin_account` は account 単位で前回投稿元を回し、どちらも `rotation_state_file` を使って直前 state を保持します。`fallback_candidates` は summary 生成失敗や投稿失敗時に次候補へ進める上限件数です。
 
 `single_post_max_length` は単発投稿を thread に分けずに送れる上限で、`twitter-cli` の実投稿制限に合わせて 280 を上限にします。
 

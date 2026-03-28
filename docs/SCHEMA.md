@@ -81,15 +81,16 @@
 - `max_candidates`: integer, `> 0`
 - `summary_prefix`: string
 - `summary_language`: `ja | raw`
-- `summary_provider`: `legacy_google_translate | copilot_cli`
+- `summary_provider`: `legacy_google_translate | googletrans | copilot_cli | copilot`
 - `summary_model`: string
-- `summary_prompt_path`: string
+- `summary_prompt_path`: string（指定時は存在するパス）
 - `summary_max_length`: integer, `1..280`
 - `single_post_max_length`: integer, `1..280`
 - `state_file`: string
 - `media_state_file`: string
-- `selection_mode`: `score | round_robin`
-- `source_reference_mode`: `url | quote`
+- `selection_mode`: `score | round_robin | round_robin_account`
+- `fallback_candidates`: integer, `> 0`
+- `source_reference_mode`: `url | quote | none`
 - `rotation_state_file`: string
 - `score_weights`: mapping
 - `filters`: mapping

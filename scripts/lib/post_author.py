@@ -162,19 +162,33 @@ def enrich_author_metrics(
     item: Mapping[str, Any],
     *,
     cache: dict[str, dict[str, Any]] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str | None]:
+    if diagnostics is not None:
+        diagnostics.setdefault("payload_metrics", 0)
+        diagnostics.setdefault("cache_hits", 0)
+        diagnostics.setdefault("lookup_success", 0)
+        diagnostics.setdefault("lookup_failed", 0)
+        diagnostics.setdefault("missing_screen_name", 0)
+
     metrics = extract_author_metrics(item)
     screen_name = str(metrics.get("screen_name") or "").strip()
     if not screen_name:
+        if diagnostics is not None:
+            diagnostics["missing_screen_name"] += 1
         return metrics, None
 
     cache_key = screen_name.casefold()
     if metrics.get("followers", 0) > 0 or metrics.get("following", 0) > 0:
+        if diagnostics is not None:
+            diagnostics["payload_metrics"] += 1
         if cache is not None:
             cache[cache_key] = dict(metrics)
         return metrics, None
 
     if cache is not None and cache_key in cache:
+        if diagnostics is not None:
+            diagnostics["cache_hits"] += 1
         cached = dict(cache[cache_key])
         cached.setdefault("screen_name", screen_name)
         cached["verified"] = bool(cached.get("verified") or metrics.get("verified"))
@@ -183,8 +197,12 @@ def enrich_author_metrics(
     try:
         fetched = fetch_author_metrics(screen_name)
     except RuntimeError as exc:
+        if diagnostics is not None:
+            diagnostics["lookup_failed"] += 1
         return metrics, str(exc)
 
+    if diagnostics is not None:
+        diagnostics["lookup_success"] += 1
     if cache is not None:
         cache[cache_key] = dict(fetched)
 

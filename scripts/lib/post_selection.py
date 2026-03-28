@@ -20,6 +20,12 @@ def sort_candidates(candidates: Sequence[Mapping[str, Any]]) -> list[dict[str, A
     return [dict(item) for item in sorted(candidates, key=candidate_sort_key, reverse=True)]
 
 
+def candidate_rotation_key(item: Mapping[str, Any], *, selection_mode: str) -> str:
+    if selection_mode == "round_robin_account":
+        return str(item.get("rotation_key") or item.get("screen_name") or item.get("source_username") or item.get("source_key") or item.get("source_id") or "")
+    return str(item.get("source_key") or item.get("source_id") or "")
+
+
 def normalize_rotation_source(raw_value: str | None, source_order: Sequence[str]) -> tuple[str, int]:
     normalized_source_order = [item for item in source_order if item]
     if not normalized_source_order:
@@ -87,7 +93,7 @@ def select_candidates(
     ordered_candidates = sort_candidates(candidates)
     limit = max(max_candidates, 1)
 
-    if selection_mode != "round_robin" or not source_order:
+    if selection_mode not in {"round_robin", "round_robin_account"} or not source_order:
         selected, media = apply_media_preference(
             ordered_candidates,
             preferred_media_mode=preferred_media_mode,
@@ -110,7 +116,10 @@ def select_candidates(
         source_key = str(candidate.get("source_key") or candidate.get("source_id") or "")
         if not source_key:
             continue
-        candidates_by_source.setdefault(source_key, []).append(candidate)
+        rotation_key = candidate_rotation_key(candidate, selection_mode=selection_mode)
+        if not rotation_key:
+            continue
+        candidates_by_source.setdefault(rotation_key, []).append(candidate)
 
     for offset in range(len(normalized_source_order)):
         source_index = (start_index + offset) % len(normalized_source_order)
@@ -123,7 +132,7 @@ def select_candidates(
                 limit=limit,
             )
             return selected, {
-                "selection_mode": "round_robin",
+                "selection_mode": selection_mode,
                 "source_order": normalized_source_order,
                 "previous_source": normalized_previous_source,
                 "start_index": start_index,
@@ -133,7 +142,7 @@ def select_candidates(
             }
 
     return [], {
-        "selection_mode": "round_robin",
+        "selection_mode": selection_mode,
         "source_order": normalized_source_order,
         "previous_source": normalized_previous_source,
         "start_index": start_index,

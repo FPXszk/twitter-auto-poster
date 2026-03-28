@@ -55,6 +55,26 @@ class PostSelectionTest(unittest.TestCase):
         self.assertEqual(rotation["selected_source"], "hypertechinvest")
         self.assertEqual(rotation["next_source"], "markminervini")
 
+    def test_round_robin_account_groups_sources_by_rotation_key(self) -> None:
+        candidates = [
+            {"id": "alpha-big", "source_key": "alpha-big", "rotation_key": "alpha", "score": 90, "views": 100, "replies": 2, "retweets": 5, "likes": 10, "created_at": "2026-03-22T08:00:00+00:00"},
+            {"id": "alpha-small", "source_key": "alpha-small", "rotation_key": "alpha", "score": 80, "views": 90, "replies": 1, "retweets": 4, "likes": 8, "created_at": "2026-03-22T08:10:00+00:00"},
+            {"id": "beta-big", "source_key": "beta-big", "rotation_key": "beta", "score": 70, "views": 80, "replies": 1, "retweets": 3, "likes": 7, "created_at": "2026-03-22T08:20:00+00:00"},
+        ]
+
+        selected, rotation = select_candidates(
+            candidates,
+            source_order=["alpha", "beta"],
+            max_candidates=2,
+            selection_mode="round_robin_account",
+            previous_source="alpha",
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["beta-big"])
+        self.assertEqual(rotation["selection_mode"], "round_robin_account")
+        self.assertEqual(rotation["selected_source"], "beta")
+        self.assertEqual(rotation["next_source"], "alpha")
+
     def test_preferred_media_mode_alternates_from_previous(self) -> None:
         self.assertEqual(preferred_media_mode_from_previous("image"), "text")
         self.assertEqual(preferred_media_mode_from_previous("text"), "image")
