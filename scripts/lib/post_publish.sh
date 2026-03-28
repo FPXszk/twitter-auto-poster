@@ -191,32 +191,13 @@ prepare_image_attachments() {
   local image_urls_json="$1"
   local temp_dir="${2:-}"
 
-  python_cmd - "${image_urls_json}" "${temp_dir}" <<'PY'
+  PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
+    python_cmd - "${image_urls_json}" "${temp_dir}" <<'PY'
 import json
-import pathlib
 import sys
-import urllib.parse
-import urllib.request
+from post_media import download_image_attachments
 
-urls = json.loads(sys.argv[1] or "[]")
-temp_dir = pathlib.Path(sys.argv[2] or ".")
-temp_dir.mkdir(parents=True, exist_ok=True)
-paths = []
-
-for index, raw_url in enumerate(urls[:4], start=1):
-    url = str(raw_url or "").strip()
-    if not url:
-        continue
-    parsed = urllib.parse.urlparse(url)
-    suffix = pathlib.Path(parsed.path).suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-        suffix = ".jpg"
-    output_path = temp_dir / f"image-{index}{suffix}"
-    with urllib.request.urlopen(url, timeout=30) as response, output_path.open("wb") as handle:
-        handle.write(response.read())
-    paths.append(str(output_path))
-
-print(json.dumps(paths, ensure_ascii=False))
+print(json.dumps(download_image_attachments(json.loads(sys.argv[1] or "[]"), sys.argv[2] or "."), ensure_ascii=False))
 PY
 }
 
@@ -303,12 +284,15 @@ publish_selected_post() {
   local image_temp_dir="${post_result_file}.images"
 
   cleanup_publish_temp() {
-    if [[ -n "${media_paths_json}" && "${media_paths_json}" != "[]" ]]; then
-      if ! cleanup_image_attachments "${media_paths_json}"; then
+    local resolved_media_paths_json="${media_paths_json:-[]}"
+    local resolved_image_temp_dir="${image_temp_dir:-}"
+
+    if [[ -n "${resolved_media_paths_json}" && "${resolved_media_paths_json}" != "[]" ]]; then
+      if ! cleanup_image_attachments "${resolved_media_paths_json}"; then
         warn "failed to clean up image attachments for '${category}'"
       fi
     fi
-    rm -rf "${image_temp_dir}"
+    [[ -n "${resolved_image_temp_dir}" ]] && rm -rf "${resolved_image_temp_dir}"
   }
 
   trap cleanup_publish_temp RETURN

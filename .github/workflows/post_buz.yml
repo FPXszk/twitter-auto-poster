@@ -242,7 +242,7 @@ jobs:
           PY
 
       - name: Save post state
-        if: steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
+        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/save@v4
         with:
           path: tmp/state
