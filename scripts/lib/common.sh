@@ -421,8 +421,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin"}:
         raise SystemExit(f"{label}.selection_mode must be 'score' or 'round_robin'")
-    if "source_reference_mode" in block and str(block["source_reference_mode"]).strip() not in {"url", "quote"}:
-        raise SystemExit(f"{label}.source_reference_mode must be 'url' or 'quote'")
+    if "source_reference_mode" in block and str(block["source_reference_mode"]).strip() not in {"url", "quote", "none"}:
+        raise SystemExit(f"{label}.source_reference_mode must be 'url', 'quote', or 'none'")
     if "dry_run" in block:
         parse_bool(f"{label}.dry_run", block["dry_run"])
 

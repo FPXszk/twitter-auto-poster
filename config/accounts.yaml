@@ -5,7 +5,7 @@
 # - summary_provider: `legacy_google_translate` または `copilot_cli`
 # - summary_model / summary_prompt_path: copilot provider 用のモデルと指示文
 # - single_post_max_length: 単発投稿の上限。twitter-cli 実投稿経路に合わせて 280 以内
-# - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路を使う
+# - source_reference_mode: `url` は本文末尾に URL、`quote` は prototype の引用返信経路、`none` は通常ポストのみ
 # - media_state_file: 画像あり/なし交互選択の state
 # - filters / score_weights: 候補選定ロジックの調整点（freshness は新しい投稿ほど加点、velocity は反応速度）
 #   min_author_followers / max_author_followers で極端なアカウント規模を弾き、author_virality でフォロワー比の伸びを加点する
@@ -50,7 +50,7 @@ accounts:
     single_post_max_length: 280
     selection_mode: "round_robin"
     rotation_state_file: "state/buz-robin.txt"
-    source_reference_mode: "url"
+    source_reference_mode: "none"
     state_file: "state/buz-posted.txt"
     media_state_file: "state/buz-hot-selection.json"
     score_weights:

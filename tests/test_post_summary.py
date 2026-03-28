@@ -134,6 +134,27 @@ class PostSummaryTest(TestCase):
         for item in posts:
             self.assertLessEqual(post_summary.estimate_x_post_length(item), post_summary.MAX_X_POST_LENGTH)
 
+    def test_build_thread_posts_single_post_skips_source_url_in_none_mode(self) -> None:
+        posts = post_summary.build_thread_posts(
+            "短い要約です。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+            source_reference_mode="none",
+        )
+
+        self.assertEqual(posts, ["短い要約です。"])
+
+    def test_build_thread_posts_thread_skips_source_url_in_none_mode(self) -> None:
+        posts = post_summary.build_thread_posts(
+            ("a" * 120) + "。" + ("b" * 120) + "。" + ("c" * 80) + "。",
+            source_url="https://x.com/AppleNews/status/1234567890",
+            source_reference_mode="none",
+        )
+
+        self.assertEqual(len(posts), 2)
+        self.assertTrue(posts[0].endswith(post_summary.THREAD_CONTINUATION_SUFFIX))
+        self.assertNotIn("https://x.com/AppleNews/status/1234567890", posts[0])
+        self.assertNotIn("https://x.com/AppleNews/status/1234567890", posts[1])
+
     def test_build_summary_never_exceeds_max_length(self) -> None:
         summary = post_summary.build_summary(
             "Apple stock rises 3% after strong earnings report",

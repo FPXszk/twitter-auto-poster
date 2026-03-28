@@ -137,11 +137,12 @@ build_thread_plan_json() {
   local post_text="$1"
   local source_url="$2"
   local single_post_max_length="$3"
-  local stdout_path="$4"
-  local stderr_path="$5"
+  local source_reference_mode="${4:-url}"
+  local stdout_path="$5"
+  local stderr_path="$6"
 
   PYTHONPATH="${PROJECT_ROOT}/scripts/lib${PYTHONPATH:+:${PYTHONPATH}}" \
-    python_cmd - "${post_text}" "${source_url}" "${single_post_max_length}" > "${stdout_path}" 2> "${stderr_path}" <<'PY'
+    python_cmd - "${post_text}" "${source_url}" "${single_post_max_length}" "${source_reference_mode}" > "${stdout_path}" 2> "${stderr_path}" <<'PY'
 import json
 import sys
 from post_summary import build_thread_posts
@@ -152,6 +153,7 @@ print(
             sys.argv[1],
             source_url=sys.argv[2],
             single_post_max_length=int(sys.argv[3]),
+            source_reference_mode=sys.argv[4],
         ),
         ensure_ascii=False,
     )
@@ -326,11 +328,11 @@ publish_selected_post() {
     planning_single_post_max_length="280"
   fi
 
-  if [[ "${effective_source_reference_mode}" == "quote" ]]; then
+  if [[ "${effective_source_reference_mode}" == "quote" || "${effective_source_reference_mode}" == "none" ]]; then
     thread_plan_source_url=""
   fi
 
-  if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+  if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${effective_source_reference_mode}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
     exit_code=0
   else
     exit_code=$?
@@ -364,7 +366,7 @@ publish_selected_post() {
   if [[ "${effective_source_reference_mode}" == "quote" && "${thread_count}" -eq 1 ]]; then
     first_post_length="$(estimate_thread_post_length "${thread_posts_json}" 0)"
     if (( first_post_length > 280 )) && [[ -n "${source_url}" ]]; then
-      if build_thread_plan_json "${post_text}" "${source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+      if build_thread_plan_json "${post_text}" "${source_url}" "${planning_single_post_max_length}" "url" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
         exit_code=0
       else
         exit_code=$?
@@ -434,7 +436,9 @@ PY
         did_quote_length_fallback="true"
         rm -f "${current_stderr_file}" "${current_output_file}"
 
-        if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
+        # Keep quote mode so the first retry segment still quotes the source tweet.
+        # thread_plan_source_url is already empty here, so no inline source link is added.
+        if build_thread_plan_json "${post_text}" "${thread_plan_source_url}" "${planning_single_post_max_length}" "${effective_source_reference_mode}" "${thread_plan_stdout}" "${thread_plan_stderr}"; then
           exit_code=0
         else
           exit_code=$?

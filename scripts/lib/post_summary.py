@@ -268,8 +268,8 @@ def format_translation_post(body_text: str, *, max_length: int) -> str:
     return truncate_post_text(formatted_body.rstrip(), effective_max_length)
 
 
-def compose_source_link_post(body_text: str, *, source_url: str) -> str:
-    if not source_url:
+def compose_source_link_post(body_text: str, *, source_url: str, source_reference_mode: str = "url") -> str:
+    if source_reference_mode == "none" or not source_url:
         return body_text.strip()
     return f"{body_text.rstrip()}{SOURCE_LINK_PREFIX}{source_url}"
 
@@ -366,6 +366,7 @@ def build_thread_posts(
     text: str,
     *,
     source_url: str,
+    source_reference_mode: str = "url",
     max_body_length: int = THREAD_BODY_MAX_LENGTH,
     single_post_max_length: int = MAX_X_POST_LENGTH,
     max_posts: int = MAX_THREAD_TWEETS,
@@ -377,7 +378,11 @@ def build_thread_posts(
         raise ValueError("single_post_max_length must be > 0")
     resolved_single_post_max_length = min(single_post_max_length, MAX_X_POST_LENGTH)
 
-    single_post = compose_source_link_post(normalized, source_url=source_url)
+    single_post = compose_source_link_post(
+        normalized,
+        source_url=source_url,
+        source_reference_mode=source_reference_mode,
+    )
     if _fits_post_text(single_post, resolved_single_post_max_length):
         return [single_post]
 
@@ -391,18 +396,34 @@ def build_thread_posts(
 
     def final_predicate(candidate: str) -> bool:
         return _fits_body_text(candidate, max_body_length) and _fits_post_text(
-            compose_source_link_post(candidate, source_url=source_url)
+            compose_source_link_post(
+                candidate,
+                source_url=source_url,
+                source_reference_mode=source_reference_mode,
+            )
         )
 
     posts: list[str] = []
     remaining = normalized
     while remaining:
         if posts and final_predicate(remaining):
-            posts.append(compose_source_link_post(remaining, source_url=source_url))
+            posts.append(
+                compose_source_link_post(
+                    remaining,
+                    source_url=source_url,
+                    source_reference_mode=source_reference_mode,
+                )
+            )
             break
 
         if not posts and final_predicate(remaining):
-            posts.append(compose_source_link_post(remaining, source_url=source_url))
+            posts.append(
+                compose_source_link_post(
+                    remaining,
+                    source_url=source_url,
+                    source_reference_mode=source_reference_mode,
+                )
+            )
             break
 
         if len(posts) >= max_posts - 1:
@@ -422,7 +443,13 @@ def build_thread_posts(
         if not remaining:
             if not final_predicate(segment):
                 raise ValueError("final thread segment could not fit with source URL")
-            posts.append(compose_source_link_post(segment, source_url=source_url))
+            posts.append(
+                compose_source_link_post(
+                    segment,
+                    source_url=source_url,
+                    source_reference_mode=source_reference_mode,
+                )
+            )
             break
 
         if not posts:
