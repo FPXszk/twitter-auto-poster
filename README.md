@@ -263,6 +263,8 @@ PY
   - 投稿後の実績履歴と source ごとの feedback boost 計算元データ
 - `tmp/state/<category>-replied.jsonl`
   - auto reply の返信済みリプライ ID を保持する state（重複返信防止）
+- `tmp/state/<category>-reply-check.txt`
+  - auto reply が次回どの自動投稿から確認を再開するかを保持する cursor state
 - `tmp/state/liked_ids.txt`
   - `auto_like.py` が 7 日分の like 済み tweet ID と日時を保持する state
 
@@ -312,6 +314,7 @@ PY
 - `post_buz.yml` は投稿処理後に auto reply ステップを実行し、直近の自動投稿に付いた返信に Copilot で生成した無難な返答を自動送信します
 - auto reply は投稿本体とは別ステップで実行されるため、返信処理の失敗が投稿結果を壊しません
 - auto reply の返信済み state は `tmp/state/buz-replied.jsonl` に保持され、重複返信を防ぎます
+- auto reply の確認対象は `tmp/state/buz-reply-check.txt` の cursor で巡回し、最新投稿だけを毎回なめ続けないようにします
 - `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避けます
 
 ### 投稿系 workflow に必要な Secrets
@@ -365,7 +368,7 @@ PY
 
 `post_buz.yml` / `post_invest.yml` はこの `dry_run` を読んで実行モードを決めます。`selection_mode: round_robin` は source 単位、`selection_mode: round_robin_account` は account 単位で前回投稿元を回し、どちらも `rotation_state_file` を使って直前 state を保持します。`round_robin_account` では `sources.yaml` の `rotation_key` でアカウント単位にグループ化し、重複排除した順序でローテーションします。`fallback_candidates` は summary 生成失敗や投稿失敗時に次候補へ進める上限件数です。
 
-`reply` セクションで自動返信を有効にできます。`max_reply_checks_per_run` は 1 回の実行で確認する投稿数、`max_replies_per_run` は送信する返信の上限です。`replied_state_file` で返信済み state のパスを指定します。
+`reply` セクションで自動返信を有効にできます。`max_reply_checks_per_run` は 1 回の実行で確認する投稿数、`max_replies_per_run` は送信する返信の上限です。`replied_state_file` で返信済み state、`reply_check_state_file` で確認 cursor のパスを指定します。reply 判定は bot 先頭 mention の direct reply に限定します。
 
 `single_post_max_length` は単発投稿を thread に分けずに送れる上限で、`twitter-cli` の実投稿制限に合わせて 280 を上限にします。
 

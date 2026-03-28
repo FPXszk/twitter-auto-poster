@@ -13,10 +13,13 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
 from post_reply import (
     extract_replies_from_tweet_detail,
     extract_reply_targets,
+    load_reply_check_cursor,
     filter_unreplied,
     generate_reply_text,
     load_replied_state,
+    save_reply_check_cursor,
     save_replied_state,
+    select_reply_targets,
     send_reply,
     fetch_bot_username,
     run_auto_reply,
@@ -33,17 +36,17 @@ SAMPLE_TWEET_DETAIL_PAYLOAD = {
         },
         {
             "id": "reply-201",
-            "text": "いいですね！参考になります",
+            "text": "@mybotaccount いいですね！参考になります",
             "author": {"id": "user-abc", "screenName": "someone_else"},
         },
         {
             "id": "reply-202",
-            "text": "ありがとうございます",
+            "text": "@someone_else ありがとうございます",
             "author": {"id": "bot-user-id", "screenName": "mybotaccount"},
         },
         {
             "id": "reply-203",
-            "text": "すごく面白い投稿ですね",
+            "text": "@someone_else すごく面白い投稿ですね",
             "author": {"id": "user-xyz", "screenName": "another_user"},
         },
     ],
@@ -109,6 +112,28 @@ class ExtractReplyTargetsTest(TestCase):
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0]["posted_tweet_id"], "valid-1")
 
+    def test_select_reply_targets_rotates_across_recent_posts(self) -> None:
+        now = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)
+        history = [
+            {
+                "posted_tweet_id": f"tweet-{i}",
+                "posted_at": (now - timedelta(hours=i)).isoformat(),
+            }
+            for i in range(6)
+        ]
+
+        first_targets, first_cursor = select_reply_targets(history, max_checks=2, now=now)
+        second_targets, second_cursor = select_reply_targets(
+            history,
+            max_checks=2,
+            previous_tweet_id=first_cursor,
+            now=now,
+        )
+
+        self.assertEqual([item["posted_tweet_id"] for item in first_targets], ["tweet-0", "tweet-1"])
+        self.assertEqual([item["posted_tweet_id"] for item in second_targets], ["tweet-2", "tweet-3"])
+        self.assertEqual(second_cursor, "tweet-3")
+
 
 class ExtractRepliesTest(TestCase):
     def test_excludes_bot_own_replies_and_original(self) -> None:
@@ -121,7 +146,7 @@ class ExtractRepliesTest(TestCase):
         self.assertNotIn("original-100", reply_ids)
         self.assertNotIn("reply-202", reply_ids)
         self.assertIn("reply-201", reply_ids)
-        self.assertIn("reply-203", reply_ids)
+        self.assertNotIn("reply-203", reply_ids)
 
     def test_returns_empty_for_no_replies(self) -> None:
         data = [
@@ -159,6 +184,12 @@ class RepliedStateTest(TestCase):
         self.assertEqual(len(unreplied), 1)
         self.assertEqual(unreplied[0]["id"], "reply-203")
 
+    def test_reply_check_cursor_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cursor_path = Path(tmpdir) / "reply-check.txt"
+            save_reply_check_cursor(cursor_path, "tweet-123")
+            self.assertEqual(load_reply_check_cursor(cursor_path), "tweet-123")
+
 
 class FetchBotUsernameTest(TestCase):
     def test_extracts_username_from_whoami_payload(self) -> None:
@@ -182,6 +213,18 @@ class FetchBotUsernameTest(TestCase):
 
         with self.assertRaises(RuntimeError):
             fetch_bot_username("twitter", command_runner=mock_runner)
+
+    def test_accepts_username_alias(self) -> None:
+        payload = {"ok": True, "data": {"user": {"username": "mybotaccount"}}}
+
+        def mock_runner(cmd, **kwargs):
+            class Result:
+                returncode = 0
+                stdout = json.dumps(payload)
+                stderr = ""
+            return Result()
+
+        self.assertEqual(fetch_bot_username("twitter", command_runner=mock_runner), "mybotaccount")
 
 
 class GenerateReplyTextTest(TestCase):
@@ -315,12 +358,14 @@ class RunAutoReplyTest(TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "replied.jsonl"
+            cursor_path = Path(tmpdir) / "reply-check.txt"
 
             result = run_auto_reply(
                 feedback_history=history,
                 twitter_bin="twitter",
                 bot_username="mybotaccount",
                 replied_state_path=state_path,
+                reply_check_state_path=cursor_path,
                 max_reply_checks=5,
                 max_replies=3,
                 copilot_model="gpt-5-mini",
@@ -331,12 +376,13 @@ class RunAutoReplyTest(TestCase):
                 send_reply_fn=mock_send,
             )
 
+            self.assertEqual(load_reply_check_cursor(cursor_path), "original-100")
+
         self.assertEqual(result["checked_tweets"], 1)
-        self.assertEqual(result["replies_sent"], 2)
-        self.assertEqual(len(send_calls), 2)
+        self.assertEqual(result["replies_sent"], 1)
+        self.assertEqual(len(send_calls), 1)
         sent_reply_ids = {call[0] for call in send_calls}
         self.assertIn("reply-201", sent_reply_ids)
-        self.assertIn("reply-203", sent_reply_ids)
 
     def test_respects_max_replies_cap(self) -> None:
         now = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)
@@ -361,12 +407,14 @@ class RunAutoReplyTest(TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "replied.jsonl"
+            cursor_path = Path(tmpdir) / "reply-check.txt"
 
             result = run_auto_reply(
                 feedback_history=history,
                 twitter_bin="twitter",
                 bot_username="mybotaccount",
                 replied_state_path=state_path,
+                reply_check_state_path=cursor_path,
                 max_reply_checks=5,
                 max_replies=1,
                 copilot_model="gpt-5-mini",
@@ -379,6 +427,97 @@ class RunAutoReplyTest(TestCase):
 
         self.assertEqual(result["replies_sent"], 1)
         self.assertEqual(len(send_calls), 1)
+
+    def test_reply_cursor_only_advances_through_checked_tweets(self) -> None:
+        now = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)
+        history = [
+            {
+                "posted_tweet_id": f"original-{i}",
+                "posted_at": (now - timedelta(hours=i)).isoformat(),
+            }
+            for i in range(3)
+        ]
+
+        detail_by_id = {
+            "original-0": [
+                {"id": "original-0", "text": "元投稿0", "author": {"screenName": "mybotaccount"}},
+                {"id": "reply-0", "text": "@mybotaccount 0への返信", "author": {"screenName": "user0"}},
+            ],
+            "original-1": [
+                {"id": "original-1", "text": "元投稿1", "author": {"screenName": "mybotaccount"}},
+                {"id": "reply-1", "text": "@mybotaccount 1への返信", "author": {"screenName": "user1"}},
+            ],
+            "original-2": [
+                {"id": "original-2", "text": "元投稿2", "author": {"screenName": "mybotaccount"}},
+                {"id": "reply-2", "text": "@mybotaccount 2への返信", "author": {"screenName": "user2"}},
+            ],
+        }
+
+        checked_ids: list[str] = []
+
+        def mock_fetch(twitter_bin, tweet_id):
+            checked_ids.append(tweet_id)
+            return detail_by_id[tweet_id]
+
+        def mock_generate(model, original_text, reply_text, prompt_path, **kwargs):
+            return "ありがとうございます"
+
+        def mock_send(twitter_bin, reply_to_id, text, **kwargs):
+            return {"id": f"sent-{reply_to_id}"}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "replied.jsonl"
+            cursor_path = Path(tmpdir) / "reply-check.txt"
+
+            result = run_auto_reply(
+                feedback_history=history,
+                twitter_bin="twitter",
+                bot_username="mybotaccount",
+                replied_state_path=state_path,
+                reply_check_state_path=cursor_path,
+                max_reply_checks=3,
+                max_replies=1,
+                now=now,
+                fetch_tweet_detail_fn=mock_fetch,
+                generate_reply_fn=mock_generate,
+                send_reply_fn=mock_send,
+            )
+
+            self.assertEqual(checked_ids, ["original-0"])
+            self.assertEqual(result["reply_check_cursor_after"], "original-0")
+            self.assertEqual(load_reply_check_cursor(cursor_path), "original-0")
+
+    def test_fetch_failure_does_not_advance_reply_cursor(self) -> None:
+        now = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)
+        history = [
+            {
+                "posted_tweet_id": "original-0",
+                "posted_at": now.isoformat(),
+            }
+        ]
+
+        def mock_fetch(twitter_bin, tweet_id):
+            raise RuntimeError("tweet detail failed")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "replied.jsonl"
+            cursor_path = Path(tmpdir) / "reply-check.txt"
+
+            result = run_auto_reply(
+                feedback_history=history,
+                twitter_bin="twitter",
+                bot_username="mybotaccount",
+                replied_state_path=state_path,
+                reply_check_state_path=cursor_path,
+                max_reply_checks=1,
+                max_replies=1,
+                now=now,
+                fetch_tweet_detail_fn=mock_fetch,
+            )
+
+            self.assertEqual(result["checked_tweets"], 0)
+            self.assertEqual(result["reply_check_cursor_after"], "")
+            self.assertEqual(load_reply_check_cursor(cursor_path), "")
 
 
 if __name__ == "__main__":

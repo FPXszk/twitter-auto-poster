@@ -59,6 +59,7 @@ accounts:
       max_reply_checks_per_run: 5
       max_replies_per_run: 3
       replied_state_file: "state/buz-replied.jsonl"
+      reply_check_state_file: "state/buz-reply-check.txt"
       reply_prompt_path: "config/copilot_reply_prompt_ja.txt"
       reply_model: "gpt-5-mini"
       max_reply_length: 140

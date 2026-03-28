@@ -184,31 +184,40 @@ jobs:
 
           category = os.environ["CATEGORY"]
           output_dir = Path("tmp")
+          runs_dir = output_dir / "runs"
+          runs_dir.mkdir(parents=True, exist_ok=True)
           raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
           account = (raw.get("accounts") or {}).get(category) or {}
           reply_cfg = account.get("reply") or {}
+          result_path = runs_dir / f"reply-{category}.json"
+
+          def write_result(payload):
+              result_path.write_text(
+                  json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
 
           if not reply_cfg.get("enabled", False):
-              print(json.dumps({"status": "disabled"}))
+              write_result({"status": "disabled"})
               raise SystemExit(0)
 
           twitter_bin = str(Path("python/.venv/bin/twitter"))
           feedback_path = output_dir / "state" / f"{category}-feedback-history.jsonl"
           history = load_feedback_history(feedback_path)
           if not history:
-              print(json.dumps({"status": "no_history"}))
+              write_result({"status": "no_history"})
               raise SystemExit(0)
 
           replied_rel = str(reply_cfg.get("replied_state_file") or f"state/{category}-replied.jsonl")
           replied_path = output_dir / replied_rel
+          reply_check_rel = str(reply_cfg.get("reply_check_state_file") or f"state/{category}-reply-check.txt")
+          reply_check_path = output_dir / reply_check_rel
 
           try:
               bot_username = fetch_bot_username(twitter_bin)
           except Exception as exc:
               result = {"status": "error", "error": f"whoami failed: {exc}"}
-              Path(output_dir / "runs" / f"reply-{category}.json").write_text(
-                  json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-              )
+              write_result(result)
               raise SystemExit(0)
 
           result = run_auto_reply(
@@ -216,17 +225,14 @@ jobs:
               twitter_bin=twitter_bin,
               bot_username=bot_username,
               replied_state_path=replied_path,
+              reply_check_state_path=reply_check_path,
               max_reply_checks=int(reply_cfg.get("max_reply_checks_per_run") or 5),
               max_replies=int(reply_cfg.get("max_replies_per_run") or 3),
               copilot_model=str(reply_cfg.get("reply_model") or "gpt-5-mini"),
               reply_prompt_path=str(reply_cfg.get("reply_prompt_path") or ""),
               max_reply_length=int(reply_cfg.get("max_reply_length") or 140),
           )
-          runs_dir = output_dir / "runs"
-          runs_dir.mkdir(parents=True, exist_ok=True)
-          Path(runs_dir / f"reply-{category}.json").write_text(
-              json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-          )
+          write_result(result)
           PY
 
       - name: Write run summary

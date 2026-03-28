@@ -7,6 +7,7 @@ Copilot で生成した当たり障りのない返信を送信する。
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -78,13 +79,53 @@ def extract_reply_targets(
     return targets
 
 
+def select_reply_targets(
+    feedback_history: Sequence[Mapping[str, Any]],
+    max_checks: int,
+    *,
+    previous_tweet_id: str = "",
+    now: datetime | None = None,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+) -> tuple[list[dict[str, Any]], str]:
+    """recent target を round-robin で選び、次回用カーソルを返す。"""
+    recent_targets = extract_reply_targets(
+        feedback_history,
+        max_checks=max(len(feedback_history), max(max_checks, 1)),
+        now=now,
+        lookback_days=lookback_days,
+    )
+    if not recent_targets or max_checks <= 0:
+        return [], ""
+
+    tweet_ids = [str(item.get("posted_tweet_id") or "").strip() for item in recent_targets]
+    start_index = 0
+    previous = str(previous_tweet_id or "").strip()
+    if previous and previous in tweet_ids:
+        start_index = (tweet_ids.index(previous) + 1) % len(tweet_ids)
+
+    limit = min(max_checks, len(recent_targets))
+    selected = [
+        dict(recent_targets[(start_index + offset) % len(recent_targets)])
+        for offset in range(limit)
+    ]
+    next_cursor = str(selected[-1].get("posted_tweet_id") or "").strip() if selected else previous
+    return selected, next_cursor
+
+
+def _starts_with_mention(text: str, username: str) -> bool:
+    match = re.match(r"^\s*@([A-Za-z0-9_]+)\b", text or "", flags=re.IGNORECASE)
+    if not match:
+        return False
+    return match.group(1).casefold() == username.casefold()
+
+
 def extract_replies_from_tweet_detail(
     tweet_detail_data: Sequence[Mapping[str, Any]],
     *,
     original_tweet_id: str,
     bot_username: str,
 ) -> list[dict[str, Any]]:
-    """tweet detail レスポンスからボット自身と元投稿を除いた返信を抽出する。"""
+    """tweet detail から bot 宛ての direct reply らしき投稿だけを抽出する。"""
     bot_lower = bot_username.lower()
     replies: list[dict[str, Any]] = []
     for item in tweet_detail_data:
@@ -94,6 +135,9 @@ def extract_replies_from_tweet_detail(
         author = item.get("author") or {}
         screen_name = str(author.get("screenName") or author.get("screen_name") or "").strip()
         if screen_name.lower() == bot_lower:
+            continue
+        text = str(item.get("text") or "")
+        if not _starts_with_mention(text, bot_username):
             continue
         replies.append(dict(item))
     return replies
@@ -118,6 +162,17 @@ def load_replied_state(path: Path) -> dict[str, str]:
             if reply_id:
                 result[reply_id] = original_id
     return result
+
+
+def load_reply_check_cursor(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def save_reply_check_cursor(path: Path, tweet_id: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{tweet_id.strip()}\n" if tweet_id.strip() else "", encoding="utf-8")
 
 
 def save_replied_state(path: Path, replied: Mapping[str, str]) -> None:
@@ -165,7 +220,12 @@ def fetch_bot_username(
         raise RuntimeError("twitter whoami response was not ok")
     data = payload.get("data") or {}
     user = data.get("user") or {}
-    username = str(user.get("screenName") or user.get("screen_name") or "").strip()
+    username = str(
+        user.get("screenName")
+        or user.get("screen_name")
+        or user.get("username")
+        or ""
+    ).strip()
     if not username:
         raise RuntimeError("twitter whoami did not return username")
     return username
@@ -267,6 +327,7 @@ def run_auto_reply(
     twitter_bin: str,
     bot_username: str,
     replied_state_path: Path,
+    reply_check_state_path: Path | None = None,
     max_reply_checks: int = 5,
     max_replies: int = 3,
     copilot_model: str = "gpt-5-mini",
@@ -280,8 +341,13 @@ def run_auto_reply(
 ) -> dict[str, Any]:
     """自動返信の全体フローを実行する。"""
     current = now or datetime.now(timezone.utc)
-    targets = extract_reply_targets(
-        feedback_history, max_reply_checks, now=current, lookback_days=lookback_days,
+    previous_cursor = load_reply_check_cursor(reply_check_state_path) if reply_check_state_path else ""
+    targets, _ = select_reply_targets(
+        feedback_history,
+        max_reply_checks,
+        previous_tweet_id=previous_cursor,
+        now=current,
+        lookback_days=lookback_days,
     )
     replied_state = load_replied_state(replied_state_path)
 
@@ -304,9 +370,12 @@ def run_auto_reply(
         "total_replies_found": 0,
         "replies_sent": 0,
         "replies_skipped_already_replied": 0,
+        "reply_check_cursor_before": previous_cursor,
+        "reply_check_cursor_after": previous_cursor,
         "errors": [],
     }
     replies_sent = 0
+    last_processed_cursor = previous_cursor
 
     for target in targets:
         if replies_sent >= max(max_replies, 0):
@@ -323,6 +392,7 @@ def run_auto_reply(
             )
             continue
 
+        last_processed_cursor = posted_tweet_id
         summary["checked_tweets"] += 1
         original_text = ""
         for item in detail_data:
@@ -368,5 +438,8 @@ def run_auto_reply(
 
         summary["replies_sent"] = replies_sent
 
+    summary["reply_check_cursor_after"] = last_processed_cursor
     save_replied_state(replied_state_path, replied_state)
+    if reply_check_state_path is not None:
+        save_reply_check_cursor(reply_check_state_path, last_processed_cursor)
     return summary
