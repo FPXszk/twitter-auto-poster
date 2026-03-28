@@ -85,7 +85,7 @@ account = json.loads(sys.argv[3])
 selection_mode = str(account.get("selection_mode") or "score").strip().lower()
 configured = str(account.get("rotation_state_file") or "").strip()
 
-if selection_mode != "round_robin":
+if selection_mode not in ("round_robin", "round_robin_account"):
     print("")
 elif configured:
     state_path = pathlib.Path(configured)
@@ -500,7 +500,7 @@ from post_evaluator import evaluate_summary
 from post_feedback import build_feedback_boost_map, load_feedback_history
 from post_filters import candidate_rejection_reasons, merge_filters
 from post_media import extract_candidate_media
-from post_selection import normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
+from post_selection import deduplicate_source_order, normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
 from post_summary import build_source_tweet_url, build_summary, clean_post_source_text, clean_source_text
 
@@ -537,7 +537,7 @@ score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
 fallback_candidates = max(int(account.get("fallback_candidates") or max_candidates or 1), 1)
-source_order = [str((source_configs.get(source_id) or {}).get("rotation_key") or (source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()]
+source_order = deduplicate_source_order([str((source_configs.get(source_id) or {}).get("rotation_key") or (source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()])
 rotation_raw = ""
 if rotation_state_file is not None:
     rotation_raw = rotation_state_file.read_text(encoding="utf-8").strip()

@@ -6,6 +6,7 @@ defaults:
 
 sources:
   - id: buz-gorillataxjp-big
+    rotation_key: gorillataxjp
     category: buz
     type: search
     enabled: true
@@ -15,6 +16,7 @@ sources:
     score_boost: 10
 
   - id: buz-gorillataxjp-small
+    rotation_key: gorillataxjp
     category: buz
     type: search
     enabled: true
@@ -24,6 +26,7 @@ sources:
     score_boost: 6
 
   - id: buz-zanengineer-big
+    rotation_key: zanengineer
     category: buz
     type: search
     enabled: true
@@ -33,6 +36,7 @@ sources:
     score_boost: 10
 
   - id: buz-zanengineer-small
+    rotation_key: zanengineer
     category: buz
     type: search
     enabled: true
@@ -42,6 +46,7 @@ sources:
     score_boost: 6
 
   - id: buz-tkzwgrs-big
+    rotation_key: tkzwgrs
     category: buz
     type: search
     enabled: true
@@ -51,6 +56,7 @@ sources:
     score_boost: 10
 
   - id: buz-tkzwgrs-small
+    rotation_key: tkzwgrs
     category: buz
     type: search
     enabled: true
@@ -60,6 +66,7 @@ sources:
     score_boost: 6
 
   - id: buz-sakenmilove-big
+    rotation_key: sakenmilove
     category: buz
     type: search
     enabled: true
@@ -69,6 +76,7 @@ sources:
     score_boost: 10
 
   - id: buz-sakenmilove-small
+    rotation_key: sakenmilove
     category: buz
     type: search
     enabled: true
@@ -78,6 +86,7 @@ sources:
     score_boost: 6
 
   - id: buz-bovccgdlap95845-big
+    rotation_key: bovccgdlap95845
     category: buz
     type: search
     enabled: true
@@ -87,6 +96,7 @@ sources:
     score_boost: 10
 
   - id: buz-bovccgdlap95845-small
+    rotation_key: bovccgdlap95845
     category: buz
     type: search
     enabled: true
@@ -96,6 +106,7 @@ sources:
     score_boost: 6
 
   - id: buz-fuwaraidou_2525-big
+    rotation_key: fuwaraidou_2525
     category: buz
     type: search
     enabled: true
@@ -105,6 +116,7 @@ sources:
     score_boost: 10
 
   - id: buz-fuwaraidou_2525-small
+    rotation_key: fuwaraidou_2525
     category: buz
     type: search
     enabled: true
@@ -114,6 +126,7 @@ sources:
     score_boost: 6
 
   - id: buz-yeskiri-big
+    rotation_key: yeskiri
     category: buz
     type: search
     enabled: true
@@ -123,6 +136,7 @@ sources:
     score_boost: 10
 
   - id: buz-yeskiri-small
+    rotation_key: yeskiri
     category: buz
     type: search
     enabled: true
@@ -132,6 +146,7 @@ sources:
     score_boost: 6
 
   - id: buz-romi_hoshino-big
+    rotation_key: romi_hoshino
     category: buz
     type: search
     enabled: true
@@ -141,6 +156,7 @@ sources:
     score_boost: 10
 
   - id: buz-romi_hoshino-small
+    rotation_key: romi_hoshino
     category: buz
     type: search
     enabled: true
@@ -150,6 +166,7 @@ sources:
     score_boost: 6
 
   - id: buz-aigare01-big
+    rotation_key: aigare01
     category: buz
     type: search
     enabled: true
@@ -159,6 +176,7 @@ sources:
     score_boost: 10
 
   - id: buz-aigare01-small
+    rotation_key: aigare01
     category: buz
     type: search
     enabled: true

@@ -26,6 +26,18 @@ def candidate_rotation_key(item: Mapping[str, Any], *, selection_mode: str) -> s
     return str(item.get("source_key") or item.get("source_id") or "")
 
 
+def deduplicate_source_order(source_order: Sequence[str]) -> list[str]:
+    """出現順を保ちつつ空文字と重複を除去する。"""
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in source_order:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
 def normalize_rotation_source(raw_value: str | None, source_order: Sequence[str]) -> tuple[str, int]:
     normalized_source_order = [item for item in source_order if item]
     if not normalized_source_order:

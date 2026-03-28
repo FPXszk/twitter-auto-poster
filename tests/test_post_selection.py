@@ -6,7 +6,7 @@ import unittest
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
 
-from post_selection import normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
+from post_selection import deduplicate_source_order, normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
 
 
 class PostSelectionTest(unittest.TestCase):
@@ -97,6 +97,81 @@ class PostSelectionTest(unittest.TestCase):
         self.assertEqual(selected[0]["id"], "image-1")
         self.assertEqual(rotation["target_media_mode"], "image")
         self.assertTrue(rotation["media_preference_satisfied"])
+
+
+    def test_deduplicate_source_order_removes_consecutive_duplicates(self) -> None:
+        """source_order に同一 rotation_key が複数あっても、出現順を保ちつつ重複を除く。"""
+        raw = ["alpha", "alpha", "beta", "beta", "gamma"]
+        result = deduplicate_source_order(raw)
+        self.assertEqual(result, ["alpha", "beta", "gamma"])
+
+    def test_deduplicate_source_order_preserves_first_occurrence(self) -> None:
+        """先頭出現の位置を維持し、2 回目以降を取り除く。"""
+        raw = ["beta", "alpha", "beta", "alpha", "gamma"]
+        result = deduplicate_source_order(raw)
+        self.assertEqual(result, ["beta", "alpha", "gamma"])
+
+    def test_deduplicate_source_order_drops_empty_strings(self) -> None:
+        result = deduplicate_source_order(["", "alpha", "", "beta", ""])
+        self.assertEqual(result, ["alpha", "beta"])
+
+    def test_round_robin_account_with_duplicate_source_order_rotates_correctly(self) -> None:
+        """source_order に重複がある場合でも、前回 alpha → 次は beta に進む。"""
+        candidates = [
+            {"id": "a-big", "source_key": "alpha-big", "rotation_key": "alpha", "score": 90, "views": 100, "replies": 2, "retweets": 5, "likes": 10, "created_at": "2026-03-22T08:00:00+00:00"},
+            {"id": "a-small", "source_key": "alpha-small", "rotation_key": "alpha", "score": 80, "views": 90, "replies": 1, "retweets": 4, "likes": 8, "created_at": "2026-03-22T08:10:00+00:00"},
+            {"id": "b-big", "source_key": "beta-big", "rotation_key": "beta", "score": 70, "views": 80, "replies": 1, "retweets": 3, "likes": 7, "created_at": "2026-03-22T08:20:00+00:00"},
+        ]
+        raw_source_order = ["alpha", "alpha", "beta", "beta"]
+        deduped = deduplicate_source_order(raw_source_order)
+
+        selected, rotation = select_candidates(
+            candidates,
+            source_order=deduped,
+            max_candidates=2,
+            selection_mode="round_robin_account",
+            previous_source="alpha",
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["b-big"])
+        self.assertEqual(rotation["selected_source"], "beta")
+        self.assertEqual(rotation["next_source"], "alpha")
+
+    def test_round_robin_account_state_persists_across_runs(self) -> None:
+        """rotation state ファイルに保存された前回ソースから次ソースへ進む。"""
+        candidates_run1 = [
+            {"id": "a1", "source_key": "alpha-big", "rotation_key": "alpha", "score": 90, "views": 100, "replies": 2, "retweets": 5, "likes": 10, "created_at": "2026-03-22T08:00:00+00:00"},
+            {"id": "b1", "source_key": "beta-big", "rotation_key": "beta", "score": 80, "views": 90, "replies": 1, "retweets": 4, "likes": 8, "created_at": "2026-03-22T08:10:00+00:00"},
+            {"id": "c1", "source_key": "gamma-big", "rotation_key": "gamma", "score": 70, "views": 80, "replies": 1, "retweets": 3, "likes": 7, "created_at": "2026-03-22T08:20:00+00:00"},
+        ]
+        deduped = ["alpha", "beta", "gamma"]
+
+        _, rot1 = select_candidates(
+            candidates_run1,
+            source_order=deduped,
+            max_candidates=1,
+            selection_mode="round_robin_account",
+            previous_source="",
+        )
+        self.assertEqual(rot1["selected_source"], "alpha")
+
+        _, rot2 = select_candidates(
+            candidates_run1,
+            source_order=deduped,
+            max_candidates=1,
+            selection_mode="round_robin_account",
+            previous_source=rot1["selected_source"],
+        )
+        self.assertEqual(rot2["selected_source"], "beta")
+
+        _, rot3 = select_candidates(
+            candidates_run1,
+            source_order=deduped,
+            max_candidates=1,
+            selection_mode="round_robin_account",
+            previous_source=rot2["selected_source"],
+        )
+        self.assertEqual(rot3["selected_source"], "gamma")
 
 
 if __name__ == "__main__":

@@ -165,6 +165,70 @@ jobs:
         if: steps.posting_window.outputs.should_run == 'true'
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
 
+      - name: Auto reply to incoming replies
+        id: auto_reply
+        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
+        continue-on-error: true
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+
+          import yaml
+          from post_feedback import load_feedback_history
+          from post_reply import fetch_bot_username, run_auto_reply
+
+          category = os.environ["CATEGORY"]
+          output_dir = Path("tmp")
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          account = (raw.get("accounts") or {}).get(category) or {}
+          reply_cfg = account.get("reply") or {}
+
+          if not reply_cfg.get("enabled", False):
+              print(json.dumps({"status": "disabled"}))
+              raise SystemExit(0)
+
+          twitter_bin = str(Path("python/.venv/bin/twitter"))
+          feedback_path = output_dir / "state" / f"{category}-feedback-history.jsonl"
+          history = load_feedback_history(feedback_path)
+          if not history:
+              print(json.dumps({"status": "no_history"}))
+              raise SystemExit(0)
+
+          replied_rel = str(reply_cfg.get("replied_state_file") or f"state/{category}-replied.jsonl")
+          replied_path = output_dir / replied_rel
+
+          try:
+              bot_username = fetch_bot_username(twitter_bin)
+          except Exception as exc:
+              result = {"status": "error", "error": f"whoami failed: {exc}"}
+              Path(output_dir / "runs" / f"reply-{category}.json").write_text(
+                  json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+              )
+              raise SystemExit(0)
+
+          result = run_auto_reply(
+              feedback_history=history,
+              twitter_bin=twitter_bin,
+              bot_username=bot_username,
+              replied_state_path=replied_path,
+              max_reply_checks=int(reply_cfg.get("max_reply_checks_per_run") or 5),
+              max_replies=int(reply_cfg.get("max_replies_per_run") or 3),
+              copilot_model=str(reply_cfg.get("reply_model") or "gpt-5-mini"),
+              reply_prompt_path=str(reply_cfg.get("reply_prompt_path") or ""),
+              max_reply_length=int(reply_cfg.get("max_reply_length") or 140),
+          )
+          runs_dir = output_dir / "runs"
+          runs_dir.mkdir(parents=True, exist_ok=True)
+          Path(runs_dir / f"reply-{category}.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
       - name: Write run summary
         if: always()
         env:
@@ -191,12 +255,22 @@ jobs:
           candidate_error = None
           if candidate_files:
               payload, candidate_error = load_latest_candidate_payload(candidate_files)
+
+          reply_result = None
+          reply_result_path = Path("tmp/runs") / f"reply-{category}.json"
+          if reply_result_path.is_file():
+              try:
+                  reply_result = json.loads(reply_result_path.read_text(encoding="utf-8"))
+              except Exception:
+                  pass
+
           lines = render_run_summary(
               category=category,
               posting_window=posting_window,
               posting_window_jst=posting_window_jst,
               payload=payload,
               candidate_error=candidate_error,
+              reply_result=reply_result,
           )
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -254,5 +254,62 @@ class WorkflowSummaryTest(TestCase):
         self.assertEqual(result, "no_candidate")
 
 
+    def test_render_run_summary_includes_reply_result(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "posted",
+                "selection_mode": "round_robin_account",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [{"id": "123"}],
+                "selected": {
+                    "id": "123",
+                    "source_id": "alpha-big",
+                    "source_type": "search",
+                    "screen_name": "alpha",
+                    "score": 10,
+                    "likes": 1,
+                    "retweets": 2,
+                    "replies": 3,
+                    "views": 4,
+                    "has_image": False,
+                    "media_classification_source": "default",
+                    "text": "snippet",
+                },
+                "post_text": "summary body",
+                "alerts": [],
+                "diagnostics": {},
+            },
+            reply_result={
+                "status": "ok",
+                "checked_tweets": 3,
+                "total_replies_found": 5,
+                "replies_sent": 2,
+                "replies_skipped_already_replied": 1,
+                "errors": [],
+            },
+        )
+
+        rendered = "\n".join(lines)
+        self.assertIn("Auto reply summary", rendered)
+        self.assertIn("Tweets checked: `3`", rendered)
+        self.assertIn("Replies sent: `2`", rendered)
+
+    def test_render_run_summary_reply_disabled(self) -> None:
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload=None,
+            reply_result={"status": "disabled"},
+        )
+        rendered = "\n".join(lines)
+        self.assertIn("disabled", rendered)
+
+
 if __name__ == "__main__":
     main()

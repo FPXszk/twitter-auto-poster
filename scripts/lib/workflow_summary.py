@@ -51,6 +51,35 @@ def load_latest_candidate_payload(
     return dict(payload), None
 
 
+def _render_reply_summary(reply_result: Mapping[str, Any] | None) -> list[str]:
+    if reply_result is None:
+        return []
+    lines: list[str] = ["", "### Auto reply summary", ""]
+    reply_status = str(reply_result.get("status") or "unknown")
+    lines.append(f"- Reply status: `{reply_status}`")
+    if reply_status == "disabled":
+        lines.append("- Auto reply is disabled for this category.")
+    elif reply_status == "no_history":
+        lines.append("- No feedback history available for reply checks.")
+    else:
+        lines.extend(
+            [
+                f"- Tweets checked: `{reply_result.get('checked_tweets', 0)}`",
+                f"- Replies found: `{reply_result.get('total_replies_found', 0)}`",
+                f"- Replies sent: `{reply_result.get('replies_sent', 0)}`",
+                f"- Already replied (skipped): `{reply_result.get('replies_skipped_already_replied', 0)}`",
+            ]
+        )
+        reply_errors = reply_result.get("errors") or []
+        if reply_errors:
+            lines.append(f"- Reply errors: `{len(reply_errors)}`")
+            for err in reply_errors[:5]:
+                lines.append(f"  - `{err.get('stage', 'unknown')}`: {err.get('error', '')}")
+        if reply_result.get("error"):
+            lines.append(f"- Error: `{reply_result.get('error')}`")
+    return lines
+
+
 def render_run_summary(
     *,
     category: str,
@@ -58,6 +87,7 @@ def render_run_summary(
     posting_window_jst: str,
     payload: Mapping[str, Any] | None,
     candidate_error: str | None = None,
+    reply_result: Mapping[str, Any] | None = None,
 ) -> list[str]:
     lines = [f"## {category} run summary", ""]
     lines.append(f"- Posting window allowed: `{posting_window}`")
@@ -65,14 +95,17 @@ def render_run_summary(
 
     if posting_window != "true":
         lines.extend(["", "- Skipped because current JST is outside the 08:00-24:00 posting window."])
+        lines.extend(_render_reply_summary(reply_result))
         return lines
 
     if candidate_error:
         lines.append(f"- Candidate payload error: `{candidate_error}`")
+        lines.extend(_render_reply_summary(reply_result))
         return lines
 
     if payload is None:
         lines.append("candidate file was not created.")
+        lines.extend(_render_reply_summary(reply_result))
         return lines
 
     result_mode = classify_candidate_result(payload)
@@ -233,4 +266,7 @@ def render_run_summary(
             lines.append(f"- Post error: `{payload.get('post_error')}`")
     if payload.get("post_result_file"):
         lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
+
+    lines.extend(_render_reply_summary(reply_result))
+
     return lines

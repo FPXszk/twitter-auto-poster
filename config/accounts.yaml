@@ -54,6 +54,14 @@ accounts:
     source_reference_mode: "none"
     state_file: "state/buz-posted.txt"
     media_state_file: "state/buz-hot-selection.json"
+    reply:
+      enabled: true
+      max_reply_checks_per_run: 5
+      max_replies_per_run: 3
+      replied_state_file: "state/buz-replied.jsonl"
+      reply_prompt_path: "config/copilot_reply_prompt_ja.txt"
+      reply_model: "gpt-5-mini"
+      max_reply_length: 140
     score_weights:
       likes: 1.0
       retweets: 3.5
