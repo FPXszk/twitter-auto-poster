@@ -1,6 +1,6 @@
 # twitter-auto-poster
 
-`twitter-cli` を使って、`news` / `invest` 系の情報収集投稿と、日本株サマリーの定時投稿を行う自動化プロジェクトです。
+`twitter-cli` を使って、バズツイートの自動収集・投稿と、自動フォロー・自動いいねを行う自動化プロジェクトです。
 
 カテゴリごとに `dry_run` / live-post を切り替えられる構成で、ローカル実行と GitHub Actions の両方で同じスクリプトを使います。
 
@@ -8,14 +8,12 @@
 
 このリポジトリは次の流れを扱います。
 
-1. `config/sources.yaml` から収集対象を読む
-2. `twitter-cli` でユーザー投稿または検索結果を取得する
-3. 投稿済み ID を避けながら候補を選ぶ
+1. `config/sources.yaml` から収集対象を読む（バズ系アカウントの人気ツイート）
+2. `twitter-cli` で検索結果を取得する
+3. 投稿済み ID を避けながらラウンドロビンで候補を選ぶ
 4. `dry-run` では候補文だけ表示する
-5. 対象 category の設定が live-post のときだけ `twitter post` を実行する
-6. 日本株サマリーでは `yfinance` で東証プライム銘柄を集計し、朝夕の要約を投稿する
-
-朝夕の投稿文面は `docs/POSTING_STRATEGY.md` を主基準とし、通常の `twitter-cli` 投稿経路で live 投稿できる 280 weighted chars 制限を守りつつ、タイムラインで見える冒頭140字のフックを重視します。
+5. Copilot CLI が 280 文字以内に整形する
+6. 対象 category の設定が live-post のときだけ `twitter post` を実行する（単発投稿）
 
 ## ディレクトリ構成
 
@@ -26,12 +24,11 @@
 ├── config/
 │   ├── accounts.yaml
 │   ├── sources.yaml
-│   ├── tickers_jp_rules.yaml
-│   └── tickers_jp.csv
+│   └── copilot_summary_prompt_ja.txt
 ├── python/
-│   ├── stock_fetcher.py
-│   ├── morning_summary.py
-│   └── evening_summary.py
+│   ├── auto_follow.py
+│   ├── auto_unfollow.py
+│   └── auto_like.py
 ├── scripts/
 │   ├── lib/
 │   │   └── common.sh
@@ -40,10 +37,9 @@
 │   └── fetch_user.sh
 ├── .github/
 │   └── workflows/
-│       ├── evening_post.yml
-│       ├── morning_post.yml
-│       ├── post_invest.yml
-│       └── update_tickers_jp.yml
+│       ├── post_buz.yml
+│       ├── auto_follow.yml
+│       └── auto_like.yml
 ├── devinit.sh
 ├── justfile
 └── twitter-auto-poster.log
@@ -72,56 +68,44 @@
 
 - `config/sources.yaml`
   - 収集対象の一覧
-  - `news` / `invest`
-  - `user` / `search`
-   - クエリ、ユーザー名、取得件数、optional な source 単位 `filters`
+  - `buz` / `news`
+  - `search` クエリ、取得件数
 - `config/accounts.yaml`
-   - カテゴリ別の投稿ポリシーと workflow 実行モードの設定元
+  - カテゴリ別の投稿ポリシーと workflow 実行モードの設定元
   - `dry_run`
-  - `post_prefix`
-  - `max_candidates`
-- `config/tickers_jp_rules.yaml`
-  - JPX XLS から `tickers_jp.csv` を作るときの市場ラベルと除外キーワード
-- `config/stock_fetcher.yaml`
-  - 異常騰落率フィルタの閾値と summary 詳細件数
-- `config/jpx_calendar.json`
-  - JPX の追加休場日 / 追加営業日を例外設定する
+  - `selection_mode`（round_robin）
+  - `rotation_state_file`
+- `config/copilot_summary_prompt_ja.txt`
+  - 280 文字以内整形用の Copilot プロンプト
 - `config/follow_state.json`
   - auto follow / auto unfollow の履歴 state
 
 ### `.github/workflows/`
 
-- `post_invest.yml`
-  - `invest` 用の定期実行 / 手動実行
-- `morning_post.yml`
-  - 日本株の朝まとめ投稿
-- `evening_post.yml`
-  - 日本株の夜総括投稿
+- `post_buz.yml`
+  - `buz` 用の定期実行（JST 08:00〜24:00、毎時）/ 手動実行
+- `auto_follow.yml`
+  - 日次の auto follow / auto unfollow（`@tkzwgrs` フォロワーから選定）
+- `auto_like.yml`
+  - 定期の auto like
 - `twitter_diagnostic.yml`
   - アカウント診断と日次スコア予測
-- `update_tickers.yml`
-  - 日本株サマリー用の `stock-cache` 更新
-- `update_tickers_jp.yml`
-  - JPX XLS ベースの月次銘柄更新
-- `auto_follow.yml`
-  - 日次の auto follow / auto unfollow
+- `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` / `update_tickers_jp.yml`
+  - 投資系ワークフロー（スケジュール停止中・手動実行のみ）
 
 各 workflow は state をキャッシュし、`tmp/` を artifact として保存します。
-日本株系 workflow は JPX 非営業日（土日・祝日・年始年末休場）を自動でスキップします。
 
 ### `docs/`
 
-- `docs/POSTING_STRATEGY.md`
-  - 投稿文・要約文の主基準（single source of truth）
 - `docs/RUNBOOK.md`
   - 運用手順と復旧手順
+- `docs/design-docs/STRATEGY.md`
+  - X 成長戦略
 
 ## 必要なもの
 
 - `python3`
 - `pyyaml`
-- `pandas`
-- `yfinance`
 - `twitter-cli`
 - `copilot`
 - `tmux`
@@ -135,7 +119,6 @@
 npm install -g @github/copilot
 copilot login
 python3 -m pip install --user pyyaml
-python3 -m pip install --user pandas yfinance
 uv tool install twitter-cli
 twitter whoami
 ```
@@ -191,79 +174,44 @@ just logs
 
 ## 収集・投稿コマンド
 
-### ユーザー系 source を取得
-
-```bash
-bash scripts/fetch_user.sh --category news
-bash scripts/fetch_user.sh --category invest
-```
-
 ### 検索系 source を取得
 
 ```bash
+bash scripts/fetch_search.sh --category buz
 bash scripts/fetch_search.sh --category news
-bash scripts/fetch_search.sh --category invest
 ```
 
 ### 候補生成のみ
 
 ```bash
+bash scripts/fetch_and_post.sh --category buz --dry-run true
 bash scripts/fetch_and_post.sh --category news --dry-run true
-bash scripts/fetch_and_post.sh --category invest --dry-run true
 ```
 
 ### 明示的に投稿する
 
 ```bash
+bash scripts/fetch_and_post.sh --category buz --post
 bash scripts/fetch_and_post.sh --category news --post
-bash scripts/fetch_and_post.sh --category invest --post
 ```
-
-### 日本株サマリーを手動確認する
-
-```bash
-python3 -m venv python/.venv
-python/.venv/bin/pip install --upgrade pip
-python/.venv/bin/pip install pandas yfinance twitter-cli xlrd pyyaml googletrans==4.0.0rc1
-python/.venv/bin/python python/update_tickers_jp.py
-python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
-python/.venv/bin/python python/morning_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
-python/.venv/bin/python python/evening_summary.py --dry-run --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json
-```
-
-### 日本株サマリーを実投稿する
-
-```bash
-python/.venv/bin/python python/update_tickers_jp.py
-python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
-python/.venv/bin/python python/morning_summary.py --cache-path tmp/stock_cache.json --summary-output tmp/morning_summary.json
-python/.venv/bin/python python/evening_summary.py --cache-path tmp/stock_cache.json --summary-output tmp/evening_summary.json
-```
-
-`python/update_tickers.py`、`python/morning_summary.py`、`python/evening_summary.py` は JPX 非営業日だと `0` で終了して処理をスキップします。`update_tickers_jp.yml` は毎月の初営業日だけ実行されるように制御しています。
-
-`tmp/stock_cache.json` は metadata 付きで保存され、`trade_date`、生成時刻、異常値 skip 件数を持ちます。朝夕 summary はこの metadata と `summary-output` JSON を使って stale cache や文字数・採用パターンを確認できます。
-
-朝サマリーは `docs/POSTING_STRATEGY.md` の朝テンプレートに合わせて `52週高値更新中` の上位銘柄を並べ、夜サマリーは `🗾 日経平均` 行と `値上がり率TOP` / `値下がり率TOP` を出力します。どちらも通常投稿経路で live 投稿できるよう既定では 280 weighted chars 以内に収まる variant を選び、必要に応じて件数や銘柄名を compact 化します。手動実行では件数と weighted length 上限を一時 override でき、GitHub Actions の summary では全文に加えて先頭140文字の preview と実際に使った rendering 設定も確認できます。
 
 ### auto follow を手動確認する
 
 ```bash
-python/.venv/bin/python python/auto_follow.py
+python/.venv/bin/python python/auto_follow.py --target-username tkzwgrs
 python/.venv/bin/python python/auto_unfollow.py
 ```
 
-`auto_follow.py` は `@paurooteri` のフォロワーを最大 1000 人まで調べ、認証済みを必須条件にしたうえで、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を見つかった分だけ follow します。summary JSON には何人のフォロワーを見たか (`scanned_followers`) も出ます。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
+`auto_follow.py` は `@tkzwgrs` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
 ### auto like を手動確認する
 
 ```bash
 python/.venv/bin/python python/auto_like.py --dry-run
 python/.venv/bin/python python/auto_like.py
-python/.venv/bin/python python/auto_like.py --target-accounts markminervini hypertechinvest
 ```
 
-`auto_like.py` は `python/.venv/bin/twitter feed --max 50 --json` の for-you タイムラインから新着順で候補を作り、まず 30 分以内を優先し、5 件未満なら 1 時間以内まで広げます。1 回ごとに 5〜15 件の like 上限をランダムに決め、like 間は 5〜20 秒待機しつつ、`tmp/state/liked_ids.txt` に `timestamp<TAB>tweet_id` 形式で 7 日分の state を保持して重複 like と当日 100 件超えを防ぎます。`--target-accounts` を付けたときは各アカウントの最新投稿を候補に切り替えます。
+`auto_like.py` は for-you タイムラインから新着順で候補を作り、1 回ごとに 5〜15 件の like をします。
 
 ## 保守・確認コマンド
 
@@ -275,7 +223,7 @@ just logs
 just stop
 twitter status --yaml
 git --no-pager status --short
-python/.venv/bin/python -m py_compile python/stock_fetcher.py python/stock_cache.py python/update_tickers.py python/update_tickers_jp.py python/morning_summary.py python/evening_summary.py
+python/.venv/bin/python -m py_compile python/auto_follow.py python/auto_unfollow.py python/auto_like.py
 python/.venv/bin/python -m unittest discover -s tests
 ```
 
@@ -283,11 +231,11 @@ README や workflow を触ったときの軽い確認例:
 
 ```bash
 bash -n scripts/lib/common.sh scripts/fetch_user.sh scripts/fetch_search.sh scripts/fetch_and_post.sh
-python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py scripts/lib/post_summary_gemini.py scripts/lib/post_filters.py
+python3 -m py_compile scripts/lib/post_scoring.py scripts/lib/post_summary.py scripts/lib/post_filters.py
 python3 - <<'PY'
 from pathlib import Path
 import yaml
-for path in [Path('config/sources.yaml'), Path('config/accounts.yaml'), Path('.github/workflows/post_invest.yml')]:
+for path in [Path('config/sources.yaml'), Path('config/accounts.yaml'), Path('.github/workflows/post_buz.yml')]:
     yaml.safe_load(path.read_text(encoding='utf-8'))
 print('OK')
 PY
@@ -301,90 +249,62 @@ PY
   - 取得した JSON レスポンス
 - `tmp/runs/`
   - 投稿候補や投稿結果の一時ファイル
-  - `fetch-user-*.json` / `fetch-search-*.json` に収集成否サマリーも保存される
+  - `fetch-search-*.json` に収集成否サマリーも保存される
 - `tmp/state/<category>-posted.txt`
   - 投稿済み ID の簡易 state
-- `tmp/state/invest-robin.txt`
-  - `post_invest.yml` が前回投稿アカウント名を保持する round-robin state
+- `tmp/state/buz-robin.txt`
+  - `post_buz.yml` が前回投稿ソースを保持する round-robin state
 - `tmp/state/liked_ids.txt`
   - `auto_like.py` が 7 日分の like 済み tweet ID と日時を保持する state
-- `tmp/posted_ids.txt`
-  - 日本株 summary workflow が使う投稿済み ID / 実行済みマーカーの簡易 state
-- `tmp/*_summary.json`
-  - stock cache / morning / evening の実行結果サマリー
 
 ## ドキュメント
 
 - `docs/RUNBOOK.md`
-  - Secrets 設定、`workflow_dispatch` から schedule への移行、障害復旧の手順
+  - Secrets 設定、障害復旧の手順
 - `docs/SCHEMA.md`
   - `config/sources.yaml` と `config/accounts.yaml` の schema
-- `docs/PLAN.md`
-  - 日本株サマリー機能の実装要件
+- `docs/design-docs/STRATEGY.md`
+  - X 成長戦略
 
 ## GitHub Actions
 
-### 対象 workflow
+### 対象 workflow（稼働中）
 
-- `.github/workflows/post_invest.yml`
+- `.github/workflows/post_buz.yml` — バズツイート投稿（毎時、JST 08:00〜24:00）
+- `.github/workflows/auto_follow.yml` — 日次 auto follow / auto unfollow
+- `.github/workflows/auto_like.yml` — 定期 auto like
+
+### 対象 workflow（スケジュール停止・手動実行のみ）
+
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
 - `.github/workflows/update_tickers_jp.yml`
-- `.github/workflows/auto_follow.yml`
-- `.github/workflows/auto_like.yml`
+- `.github/workflows/twitter_diagnostic.yml`
 
 ### 挙動
 
 - `workflow_dispatch` 対応
 - `schedule` 対応
-- `workflow_dispatch` では手動実行できます
-- `post_invest.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
-- `post_invest.yml` は毎時実行ですが、実投稿は JST 08:00〜24:00 のみです。時間外は workflow 内で summary を残してスキップします
-- `post_invest.yml` は既定で live-post です。preview にしたいときは `config/accounts.yaml` の `accounts.invest.dry_run` を `true` にします
-- `workflow_dispatch` では `dry_run` に加えて、morning/evening の件数と weighted length 上限も一時上書きできます
-- `post_invest.yml` は検索ベースで日本語ツイート候補を集め、`lang:ja -is:retweet -is:reply` を前提に `Top/Latest` と `has:images` / `-has:images` を使い分けます
-- `post_invest.yml` の候補選定は `likes` / `retweets` / `replies` / `views` / `velocity` / `freshness` / `image_bonus` / source ごとの `score_boost` を合算します
-- `post_invest.yml` は `tmp/state/invest-hot-selection.json` に前回の `image/text` 選択状態を保存し、次回は逆の media bucket を優先します
-- 画像候補が存在しない回は非画像候補へ、非画像候補が存在しない回は画像候補へ安全にフォールバックします
-- `fetch_and_post.sh` は候補本文を `summary_max_length` 以内に整形してから投稿します。`post_invest.yml` の Copilot 要約は 280 文字以内・改行なし・非絵文字の 1 投稿向け本文へ圧縮されます
-- 実投稿経路は既定で URL 付きの単発投稿です。`quote_tweet_id` を使う内部引用経路は残っていますが、現設定では既定にしていません
-- `twitter-cli` の制約上、trend / WOEID 取得の既存コマンドは確認できていないため、初回実装は検索ベース主軸です
-- `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避け、`tmp/state/liked_ids.txt` を Actions cache で保持しつつ `auto_like.py` を実行します
-- `auto_like.yml` の `workflow_dispatch` は `dry_run` を受け付け、対象 tweet 一覧だけを summary / log に出せます
-- `morning_post.yml` は平日 08:00 JST 向けに日本株の朝まとめを投稿します
-- `evening_post.yml` は平日 18:00 JST 向けに日本株の夜総括を投稿します
-- `twitter_diagnostic.yml` は毎朝 04:00 JST に `twitter whoami` / recent posts を使ってアカウント診断を行い、`docs/POSTING_STRATEGY.md` ベースの推定スコアを記録します
-- `update_tickers.yml` は 00:00 JST 毎日と 17:00 JST 平日に銘柄キャッシュを更新します
-- `update_tickers_jp.yml` は毎月 1 日 06:00 JST に JPX XLS から `config/tickers_jp.csv` を更新して artifact 保存します
-- `update_tickers_jp.yml` は `tmp/tickers_jp_update_summary.json` と `GITHUB_STEP_SUMMARY` に件数・差分要約も出力します
-- `morning_post.yml` / `evening_post.yml` / `update_tickers.yml` も `GITHUB_STEP_SUMMARY` に文字数、採用パターン、rendering 設定、skip 理由、異常値 skip 要約を出力します
-- `twitter_diagnostic.yml` は `tmp/diagnostics/account-score-history.jsonl` を Actions cache + artifact に保存し、summary へ当日の内訳と改善提案を表示します
-- 主要 workflow は依存インストール後に runtime diagnostics を実行し、使用 Python と import 可否を artifact / summary 用 JSON に残します
-- Python 3.11 をセットアップ
-- `pyyaml` / `pandas` / `yfinance` / `twitter-cli` をインストール
-- state を cache restore/save
-- 日本株 summary workflow は `update_tickers.yml` が保存した `stock-cache` artifact を復元して使います
-- 初回デプロイ時は先に `update_tickers.yml` を手動実行してください。`stock-cache` artifact を取得できない場合、朝夕 summary workflow は fail-fast します
-- `tmp/` を artifact 保存
-- `post_invest.yml` は `Job summary` に選ばれた候補、score 内訳、要約文を出力します
+- `post_buz.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
+- `post_buz.yml` は毎時実行ですが、実投稿は JST 08:00〜24:00 のみです
+- `post_buz.yml` は既定で live-post です
+- `post_buz.yml` は `from:account` クエリで特定アカウントのバズツイートを収集します
+- 候補選定は `likes` / `retweets` / `replies` / `views` / `velocity` / `freshness` / source ごとの `score_boost` を合算します
+- `post_buz.yml` は `round_robin` モードで 6 ソースをローテーションします
+- 実投稿経路は単発投稿（引用ツイート・スレッドなし）です
+- Copilot 要約は 280 文字以内・改行なし の 1 投稿向け本文へ整形します
+- `auto_like.yml` は毎時実行ですが JST 02:00〜05:00 を避けます
 
 ### 投稿系 workflow に必要な Secrets
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
-
-`update_tickers_jp.yml` ではこれらの Secrets は不要です。
-
-### JPX 銘柄更新ルール
-
-- `config/tickers_jp_rules.yaml` に対象市場ラベルと除外キーワードを定義します
-- 現状は東証プライム系ラベルのみを対象にし、`ETF` / `REIT` / `投資法人` / `優先株` を除外します
-- `python/update_tickers_jp.py` 実行後は `tmp/tickers_jp_update_summary.json` に件数と差分要約が出力されます
+- `COPILOT_GITHUB_TOKEN`（Copilot 要約を使う場合）
 
 ### 使い方
 
-現状の `config/accounts.yaml` では `post_invest.yml` は **live-post** 既定です。preview に戻したい場合も workflow ではなく config 側を変更します。
+現状の `config/accounts.yaml` では `post_buz.yml` は **live-post** 既定です。preview に戻したい場合も workflow ではなく config 側を変更します。
 
 ## 設定ファイルの見方
 

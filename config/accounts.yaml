@@ -38,20 +38,21 @@ defaults:
     exclude_keywords: []
 
 accounts:
-  invest:
+  buz:
     dry_run: false
-    post_prefix: "Market watch:"
+    post_prefix: ""
     max_candidates: 1
-    summary_prefix: "Xで反応上位: "
+    summary_prefix: ""
     summary_provider: "copilot_cli"
     summary_model: "gpt-5-mini"
     summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     summary_max_length: 280
     single_post_max_length: 280
-    selection_mode: "score"
+    selection_mode: "round_robin"
+    rotation_state_file: "state/buz-robin.txt"
     source_reference_mode: "url"
-    state_file: "state/invest-posted.txt"
-    media_state_file: "state/invest-hot-selection.json"
+    state_file: "state/buz-posted.txt"
+    media_state_file: "state/buz-hot-selection.json"
     score_weights:
       likes: 1.0
       retweets: 3.5
@@ -62,18 +63,15 @@ accounts:
       image_bonus: 12
       author_virality: 30
     filters:
-      max_age_hours: 6
-      min_author_followers: 500
-      max_author_followers: 50000
+      max_age_hours: 72
+      min_author_followers: 1000
+      max_author_followers: 10000000
       exclude_keywords:
-        - "options flow"
-        - "premium members"
-        - "free trial"
-        - "join now"
-        - "whatsapp"
         - "フォロー"
         - "プレゼント企画"
         - "キャンペーン"
+        - "giveaway"
+        - "airdrop"
 
   news:
     dry_run: true

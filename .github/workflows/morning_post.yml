@@ -37,8 +37,7 @@ on:
         required: false
         default: ""
         type: string
-  schedule:
-    - cron: "0 23 * * 0-4"
+  # schedule disabled: investment strategy paused
 
 permissions:
   actions: read

@@ -2,8 +2,7 @@ name: Update JP tickers
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 21 28-31,1-7 * *"
+  # schedule disabled: investment strategy paused
 
 permissions:
   contents: read

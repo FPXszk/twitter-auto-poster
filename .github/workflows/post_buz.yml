@@ -1,4 +1,4 @@
-name: Post invest
+name: Post buz
 
 on:
   workflow_dispatch:
@@ -18,14 +18,14 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: post-invest
+  group: post-buz
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      CATEGORY: invest
+      CATEGORY: buz
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
@@ -44,7 +44,7 @@ jobs:
           from datetime import datetime
           from pathlib import Path
           from zoneinfo import ZoneInfo
-          
+
           now = datetime.now(ZoneInfo("Asia/Tokyo"))
           should_run = 8 <= now.hour < 24
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
@@ -77,14 +77,14 @@ jobs:
           import os
           from pathlib import Path
           import yaml
-          
+
           def parse_bool(value):
               if isinstance(value, bool):
                   return value
               if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
                   return value.strip().lower() == "true"
               raise SystemExit("dry_run must be a boolean")
-          
+
           category = os.environ["CATEGORY"]
           event_name = os.environ["EVENT_NAME"]
           inputs = json.loads(os.environ.get("EVENT_INPUTS_JSON") or "{}") or {}
@@ -99,7 +99,7 @@ jobs:
               dry_run = parse_bool(manual_override)
           else:
               dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
-          
+
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"dry_run={str(dry_run).lower()}\n")
           PY
@@ -113,7 +113,7 @@ jobs:
             exit 1
           fi
           copilot --version
-          python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/invest-runtime.json
+          python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/buz-runtime.json
 
       - name: Prepare scripts
         if: steps.posting_window.outputs.should_run == 'true'
@@ -126,9 +126,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: tmp/state
-          key: ${{ runner.os }}-post-invest-state-${{ github.run_id }}
+          key: ${{ runner.os }}-post-buz-state-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-post-invest-state-
+            ${{ runner.os }}-post-buz-state-
 
       - name: Fetch candidates and process mode
         if: steps.posting_window.outputs.should_run == 'true'
@@ -197,15 +197,15 @@ jobs:
                       [
                           f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
                           f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
-                           f"- Selected tweet ID: `{selected.get('id', '')}`",
-                           f"- Author: `{author}`",
-                           f"- Score: `{selected.get('score', 0)}`",
-                           f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
-                           f"- Has image: `{selected.get('has_image', False)}`",
-                           f"- Media classification: `{selected.get('media_classification_source', '')}`",
-                           f"- Score breakdown: `{formatted_breakdown}`",
-                           f"- Summary provider: `{summary_generation.get('provider', '')}`",
-                           f"- Summary model: `{summary_generation.get('model', '')}`",
+                          f"- Selected tweet ID: `{selected.get('id', '')}`",
+                          f"- Author: `{author}`",
+                          f"- Score: `{selected.get('score', 0)}`",
+                          f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
+                          f"- Has image: `{selected.get('has_image', False)}`",
+                          f"- Media classification: `{selected.get('media_classification_source', '')}`",
+                          f"- Score breakdown: `{formatted_breakdown}`",
+                          f"- Summary provider: `{summary_generation.get('provider', '')}`",
+                          f"- Summary model: `{summary_generation.get('model', '')}`",
                           f"- Summary: {payload.get('post_text', '')}",
                           "",
                           "### Source snippet",
@@ -236,12 +236,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: tmp/state
-          key: ${{ runner.os }}-post-invest-state-${{ github.run_id }}
+          key: ${{ runner.os }}-post-buz-state-${{ github.run_id }}
 
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: invest-run
+          name: buz-run
           path: tmp/
           if-no-files-found: ignore

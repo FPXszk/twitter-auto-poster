@@ -2,9 +2,7 @@ name: Update stock cache
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 15 * * 0-4"
-    - cron: "0 8 * * 1-5"
+  # schedule disabled: investment strategy paused
 
 permissions:
   contents: read

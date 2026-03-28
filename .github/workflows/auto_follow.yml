@@ -50,7 +50,7 @@ jobs:
           fi
 
       - name: Run auto follow
-        run: python/.venv/bin/python python/auto_follow.py
+        run: python/.venv/bin/python python/auto_follow.py --target-username tkzwgrs
 
       - name: Run auto unfollow
         run: python/.venv/bin/python python/auto_unfollow.py

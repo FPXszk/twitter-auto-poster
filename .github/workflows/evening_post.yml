@@ -42,8 +42,7 @@ on:
         required: false
         default: ""
         type: string
-  schedule:
-    - cron: "0 9 * * 1-5"
+  # schedule disabled: investment strategy paused
 
 permissions:
   actions: read

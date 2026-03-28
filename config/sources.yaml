@@ -5,65 +5,59 @@ defaults:
   exclude_retweets: true
 
 sources:
-  - id: invest-ja-buzz-top-image
-    category: invest
+  - id: buz-gorillataxjp-big
+    category: buz
     type: search
     enabled: true
-    query: "(の OR です OR ます OR する) lang:ja has:images min_faves:500 min_retweets:50 -is:retweet -is:reply"
+    query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
-    media_mode: image
     score_boost: 10
 
-  - id: invest-ja-buzz-top-text
-    category: invest
+  - id: buz-gorillataxjp-small
+    category: buz
     type: search
     enabled: true
-    query: "(の OR です OR ます OR する) lang:ja -has:images min_faves:500 min_retweets:50 -is:retweet -is:reply"
-    timeline: Top
-    max_results: 20
-    media_mode: text
-    score_boost: 8
-
-  - id: invest-ja-buzz-latest-image
-    category: invest
-    type: search
-    enabled: true
-    query: "(の OR です OR ます OR する) lang:ja has:images min_faves:150 min_retweets:20 -is:retweet -is:reply"
+    query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
-    max_results: 30
-    media_mode: image
+    max_results: 20
     score_boost: 6
 
-  - id: invest-ja-buzz-latest-text
-    category: invest
+  - id: buz-zanengineer-big
+    category: buz
     type: search
     enabled: true
-    query: "(の OR です OR ます OR する) lang:ja -has:images min_faves:150 min_retweets:20 -is:retweet -is:reply"
-    timeline: Latest
-    max_results: 30
-    media_mode: text
-    score_boost: 5
+    query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
 
-  - id: invest-ja-buzz-news-image
-    category: invest
+  - id: buz-zanengineer-small
+    category: buz
     type: search
     enabled: true
-    query: "(速報 OR 発表 OR 話題 OR 注目 OR 炎上 OR 新作) lang:ja has:images min_faves:200 -is:retweet -is:reply"
+    query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
-    media_mode: image
-    score_boost: 4
+    score_boost: 6
 
-  - id: invest-ja-buzz-news-text
-    category: invest
+  - id: buz-tkzwgrs-big
+    category: buz
     type: search
     enabled: true
-    query: "(速報 OR 発表 OR 話題 OR 注目 OR 炎上 OR 新作) lang:ja -has:images min_faves:200 -is:retweet -is:reply"
+    query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-tkzwgrs-small
+    category: buz
+    type: search
+    enabled: true
+    query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
-    media_mode: text
-    score_boost: 3
+    score_boost: 6
 
   - id: news-breaking-search
     category: news
