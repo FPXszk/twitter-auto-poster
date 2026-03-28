@@ -75,9 +75,18 @@ bash scripts/fetch_and_post.sh --category news --post
 
 主に見る workflow:
 
+- `ci.yml`
 - `post_buz.yml`
 - `auto_follow.yml`
 - `auto_like.yml`
+
+`ci.yml` で見るポイント:
+
+- `Run unit tests`
+- `Validate shell scripts`
+- `Validate Python modules`
+- `Validate YAML files`
+- PR をマージする前に全ステップが成功していること
 
 `post_buz.yml` で見るポイント:
 

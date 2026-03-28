@@ -272,6 +272,7 @@ PY
 
 ### 対象 workflow（稼働中）
 
+- `.github/workflows/ci.yml` — `push` / `pull_request` で tests・shell 構文・Python compile・YAML 検証
 - `.github/workflows/post_buz.yml` — バズツイート投稿（毎時、JST 08:00〜24:00）
 - `.github/workflows/auto_follow.yml` — 日次 auto follow / auto unfollow
 - `.github/workflows/auto_like.yml` — 定期 auto like
@@ -286,6 +287,7 @@ PY
 
 ### 挙動
 
+- `ci.yml` は `main` への push と pull request ごとに既存の検証コマンドを自動実行します
 - `workflow_dispatch` 対応
 - `schedule` 対応
 - `post_buz.yml` は `config/accounts.yaml` の `dry_run` を読んで preview/live-post を切り替えます
