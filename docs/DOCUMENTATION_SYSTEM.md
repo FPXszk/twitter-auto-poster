@@ -32,6 +32,10 @@
 
 - `docs/SECURITY.md`
 
+### 参考にした資料を見たい
+
+- `docs/references/design-ref-llms.md`
+
 ### 過去の実装判断を見たい
 
 - `docs/exec-plans/completed/`
@@ -62,6 +66,7 @@
 - コード変更と同じタイミングで、影響を受ける文書も更新する
 - 「あとでまとめて直す」は原則禁止
 - 実装計画には、必要な doc 更新を明示する
+- 外部資料や設計参考文献を使って判断した場合は、`docs/references/design-ref-llms.md` に既存テンプレートどおり記録する
 
 ### 文書ごとの更新トリガー
 
@@ -70,6 +75,7 @@
 - `docs/RUNBOOK.md`: preview/live 手順、復旧手順、state 操作が変わったとき
 - `docs/design-docs/STRATEGY.md`: 投稿戦略、KPI、収益化前提が変わったとき
 - `docs/DOCUMENTATION_SYSTEM.md`: 文書体系や参照順が変わったとき
+- `docs/references/design-ref-llms.md`: 参考にした外部資料を新しく使ったとき、または採用 / 不採用判断が増えたとき
 
 ### review 時の確認項目
 
