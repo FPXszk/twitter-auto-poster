@@ -20,7 +20,10 @@
 ```text
 .
 ├── .agents/
-│   └── skills/twitter-cli/SKILL.md
+│   └── skills/
+│       ├── twitter-cli/SKILL.md
+│       ├── research-playbook/SKILL.md
+│       └── github-actions-failure-debugging/SKILL.md
 ├── config/
 │   ├── accounts.yaml
 │   ├── sources.yaml
