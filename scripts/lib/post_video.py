@@ -210,6 +210,8 @@ def _default_client_factory() -> Any:
         from twikit import Client
     except ImportError as error:
         raise RuntimeError("twikit is required for video posting. Install twikit==2.3.3.") from error
+    from twikit_compat import patch_twikit_transaction
+    patch_twikit_transaction()
     return Client("en-US")
 
 
