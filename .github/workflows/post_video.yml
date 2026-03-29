@@ -1,0 +1,118 @@
+name: Post video
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: Caption text for the X video post
+        required: true
+        type: string
+      video_url:
+        description: Direct MP4 URL to download and post
+        required: true
+        type: string
+      dry_run:
+        description: Validate only without posting
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: post-video
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffprobe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install runtime dependencies
+        run: |
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install twikit==2.3.3
+
+      - name: Prepare runtime directories
+        run: mkdir -p tmp/post-video
+
+      - name: Download video asset
+        env:
+          VIDEO_URL: ${{ github.event.inputs.video_url }}
+        run: |
+          curl --fail --location --retry 3 --retry-delay 2 --output tmp/post-video/input.mp4 "${VIDEO_URL}"
+
+      - name: Validate secrets for live posting
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          if [[ -z "${TWITTER_AUTH_TOKEN:-}" || -z "${TWITTER_CT0:-}" ]]; then
+            echo "TWITTER_AUTH_TOKEN and TWITTER_CT0 secrets are required for live video posting." >&2
+            exit 1
+          fi
+
+      - name: Validate or post video
+        env:
+          POST_TEXT: ${{ github.event.inputs.text }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          python/.venv/bin/python python/post_video.py \
+            --text "${POST_TEXT}" \
+            --video-path tmp/post-video/input.mp4 \
+            --dry-run "${DRY_RUN}" \
+            --output-path tmp/post-video/post-video-result.json
+
+      - name: Write run summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          payload_path = Path("tmp/post-video/post-video-result.json")
+          lines = ["## post video run", ""]
+
+          if not payload_path.exists():
+              lines.append("result file was not created.")
+          else:
+              payload = json.loads(payload_path.read_text(encoding="utf-8"))
+              data = payload.get("data") or {}
+              lines.append(f"- Status: `{'ok' if payload.get('ok') else 'error'}`")
+              lines.append(f"- Action: `{data.get('action', '')}`")
+              lines.append(f"- Dry run: `{data.get('dry_run', False)}`")
+              lines.append(f"- Video path: `{data.get('video_path', '')}`")
+              if data.get("id"):
+                  lines.append(f"- Tweet ID: `{data.get('id')}`")
+                  lines.append(f"- URL: {data.get('url')}")
+              if payload.get("message"):
+                  lines.append(f"- Message: `{payload['message']}`")
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload post video artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-video-run
+          path: tmp/post-video
+          if-no-files-found: ignore

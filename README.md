@@ -34,16 +34,19 @@
 ├── python/
 │   ├── auto_follow.py
 │   ├── auto_unfollow.py
-│   └── auto_like.py
+│   ├── auto_like.py
+│   └── post_video.py
 ├── scripts/
 │   ├── lib/
-│   │   └── common.sh
+│   │   ├── common.sh
+│   │   └── post_video.py
 │   ├── fetch_and_post.sh
 │   ├── fetch_search.sh
 │   └── fetch_user.sh
 ├── .github/
 │   └── workflows/
 │       ├── post_buz.yml
+│       ├── post_video.yml
 │       ├── auto_follow.yml
 │       └── auto_like.yml
 ├── devinit.sh
@@ -117,6 +120,7 @@
 - `python3`
 - `pyyaml`
 - `twitter-cli`
+- `twikit`（動画投稿を使う場合）
 - `copilot`
 - `tmux`
 - `lazygit`
@@ -131,6 +135,12 @@ copilot login
 python3 -m pip install --user pyyaml
 uv tool install twitter-cli
 twitter whoami
+```
+
+動画投稿をローカルで使う場合の追加セットアップ:
+
+```bash
+python3 -m pip install --user twikit==2.3.3
 ```
 
 `twitter-cli` の認証確認:
@@ -204,6 +214,17 @@ bash scripts/fetch_and_post.sh --category news --dry-run true
 bash scripts/fetch_and_post.sh --category buz --post
 bash scripts/fetch_and_post.sh --category news --post
 ```
+
+### ローカルの MP4 を X に投稿する
+
+```bash
+python3 python/post_video.py \
+  --text "動画付きポストの本文" \
+  --video-path /path/to/video.mp4 \
+  --dry-run true
+```
+
+live 投稿に切り替える場合は `--dry-run false` を指定してください。実投稿には `TWITTER_AUTH_TOKEN` と `TWITTER_CT0` が必要です。
 
 ### auto follow を手動確認する
 
@@ -293,6 +314,7 @@ PY
 
 ### 対象 workflow（スケジュール停止・手動実行のみ）
 
+- `.github/workflows/post_video.yml` — 動画付きツイート投稿（`workflow_dispatch` のみ、twikit 経由）
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
