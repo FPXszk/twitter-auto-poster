@@ -23,7 +23,9 @@
 │   └── skills/
 │       ├── twitter-cli/SKILL.md
 │       ├── research-playbook/SKILL.md
-│       └── github-actions-failure-debugging/SKILL.md
+│       ├── github-actions-failure-debugging/SKILL.md
+│       ├── japanese-post-humanizer/SKILL.md
+│       └── repo-planning-discipline/SKILL.md
 ├── config/
 │   ├── accounts.yaml
 │   ├── sources.yaml

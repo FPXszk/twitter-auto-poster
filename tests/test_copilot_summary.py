@@ -100,5 +100,46 @@ class CopilotSummaryTest(TestCase):
         self.assertEqual(result.usage_lines, ["Used 1 premium request", "Remaining quota: 99"])
 
 
+class CopilotSummaryPromptJaTest(TestCase):
+    """Tests for the production prompt file config/copilot_summary_prompt_ja.txt."""
+
+    _PROMPT_PATH = Path(__file__).resolve().parents[1] / "config" / "copilot_summary_prompt_ja.txt"
+
+    def setUp(self) -> None:
+        self.prompt_text = self._PROMPT_PATH.read_text(encoding="utf-8")
+
+    def test_prompt_file_contains_source_text_placeholder(self) -> None:
+        self.assertIn("{source_text}", self.prompt_text)
+
+    def test_prompt_file_contains_280_char_limit_rule(self) -> None:
+        self.assertIn("280", self.prompt_text)
+
+    def test_prompt_file_contains_anti_ai_japanese_rules(self) -> None:
+        """The prompt must contain explicit anti-AI-Japanese guidance."""
+        lower = self.prompt_text.lower()
+        anti_ai_markers = [
+            "AI的",
+            "機械的",
+        ]
+        found = any(marker in self.prompt_text for marker in anti_ai_markers)
+        found = found or any(marker in lower for marker in ["ai的", "機械的"])
+        self.assertTrue(
+            found,
+            f"Prompt must contain anti-AI-Japanese guidance markers. "
+            f"Expected at least one of {anti_ai_markers!r} in the prompt.",
+        )
+
+    def test_prompt_file_preserves_no_invented_facts_rule(self) -> None:
+        self.assertIn("事実", self.prompt_text)
+
+    def test_prompt_file_preserves_no_url_mention_hashtag_rule(self) -> None:
+        self.assertIn("URL", self.prompt_text)
+        self.assertIn("@", self.prompt_text)
+        self.assertTrue(
+            "#" in self.prompt_text or "ハッシュタグ" in self.prompt_text,
+            "Prompt must forbid hashtags (via # or ハッシュタグ)",
+        )
+
+
 if __name__ == "__main__":
     main()
