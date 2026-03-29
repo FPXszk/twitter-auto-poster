@@ -18,8 +18,17 @@ summary_common_module = importlib.util.module_from_spec(summary_common_spec)
 sys.modules[summary_common_spec.name] = summary_common_module
 summary_common_spec.loader.exec_module(summary_common_module)
 
+TWIKIT_COMPAT_PATH = Path(__file__).resolve().with_name("twikit_compat.py")
+twikit_compat_spec = importlib.util.spec_from_file_location("repo_twikit_compat", TWIKIT_COMPAT_PATH)
+if twikit_compat_spec is None or twikit_compat_spec.loader is None:
+    raise RuntimeError(f"failed to load twikit compat helper from {TWIKIT_COMPAT_PATH}")
+twikit_compat_module = importlib.util.module_from_spec(twikit_compat_spec)
+sys.modules[twikit_compat_spec.name] = twikit_compat_module
+twikit_compat_spec.loader.exec_module(twikit_compat_module)
+
 MAX_TWITTER_CLI_POST_LENGTH = summary_common_module.MAX_TWITTER_CLI_POST_LENGTH
 estimate_x_weighted_length = summary_common_module.estimate_x_weighted_length
+patch_twikit_transaction = twikit_compat_module.patch_twikit_transaction
 
 DEFAULT_MAX_VIDEO_BYTES = 512 * 1024 * 1024
 DEFAULT_VIDEO_SUFFIX = ".mp4"
@@ -210,7 +219,6 @@ def _default_client_factory() -> Any:
         from twikit import Client
     except ImportError as error:
         raise RuntimeError("twikit is required for video posting. Install twikit==2.3.3.") from error
-    from twikit_compat import patch_twikit_transaction
     patch_twikit_transaction()
     return Client("en-US")
 
