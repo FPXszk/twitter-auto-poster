@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping
+
+logger = logging.getLogger(__name__)
 
 SUMMARY_COMMON_PATH = Path(__file__).resolve().parents[2] / "python" / "summary_common.py"
 summary_common_spec = importlib.util.spec_from_file_location("repo_summary_common", SUMMARY_COMMON_PATH)
@@ -214,13 +217,159 @@ def write_post_video_result(output_path: str | Path, payload: Mapping[str, Any])
     path.write_text(json.dumps(dict(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+async def _load_x_client_transaction_home_page(
+    session: Any,
+    headers: dict[str, str],
+    *,
+    handle_x_migration_async: Callable[[Any], Any],
+) -> Any:
+    session_headers = getattr(session, "headers", None)
+    if session_headers is None or not hasattr(session_headers, "update"):
+        return await handle_x_migration_async(session)
+
+    original_headers = dict(session_headers)
+    session_headers.update(headers)
+    try:
+        return await handle_x_migration_async(session)
+    finally:
+        if hasattr(session_headers, "clear"):
+            session_headers.clear()
+        session_headers.update(original_headers)
+
+
+class _XClientTransactionAdapter:
+    def __init__(
+        self,
+        *,
+        transaction_cls: Callable[..., Any],
+        get_ondemand_file_url: Callable[[Any], str],
+        load_home_page: Callable[[Any, dict[str, str]], Any],
+        client: Any = None,
+        original_client_transaction: Any = None,
+    ) -> None:
+        self._transaction_cls = transaction_cls
+        self._get_ondemand_file_url = get_ondemand_file_url
+        self._load_home_page = load_home_page
+        self._transaction: Any | None = None
+        self.home_page_response: Any = None
+        self._client: Any = client
+        self._original_client_transaction: Any = original_client_transaction
+
+    async def init(self, session: Any, headers: dict[str, str]) -> None:
+        try:
+            home_page_response = await self._load_home_page(session, headers)
+            ondemand_file_url = self._get_ondemand_file_url(home_page_response)
+            ondemand_file_response = await session.request(
+                method="GET",
+                url=ondemand_file_url,
+                headers=headers,
+            )
+            ondemand_file_text = (
+                ondemand_file_response.text
+                if hasattr(ondemand_file_response, "text")
+                else str(ondemand_file_response)
+            )
+            self._transaction = self._transaction_cls(
+                home_page_response=home_page_response,
+                ondemand_file_response=ondemand_file_text,
+            )
+            self.home_page_response = home_page_response
+        except Exception as init_err:
+            logger.warning(
+                "x_client_transaction adapter init failed (%s), falling back to twikit_compat",
+                init_err,
+            )
+            patch_twikit_transaction()
+            if self._client is None or self._original_client_transaction is None:
+                raise
+            restored_client_transaction = self._original_client_transaction
+            self._client.client_transaction = restored_client_transaction
+            restored_init = getattr(restored_client_transaction, "init", None)
+            if not callable(restored_init):
+                raise RuntimeError(
+                    "restored twikit client transaction does not support init()"
+                ) from init_err
+            await restored_init(session, headers)
+            return
+
+    def generate_transaction_id(
+        self,
+        method: str,
+        path: str,
+        response: Any = None,
+        key: str | None = None,
+        animation_key: str | None = None,
+        time_now: int | None = None,
+    ) -> str:
+        if self._transaction is None:
+            raise RuntimeError("x_client_transaction backend is not initialized")
+        return self._transaction.generate_transaction_id(
+            method=method,
+            path=path,
+            home_page_response=response or self.home_page_response,
+            key=key,
+            animation_key=animation_key,
+            time_now=time_now,
+        )
+
+
+def configure_client_transaction_backend(
+    client: Any,
+    *,
+    transaction_cls: Callable[..., Any] | None = None,
+    get_ondemand_file_url: Callable[[Any], str] | None = None,
+    load_home_page: Callable[[Any, dict[str, str]], Any] | None = None,
+) -> str:
+    if (
+        transaction_cls is None
+        or get_ondemand_file_url is None
+        or load_home_page is None
+    ):
+        try:
+            from x_client_transaction import ClientTransaction as xct_transaction_cls
+            from x_client_transaction.utils import (
+                get_ondemand_file_url as xct_get_ondemand_file_url,
+                handle_x_migration_async,
+            )
+        except Exception as setup_err:
+            logger.warning(
+                "x_client_transaction setup failed (%s), falling back to twikit_compat",
+                setup_err,
+            )
+            patch_twikit_transaction()
+            return "twikit_compat"
+
+        transaction_cls = transaction_cls or xct_transaction_cls
+        get_ondemand_file_url = get_ondemand_file_url or xct_get_ondemand_file_url
+        if load_home_page is None:
+            async def default_load_home_page(session: Any, headers: dict[str, str]) -> Any:
+                return await _load_x_client_transaction_home_page(
+                    session,
+                    headers,
+                    handle_x_migration_async=handle_x_migration_async,
+                )
+
+            load_home_page = default_load_home_page
+
+    original_client_transaction = getattr(client, "client_transaction", None)
+    client.client_transaction = _XClientTransactionAdapter(
+        transaction_cls=transaction_cls,
+        get_ondemand_file_url=get_ondemand_file_url,
+        load_home_page=load_home_page,
+        client=client,
+        original_client_transaction=original_client_transaction,
+    )
+    return "x_client_transaction"
+
+
 def _default_client_factory() -> Any:
     try:
         from twikit import Client
     except ImportError as error:
         raise RuntimeError("twikit is required for video posting. Install twikit==2.3.3.") from error
-    patch_twikit_transaction()
-    return Client("en-US")
+    client = Client("en-US")
+    configure_client_transaction_backend(client)
+    return client
 
 
 async def post_video_tweet_async(

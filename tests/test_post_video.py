@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import builtins
 import json
 import sys
 import tempfile
@@ -10,8 +12,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
 
 from post_video import (
+    _XClientTransactionAdapter,
     build_post_video_success_payload,
     build_twikit_cookies,
+    configure_client_transaction_backend,
     post_video_tweet,
     validate_video_path,
     write_post_video_result,
@@ -213,6 +217,107 @@ class PostVideoTest(unittest.TestCase):
         self.assertEqual(client.text, "live caption")
         self.assertTrue(client.http.closed)
 
+    def test_configure_client_transaction_backend_uses_adapter_when_helpers_are_provided(self) -> None:
+        class FakeExternalTransaction:
+            def __init__(self, *, home_page_response, ondemand_file_response) -> None:
+                self.home_page_response = home_page_response
+                self.ondemand_file_response = ondemand_file_response
+
+            def generate_transaction_id(
+                self,
+                *,
+                method: str,
+                path: str,
+                home_page_response=None,
+                key=None,
+                animation_key=None,
+                time_now=None,
+            ) -> str:
+                return f"{method}:{path}:{home_page_response}:{self.ondemand_file_response}"
+
+        class FakeResponse:
+            text = "ondemand-js-body"
+
+        class FakeSession:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, dict[str, str]]] = []
+
+            async def request(self, method: str, url: str, headers: dict[str, str]):
+                self.calls.append((method, url, dict(headers)))
+                return FakeResponse()
+
+        async def fake_load_home_page(session, headers):
+            self.assertEqual(headers["User-Agent"], "ua")
+            return "home-page-soup"
+
+        def fake_get_ondemand_file_url(home_page_response) -> str:
+            self.assertEqual(home_page_response, "home-page-soup")
+            return "https://abs.twimg.com/responsive-web/client-web/ondemand.s.newhasha.js"
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.client_transaction = object()
+
+        client = FakeClient()
+        backend = configure_client_transaction_backend(
+            client,
+            transaction_cls=FakeExternalTransaction,
+            get_ondemand_file_url=fake_get_ondemand_file_url,
+            load_home_page=fake_load_home_page,
+        )
+
+        self.assertEqual(backend, "x_client_transaction")
+
+        session = FakeSession()
+        asyncio.run(client.client_transaction.init(session, {"User-Agent": "ua"}))
+
+        self.assertEqual(
+            session.calls,
+            [
+                (
+                    "GET",
+                    "https://abs.twimg.com/responsive-web/client-web/ondemand.s.newhasha.js",
+                    {"User-Agent": "ua"},
+                )
+            ],
+        )
+        self.assertEqual(client.client_transaction.home_page_response, "home-page-soup")
+        self.assertEqual(
+            client.client_transaction.generate_transaction_id(method="POST", path="/i/api/graphql/demo"),
+            "POST:/i/api/graphql/demo:home-page-soup:ondemand-js-body",
+        )
+
+    def test_configure_client_transaction_backend_falls_back_to_twikit_patch(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.client_transaction = object()
+
+        client = FakeClient()
+        original_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "x_client_transaction" or name.startswith("x_client_transaction."):
+                raise ImportError("x_client_transaction unavailable in test")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("post_video.patch_twikit_transaction") as patch_twikit:
+            with patch("builtins.__import__", side_effect=fake_import):
+                backend = configure_client_transaction_backend(client)
+
+        self.assertEqual(backend, "twikit_compat")
+        patch_twikit.assert_called_once_with()
+
+    def test_configure_client_transaction_backend_uses_installed_dependency(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.client_transaction = object()
+
+        client = FakeClient()
+        backend = configure_client_transaction_backend(client)
+
+        self.assertEqual(backend, "x_client_transaction")
+        self.assertIsInstance(client.client_transaction, _XClientTransactionAdapter)
+
     def test_build_post_video_success_payload_matches_publish_shape(self) -> None:
         payload = build_post_video_success_payload(
             tweet_id="12345",
@@ -247,6 +352,97 @@ class PostVideoTest(unittest.TestCase):
         self.assertEqual(loaded["data"]["video_path"], "/tmp/video.mp4")
         self.assertTrue(loaded["data"]["dry_run"])
         self.assertEqual(loaded["message"], "dry-run validated video post")
+
+
+    def test_configure_backend_falls_back_on_non_import_error(self) -> None:
+        """Non-ImportError during x_client_transaction import triggers twikit fallback."""
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.client_transaction = object()
+
+        client = FakeClient()
+        original_ct = client.client_transaction
+        original_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "x_client_transaction" or name.startswith("x_client_transaction."):
+                raise RuntimeError("x_client_transaction helpers broken at import")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("post_video.patch_twikit_transaction") as patch_twikit:
+            with patch("builtins.__import__", side_effect=fake_import):
+                backend = configure_client_transaction_backend(client)
+
+        self.assertEqual(backend, "twikit_compat")
+        patch_twikit.assert_called_once_with()
+        self.assertIs(client.client_transaction, original_ct)
+
+    def test_adapter_init_failure_restores_original_ct_and_completes_init(self) -> None:
+        """Adapter init failure should restore and initialize the original CT in-place."""
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.client_transaction = FakeOriginalTransaction()
+
+        class FakeOriginalTransaction:
+            def __init__(self) -> None:
+                self.home_page_response = None
+                self.init_calls: list[tuple[object, dict[str, str]]] = []
+
+            async def init(self, session, headers) -> None:
+                self.init_calls.append((session, dict(headers)))
+                self.home_page_response = "restored-home-page"
+
+            def generate_transaction_id(self, *, method: str, path: str, **kwargs) -> str:
+                return f"restored:{method}:{path}"
+
+        client = FakeClient()
+        original_ct = client.client_transaction
+
+        async def failing_load_home_page(session, headers):
+            raise RuntimeError("ondemand regex parse failure in XClientTransaction")
+
+        def fake_get_url(response) -> str:
+            return "https://example.com/ondemand.js"
+
+        class FakeTransaction:
+            def __init__(self, *, home_page_response, ondemand_file_response):
+                pass
+
+        backend = configure_client_transaction_backend(
+            client,
+            transaction_cls=FakeTransaction,
+            get_ondemand_file_url=fake_get_url,
+            load_home_page=failing_load_home_page,
+        )
+        self.assertEqual(backend, "x_client_transaction")
+        self.assertIsInstance(client.client_transaction, _XClientTransactionAdapter)
+
+        class FakeSession:
+            async def request(self, **kwargs):
+                return type("R", (), {"text": ""})()
+
+        with patch("post_video.patch_twikit_transaction") as patch_twikit:
+            session = FakeSession()
+            asyncio.run(client.client_transaction.init(session, {"User-Agent": "ua"}))
+            patch_twikit.assert_called_once_with()
+
+        self.assertIs(client.client_transaction, original_ct)
+        self.assertEqual(
+            original_ct.init_calls,
+            [
+                (
+                    session,
+                    {"User-Agent": "ua"},
+                )
+            ],
+        )
+        self.assertEqual(original_ct.home_page_response, "restored-home-page")
+        self.assertEqual(
+            client.client_transaction.generate_transaction_id(method="POST", path="/i/api/graphql/demo"),
+            "restored:POST:/i/api/graphql/demo",
+        )
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ jobs:
       - name: Install validation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyyaml yfinance pandas xlrd twitter-cli
+          python -m pip install pyyaml yfinance pandas xlrd twitter-cli twikit==2.3.3 XClientTransaction==1.0.2
 
       - name: Run unit tests
         run: python -m unittest discover -s tests

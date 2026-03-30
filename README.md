@@ -120,7 +120,7 @@
 - `python3`
 - `pyyaml`
 - `twitter-cli`
-- `twikit`（動画投稿を使う場合）
+- `twikit` と `XClientTransaction`（動画投稿を使う場合）
 - `copilot`
 - `tmux`
 - `lazygit`
@@ -140,7 +140,7 @@ twitter whoami
 動画投稿をローカルで使う場合の追加セットアップ:
 
 ```bash
-python3 -m pip install --user twikit==2.3.3
+python3 -m pip install --user twikit==2.3.3 XClientTransaction==1.0.2
 ```
 
 `twitter-cli` の認証確認:
@@ -224,7 +224,7 @@ python3 python/post_video.py \
   --dry-run true
 ```
 
-live 投稿に切り替える場合は `--dry-run false` を指定してください。実投稿には `TWITTER_AUTH_TOKEN` と `TWITTER_CT0` が必要です。
+live 投稿に切り替える場合は `--dry-run false` を指定してください。実投稿には `TWITTER_AUTH_TOKEN` と `TWITTER_CT0` が必要で、transaction id 生成には `XClientTransaction` を優先利用します。
 
 ### auto follow を手動確認する
 
@@ -314,7 +314,7 @@ PY
 
 ### 対象 workflow（スケジュール停止・手動実行のみ）
 
-- `.github/workflows/post_video.yml` — 動画付きツイート投稿（`workflow_dispatch` のみ、twikit 経由）
+- `.github/workflows/post_video.yml` — 動画付きツイート投稿（`workflow_dispatch` のみ、twikit + XClientTransaction 優先）
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
