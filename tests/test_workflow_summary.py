@@ -310,6 +310,170 @@ class WorkflowSummaryTest(TestCase):
         rendered = "\n".join(lines)
         self.assertIn("disabled", rendered)
 
+    def test_render_run_summary_shows_posted_tweet_id_and_url(self) -> None:
+        """Successful post must surface the posted tweet ID and URL."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            post_result_path = Path(temp_dir) / "post-buz.json"
+            post_result_path.write_text(
+                '{"ok":true,"data":{"id":"2038439962035556640",'
+                '"url":"https://x.com/i/status/2038439962035556640",'
+                '"success":true}}',
+                encoding="utf-8",
+            )
+            lines = workflow_summary.render_run_summary(
+                category="buz",
+                posting_window="true",
+                posting_window_jst="2026-03-28T10:00:00+09:00",
+                payload={
+                    "requested_mode": "live",
+                    "result_mode": "posted",
+                    "selection_mode": "round_robin_account",
+                    "payload_count": 1,
+                    "collection": {"user": {}, "search": {}},
+                    "post_candidates": [{"id": "123"}],
+                    "selected": {
+                        "id": "123",
+                        "source_id": "alpha-big",
+                        "source_type": "search",
+                        "screen_name": "alpha",
+                        "score": 10,
+                        "likes": 1, "retweets": 2, "replies": 3, "views": 4,
+                        "has_image": False,
+                        "media_classification_source": "default",
+                        "text": "snippet",
+                    },
+                    "post_text": "summary body",
+                    "post_result_file": str(post_result_path),
+                    "alerts": [],
+                    "diagnostics": {},
+                },
+            )
+
+        rendered = "\n".join(lines)
+        self.assertIn("2038439962035556640", rendered)
+        self.assertIn("https://x.com/i/status/2038439962035556640", rendered)
+        self.assertIn("Posted tweet", rendered)
+
+    def test_render_run_summary_missing_post_result_file_no_crash(self) -> None:
+        """Missing post result file must not crash the summary."""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "posted",
+                "selection_mode": "score",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [{"id": "123"}],
+                "selected": {
+                    "id": "123",
+                    "source_id": "alpha-big",
+                    "source_type": "search",
+                    "screen_name": "alpha",
+                    "score": 10,
+                    "likes": 1, "retweets": 2, "replies": 3, "views": 4,
+                    "has_image": False,
+                    "media_classification_source": "default",
+                    "text": "snippet",
+                },
+                "post_text": "summary body",
+                "post_result_file": "/nonexistent/path/post-buz.json",
+                "alerts": [],
+                "diagnostics": {},
+            },
+        )
+        rendered = "\n".join(lines)
+        # Must not crash, and should still show the post_result_file debug line
+        self.assertIn("Post result file", rendered)
+        # Must not contain "Posted tweet" since we couldn't read the file
+        self.assertNotIn("Posted tweet", rendered)
+
+    def test_render_run_summary_invalid_post_result_json_no_crash(self) -> None:
+        """Corrupt post result file must not crash the summary."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            post_result_path = Path(temp_dir) / "post-buz.json"
+            post_result_path.write_text("{broken", encoding="utf-8")
+            lines = workflow_summary.render_run_summary(
+                category="buz",
+                posting_window="true",
+                posting_window_jst="2026-03-28T10:00:00+09:00",
+                payload={
+                    "requested_mode": "live",
+                    "result_mode": "posted",
+                    "selection_mode": "score",
+                    "payload_count": 1,
+                    "collection": {"user": {}, "search": {}},
+                    "post_candidates": [{"id": "123"}],
+                    "selected": {
+                        "id": "123",
+                        "source_id": "alpha-big",
+                        "source_type": "search",
+                        "screen_name": "alpha",
+                        "score": 10,
+                        "likes": 1, "retweets": 2, "replies": 3, "views": 4,
+                        "has_image": False,
+                        "media_classification_source": "default",
+                        "text": "snippet",
+                    },
+                    "post_text": "summary body",
+                    "post_result_file": str(post_result_path),
+                    "alerts": [],
+                    "diagnostics": {},
+                },
+            )
+
+        rendered = "\n".join(lines)
+        self.assertNotIn("Posted tweet", rendered)
+
+    def test_render_run_summary_no_post_result_file_key(self) -> None:
+        """Payload without post_result_file (e.g. skip/no-candidate) must not show posted tweet."""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-03-28T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "no_candidate",
+                "selection_mode": "score",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [],
+                "alerts": [],
+                "diagnostics": {},
+            },
+        )
+        rendered = "\n".join(lines)
+        self.assertNotIn("Posted tweet", rendered)
+
+    def test_load_post_result_payload_valid(self) -> None:
+        """Valid post result file returns parsed payload."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "result.json"
+            path.write_text('{"ok":true,"data":{"id":"999","url":"https://x.com/i/status/999"}}', encoding="utf-8")
+            result = workflow_summary.load_post_result_payload(str(path))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["data"]["id"], "999")
+
+    def test_load_post_result_payload_missing_file(self) -> None:
+        """Missing file returns None."""
+        result = workflow_summary.load_post_result_payload("/nonexistent/file.json")
+        self.assertIsNone(result)
+
+    def test_load_post_result_payload_invalid_json(self) -> None:
+        """Invalid JSON returns None."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "result.json"
+            path.write_text("{broken", encoding="utf-8")
+            result = workflow_summary.load_post_result_payload(str(path))
+        self.assertIsNone(result)
+
+    def test_load_post_result_payload_none_path(self) -> None:
+        """None path returns None."""
+        result = workflow_summary.load_post_result_payload(None)
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     main()

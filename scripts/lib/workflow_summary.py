@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+from post_feedback import extract_posted_tweet_id
+
+logger = logging.getLogger(__name__)
 
 
 def classify_candidate_result(payload: Mapping[str, Any]) -> str:
@@ -49,6 +54,49 @@ def load_latest_candidate_payload(
         return None, f"{candidate_path.name}: candidate file did not contain a JSON object"
 
     return dict(payload), None
+
+
+def load_post_result_payload(
+    post_result_file: str | None,
+) -> dict[str, Any] | None:
+    """Load and parse a post result JSON file.
+
+    Returns the parsed dict on success, None on any error.
+    """
+    if not post_result_file:
+        return None
+    path = Path(post_result_file)
+    if not path.is_file():
+        logger.debug("post result file not found: %s", post_result_file)
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("failed to read post result file %s: %s", post_result_file, exc)
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    return dict(payload)
+
+
+def _render_posted_tweet_info(post_result: Mapping[str, Any] | None) -> list[str]:
+    """Render posted tweet ID and URL lines from a post result payload."""
+    if post_result is None:
+        return []
+    tweet_id = extract_posted_tweet_id(post_result)
+    if not tweet_id:
+        return []
+    data = post_result.get("data") or {}
+    url = ""
+    if isinstance(data, Mapping):
+        url = str(data.get("url") or "")
+    lines: list[str] = []
+    if url:
+        lines.append(f"- Posted tweet: [`{tweet_id}`]({url})")
+    else:
+        lines.append(f"- Posted tweet ID: `{tweet_id}`")
+    return lines
 
 
 def _render_reply_summary(reply_result: Mapping[str, Any] | None) -> list[str]:
@@ -265,6 +313,8 @@ def render_run_summary(
         if payload.get("post_error"):
             lines.append(f"- Post error: `{payload.get('post_error')}`")
     if payload.get("post_result_file"):
+        post_result = load_post_result_payload(str(payload["post_result_file"]))
+        lines.extend(_render_posted_tweet_info(post_result))
         lines.extend(["", f"- Post result file: `{payload.get('post_result_file')}`"])
 
     lines.extend(_render_reply_summary(reply_result))
