@@ -94,7 +94,10 @@ def run_twitter_json(twitter_bin: Path, *args: str) -> dict[str, Any]:
 
 
 def run_twitter_write(twitter_bin: Path, *args: str) -> None:
-    command = [str(twitter_bin), *args]
+    if args and args[0] == "delete":
+        command = [str(twitter_bin), "delete", "--yes", *args[1:]]
+    else:
+        command = [str(twitter_bin), *args]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         message = (
