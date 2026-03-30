@@ -35,6 +35,7 @@
 │   ├── auto_follow.py
 │   ├── auto_unfollow.py
 │   ├── auto_like.py
+│   ├── bulk_delete.py
 │   └── post_video.py
 ├── scripts/
 │   ├── lib/
@@ -235,6 +236,35 @@ python/.venv/bin/python python/auto_unfollow.py
 
 `auto_follow.py` は `@tkzwgrs` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。自分のフォロワーのうちフォロー返しが済んでいない相手を優先的にフォローバックし、残り枠を新規フォロー条件（認証済み・日本語・株関連）で埋めます。1 回あたりの合計フォロー件数は 10〜15 件です。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
+### 既存投稿を一括削除する (bulk delete)
+
+> **⚠️ 削除は不可逆です。必ず dry-run で確認してから実行してください。**
+
+```bash
+# 1. まず dry-run で件数と分類を確認（デフォルト）
+python/.venv/bin/python python/bulk_delete.py
+
+# 2. 取得件数を増やしたい場合
+python/.venv/bin/python python/bulk_delete.py --max 500
+
+# 3. 確認後、実削除（確認プロンプトあり）
+python/.venv/bin/python python/bulk_delete.py --execute
+
+# 4. 確認プロンプトをスキップ（CI 向け、慎重に使用）
+python/.venv/bin/python python/bulk_delete.py --execute --yes
+```
+
+安全仕様:
+- デフォルトは dry-run（`--execute` なしでは削除しない）
+- `twitter whoami` で認証済みアカウントを自動特定（任意ユーザー指定不可）
+- API 報告の総件数と取得件数が不一致の場合、execute を中断
+- 分類不能な投稿（unknown）がある場合も execute を中断
+- execute 前に backup JSON を `tmp/bulk_delete_backup/` に自動保存
+- retweet は `unretweet`、それ以外は `delete` で処理
+- state ファイルで途中再開に対応
+
+補足: `post_buz.yml` の自動投稿スケジュールは投稿戦略見直しのため一時停止中です（2026-03-30〜）。手動実行（`workflow_dispatch`）は引き続き可能です。
+
 ### auto like を手動確認する
 
 ```bash
@@ -254,7 +284,7 @@ just logs
 just stop
 twitter status --yaml
 git --no-pager status --short
-python/.venv/bin/python -m py_compile python/auto_follow.py python/auto_unfollow.py python/auto_like.py
+python/.venv/bin/python -m py_compile python/auto_follow.py python/auto_unfollow.py python/auto_like.py python/bulk_delete.py
 python/.venv/bin/python -m unittest discover -s tests
 ```
 
@@ -308,9 +338,12 @@ PY
 ### 対象 workflow（稼働中）
 
 - `.github/workflows/ci.yml` — `push` / `pull_request` で tests・shell 構文・Python compile・YAML 検証
-- `.github/workflows/post_buz.yml` — バズツイート投稿（毎時、JST 08:00〜24:00）
 - `.github/workflows/auto_follow.yml` — 日次 auto follow / auto unfollow
 - `.github/workflows/auto_like.yml` — 定期 auto like
+
+### 対象 workflow（スケジュール停止・手動実行のみ）
+
+- `.github/workflows/post_buz.yml` — バズツイート投稿（投稿戦略見直しのため一時停止中 2026-03-30〜）
 
 ### 対象 workflow（スケジュール停止・手動実行のみ）
 

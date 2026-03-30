@@ -8,8 +8,10 @@ on:
         required: false
         type: boolean
         default: true
-  schedule:
-    - cron: "0 * * * *"
+  # schedule:
+  #   - cron: "0 * * * *"
+  # NOTE: 投稿戦略見直しのため自動投稿を一時停止中 (2026-03-30)
+  # 再開時はコメントアウトを外してください
 
 permissions:
   contents: read
