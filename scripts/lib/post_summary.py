@@ -68,6 +68,19 @@ def clean_post_source_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip(" \n\"'|")
 
 
+def has_candidate_content(text: str, *, has_image: bool) -> bool:
+    return bool(clean_source_text(text) or has_image)
+
+
+def build_candidate_dedup_key(text: str, *, has_image: bool) -> str:
+    cleaned = clean_source_text(text)
+    if cleaned:
+        return re.sub(r"\s+", " ", cleaned).strip().lower()
+    if has_image:
+        return re.sub(r"\s+", " ", text).strip().lower()
+    return ""
+
+
 def estimate_x_text_length(text: str) -> int:
     total = 0
     for character in text:
@@ -532,7 +545,7 @@ def build_summary(
         diagnostics_sink=diagnostics_sink,
     )
     if not body:
-        body = "$MU関連の注目投稿"
+        body = "話題の投稿を紹介します"
     return format_translation_post(body, max_length=max_length)
 
 
@@ -560,5 +573,5 @@ def build_thread_summary(
         diagnostics_sink=diagnostics_sink,
     )
     if not body:
-        body = "$MU関連の注目投稿"
+        body = "話題の投稿を紹介します"
     return format_full_translation_post(body)

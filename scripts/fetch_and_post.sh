@@ -502,7 +502,14 @@ from post_filters import candidate_rejection_reasons, merge_filters
 from post_media import extract_candidate_media
 from post_selection import deduplicate_source_order, normalize_rotation_source, preferred_media_mode_from_previous, select_candidates
 from post_scoring import calculate_score, extract_candidate_metrics
-from post_summary import build_source_tweet_url, build_summary, clean_post_source_text, clean_source_text
+from post_summary import (
+    build_candidate_dedup_key,
+    build_source_tweet_url,
+    build_summary,
+    clean_post_source_text,
+    clean_source_text,
+    has_candidate_content,
+)
 
 category = sys.argv[1]
 source_state_file = pathlib.Path(sys.argv[2])
@@ -600,13 +607,15 @@ for payload_path in payload_files:
         raw_text = str(item.get("text") or "")
         text = clean_source_text(raw_text)
         post_source_text = clean_post_source_text(raw_text)
-        if not tweet_id or not text:
+        media = extract_candidate_media(item, fallback_mode=source_media_mode)
+        has_image = bool(media.get("has_image"))
+        if not tweet_id or not has_candidate_content(raw_text, has_image=has_image):
             continue
 
         if tweet_id in posted_ids or tweet_id in seen_ids:
             continue
 
-        normalized_text = re.sub(r"\s+", " ", text).strip().lower()
+        normalized_text = build_candidate_dedup_key(raw_text, has_image=has_image)
         if normalized_text in seen_text:
             continue
 
@@ -626,7 +635,6 @@ for payload_path in payload_files:
             continue
 
         metrics = extract_candidate_metrics(item)
-        media = extract_candidate_media(item, fallback_mode=source_media_mode)
         score, score_breakdown = calculate_score(
             metrics,
             score_weights,
@@ -634,7 +642,7 @@ for payload_path in payload_files:
             max_age_hours=effective_filters.get("max_age_hours"),
             source_boost=source_score_boost,
             feedback_boost=feedback_boost,
-            has_image=bool(media.get("has_image")),
+            has_image=has_image,
             author_metrics=author_metrics,
         )
 
@@ -646,8 +654,8 @@ for payload_path in payload_files:
                 "source_key": source_username or source_id,
                 "source_username": source_username,
                 "rotation_key": str(source_config.get("rotation_key") or source_username or source_id),
-                "text": text,
-                "post_source_text": post_source_text or text,
+                "text": text or raw_text.strip(),
+                "post_source_text": post_source_text or text or raw_text.strip(),
                 "screen_name": str(author_metrics.get("screen_name") or author.get("screenName") or ""),
                 "author_name": str(author.get("name") or ""),
                 "author_followers": int(author_metrics.get("followers") or 0),
@@ -657,7 +665,7 @@ for payload_path in payload_files:
                 "retweets": metrics["retweets"],
                 "replies": metrics["replies"],
                 "views": metrics["views"],
-                "has_image": bool(media.get("has_image")),
+                "has_image": has_image,
                 "image_urls": media.get("image_urls") or [],
                 "media_mode": str(media.get("media_mode") or "text"),
                 "media_types": media.get("media_types") or [],

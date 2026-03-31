@@ -200,6 +200,30 @@ class PostSummaryTest(TestCase):
             "I keep getting asked:\n\nWhat's the PT of $SIVE?\n\nstocks",
         )
 
+    def test_has_candidate_content_rejects_url_only_text_without_image(self) -> None:
+        self.assertFalse(post_summary.has_candidate_content("https://t.co/example", has_image=False))
+
+    def test_has_candidate_content_accepts_url_only_text_with_image(self) -> None:
+        self.assertTrue(post_summary.has_candidate_content("https://t.co/example", has_image=True))
+
+    def test_build_candidate_dedup_key_uses_raw_text_for_image_only_posts(self) -> None:
+        self.assertEqual(
+            post_summary.build_candidate_dedup_key("https://t.co/example", has_image=True),
+            "https://t.co/example",
+        )
+
+    def test_build_summary_uses_neutral_fallback_for_empty_source(self) -> None:
+        summary = post_summary.build_summary(
+            "https://t.co/example",
+            prefix="Xで反応上位: ",
+            language="ja",
+            max_length=280,
+            screen_name="AppleNews",
+            tweet_id="1234567890",
+        )
+
+        self.assertEqual(summary, "話題の投稿を紹介します")
+
     def test_truncate_post_text_keeps_url_atomic(self) -> None:
         truncated = post_summary.truncate_post_text(
             "Test https://example.com more text",

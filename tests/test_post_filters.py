@@ -105,6 +105,45 @@ class PostFiltersTest(unittest.TestCase):
 
         self.assertIn("author follower count unavailable", reasons)
 
+    def test_pic_candidate_not_rejected_when_no_follower_filters(self) -> None:
+        """When neither min_ nor max_author_followers is set, missing
+        follower data must not cause rejection — this is the pic scenario."""
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="https://t.co/example",
+            created_at=created_at,
+            raw_filters={"max_age_hours": 720},
+            author_metrics={"followers": 0},
+        )
+
+        self.assertNotIn("author follower count unavailable", reasons)
+        self.assertNotIn("author is below min_author_followers", reasons)
+
+    def test_pic_old_candidate_passes_relaxed_age_limit(self) -> None:
+        """A 10-day-old image post must pass when max_age_hours=720."""
+        created_at = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="https://t.co/example",
+            created_at=created_at,
+            raw_filters={"max_age_hours": 720},
+        )
+
+        self.assertNotIn("tweet is older than max_age_hours", reasons)
+
+    def test_pic_very_old_candidate_rejected_beyond_relaxed_limit(self) -> None:
+        """A 31-day-old post should still be rejected at max_age_hours=720."""
+        created_at = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="https://t.co/example",
+            created_at=created_at,
+            raw_filters={"max_age_hours": 720},
+        )
+
+        self.assertIn("tweet is older than max_age_hours", reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

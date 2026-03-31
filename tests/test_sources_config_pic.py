@@ -122,6 +122,27 @@ class PicAccountConfigTest(unittest.TestCase):
     def test_pic_source_reference_mode_none(self) -> None:
         self.assertEqual(self.pic.get("source_reference_mode"), "none")
 
+    def test_pic_max_age_hours_allows_old_image_posts(self) -> None:
+        """pic sources are curated image accounts that post infrequently;
+        max_age_hours must be >= 720 (30 days) to avoid rejecting all candidates."""
+        filters = self.pic.get("filters") or {}
+        max_age = filters.get("max_age_hours")
+        self.assertIsNotNone(max_age, "pic must define max_age_hours")
+        self.assertGreaterEqual(max_age, 720)
+
+    def test_pic_has_no_follower_thresholds(self) -> None:
+        """pic search API payloads do not include followersCount;
+        any follower threshold causes 100% candidate rejection."""
+        filters = self.pic.get("filters") or {}
+        self.assertIsNone(
+            filters.get("min_author_followers"),
+            "pic filters must not set min_author_followers (search API lacks follower data)",
+        )
+        self.assertIsNone(
+            filters.get("max_author_followers"),
+            "pic filters must not set max_author_followers (search API lacks follower data)",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
