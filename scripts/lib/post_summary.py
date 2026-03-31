@@ -72,12 +72,15 @@ def has_candidate_content(text: str, *, has_image: bool) -> bool:
     return bool(clean_source_text(text) or has_image)
 
 
-def build_candidate_dedup_key(text: str, *, has_image: bool) -> str:
+def build_candidate_dedup_key(text: str, *, has_image: bool, tweet_id: str = "") -> str:
     cleaned = clean_source_text(text)
     if cleaned:
         return re.sub(r"\s+", " ", cleaned).strip().lower()
     if has_image:
-        return re.sub(r"\s+", " ", text).strip().lower()
+        raw = text.strip()
+        if raw:
+            return raw
+        return f"__media_only:{tweet_id}" if tweet_id else ""
     return ""
 
 

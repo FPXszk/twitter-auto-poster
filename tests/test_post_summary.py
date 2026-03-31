@@ -200,17 +200,71 @@ class PostSummaryTest(TestCase):
             "I keep getting asked:\n\nWhat's the PT of $SIVE?\n\nstocks",
         )
 
+    # --- has_candidate_content ---
+
     def test_has_candidate_content_rejects_url_only_text_without_image(self) -> None:
         self.assertFalse(post_summary.has_candidate_content("https://t.co/example", has_image=False))
 
     def test_has_candidate_content_accepts_url_only_text_with_image(self) -> None:
         self.assertTrue(post_summary.has_candidate_content("https://t.co/example", has_image=True))
 
+    def test_has_candidate_content_accepts_normal_text_without_image(self) -> None:
+        self.assertTrue(post_summary.has_candidate_content("Apple stock rises 3%", has_image=False))
+
+    def test_has_candidate_content_accepts_normal_text_with_image(self) -> None:
+        self.assertTrue(post_summary.has_candidate_content("Apple stock rises 3%", has_image=True))
+
+    def test_has_candidate_content_rejects_empty_text_without_image(self) -> None:
+        self.assertFalse(post_summary.has_candidate_content("", has_image=False))
+
+    def test_has_candidate_content_accepts_empty_text_with_image(self) -> None:
+        self.assertTrue(post_summary.has_candidate_content("", has_image=True))
+
+    # --- build_candidate_dedup_key ---
+
     def test_build_candidate_dedup_key_uses_raw_text_for_image_only_posts(self) -> None:
         self.assertEqual(
             post_summary.build_candidate_dedup_key("https://t.co/example", has_image=True),
             "https://t.co/example",
         )
+
+    def test_build_candidate_dedup_key_preserves_url_case_for_image_posts(self) -> None:
+        key_a = post_summary.build_candidate_dedup_key("https://t.co/AbC123", has_image=True)
+        key_b = post_summary.build_candidate_dedup_key("https://t.co/aBc123", has_image=True)
+        self.assertNotEqual(key_a, key_b)
+
+    def test_build_candidate_dedup_key_normalizes_text_posts(self) -> None:
+        self.assertEqual(
+            post_summary.build_candidate_dedup_key("  Apple  Stock  RISES  ", has_image=False),
+            "apple stock rises",
+        )
+
+    def test_build_candidate_dedup_key_different_image_urls_produce_different_keys(self) -> None:
+        key_a = post_summary.build_candidate_dedup_key("https://t.co/abc123", has_image=True)
+        key_b = post_summary.build_candidate_dedup_key("https://t.co/xyz789", has_image=True)
+        self.assertNotEqual(key_a, key_b)
+
+    def test_build_candidate_dedup_key_returns_empty_for_empty_text_no_image(self) -> None:
+        self.assertEqual(post_summary.build_candidate_dedup_key("", has_image=False), "")
+
+    def test_build_candidate_dedup_key_empty_text_image_uses_tweet_id(self) -> None:
+        key = post_summary.build_candidate_dedup_key("", has_image=True, tweet_id="12345")
+        self.assertEqual(key, "__media_only:12345")
+
+    def test_build_candidate_dedup_key_empty_text_image_different_ids_differ(self) -> None:
+        key_a = post_summary.build_candidate_dedup_key("", has_image=True, tweet_id="111")
+        key_b = post_summary.build_candidate_dedup_key("", has_image=True, tweet_id="222")
+        self.assertNotEqual(key_a, key_b)
+
+    def test_build_candidate_dedup_key_prefers_cleaned_text_over_raw_for_mixed_posts(self) -> None:
+        key = post_summary.build_candidate_dedup_key(
+            "Apple rises 3% https://t.co/example",
+            has_image=True,
+        )
+        self.assertEqual(key, "apple rises 3%")
+        self.assertNotIn("t.co", key)
+
+    # --- summary fallback for image-only posts ---
 
     def test_build_summary_uses_neutral_fallback_for_empty_source(self) -> None:
         summary = post_summary.build_summary(

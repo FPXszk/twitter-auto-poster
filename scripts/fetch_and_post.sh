@@ -615,7 +615,7 @@ for payload_path in payload_files:
         if tweet_id in posted_ids or tweet_id in seen_ids:
             continue
 
-        normalized_text = build_candidate_dedup_key(raw_text, has_image=has_image)
+        normalized_text = build_candidate_dedup_key(raw_text, has_image=has_image, tweet_id=tweet_id)
         if normalized_text in seen_text:
             continue
 
