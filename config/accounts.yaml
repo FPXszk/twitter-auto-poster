@@ -83,6 +83,44 @@ accounts:
         - "giveaway"
         - "airdrop"
 
+  pic:
+    dry_run: true
+    post_prefix: ""
+    max_candidates: 1
+    summary_prefix: ""
+    summary_provider: "copilot_cli"
+    summary_model: "gpt-5-mini"
+    summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
+    summary_max_length: 280
+    single_post_max_length: 280
+    selection_mode: "round_robin_account"
+    fallback_candidates: 3
+    rotation_state_file: "state/pic-robin.txt"
+    source_reference_mode: "none"
+    state_file: "state/pic-posted.txt"
+    media_state_file: "state/pic-hot-selection.json"
+    reply:
+      enabled: false
+    score_weights:
+      likes: 1.0
+      retweets: 3.5
+      replies: 4.5
+      views: 0.015
+      velocity: 2.0
+      freshness: 1.5
+      image_bonus: 20
+      author_virality: 30
+    filters:
+      max_age_hours: 72
+      min_author_followers: 500
+      max_author_followers: 10000000
+      exclude_keywords:
+        - "フォロー"
+        - "プレゼント企画"
+        - "キャンペーン"
+        - "giveaway"
+        - "airdrop"
+
   news:
     dry_run: true
     post_prefix: "News watch:"

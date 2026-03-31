@@ -387,6 +387,67 @@ sources:
     max_results: 20
     score_boost: 6
 
+  # --- pic カテゴリ: 画像バズアカウント ---
+  - id: pic-japanofcontext-big
+    rotation_key: japanofcontext
+    category: pic
+    type: search
+    enabled: true
+    query: "from:japanofcontext -is:retweet -is:reply filter:images min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: pic-japanofcontext-small
+    rotation_key: japanofcontext
+    category: pic
+    type: search
+    enabled: true
+    query: "from:japanofcontext -is:retweet -is:reply filter:images min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: pic-kjckikyo-big
+    rotation_key: kjckikyo
+    category: pic
+    type: search
+    enabled: true
+    query: "from:kjckikyo -is:retweet -is:reply filter:images min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: pic-kjckikyo-small
+    rotation_key: kjckikyo
+    category: pic
+    type: search
+    enabled: true
+    query: "from:kjckikyo -is:retweet -is:reply filter:images min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: pic-yureiyks-big
+    rotation_key: yureiyks
+    category: pic
+    type: search
+    enabled: true
+    query: "from:yureiyks -is:retweet -is:reply filter:images min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: pic-yureiyks-small
+    rotation_key: yureiyks
+    category: pic
+    type: search
+    enabled: true
+    query: "from:yureiyks -is:retweet -is:reply filter:images min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
   - id: news-breaking-search
     category: news
     type: search

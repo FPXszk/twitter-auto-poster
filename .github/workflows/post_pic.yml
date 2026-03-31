@@ -1,0 +1,302 @@
+name: Post pic
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run in preview mode without posting
+        required: false
+        type: boolean
+        default: true
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: post-pic
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      CATEGORY: pic
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Evaluate posting window
+        id: posting_window
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+          from posting_window import should_run_in_posting_window
+
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
+          should_run = should_run_in_posting_window(now)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"should_run={str(should_run).lower()}\n")
+              handle.write(f"now_jst={now.isoformat()}\n")
+          PY
+
+      - uses: actions/setup-node@v4
+        if: steps.posting_window.outputs.should_run == 'true'
+        with:
+          node-version: "24"
+
+      - name: Install runtime dependencies
+        if: steps.posting_window.outputs.should_run == 'true'
+        run: |
+          npm install -g @github/copilot
+          python -m venv python/.venv
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
+
+      - name: Load account mode
+        id: account_mode
+        if: steps.posting_window.outputs.should_run == 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import yaml
+
+          def parse_bool(value):
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+                  return value.strip().lower() == "true"
+              raise SystemExit("dry_run must be a boolean")
+
+          category = os.environ["CATEGORY"]
+          event_name = os.environ["EVENT_NAME"]
+          inputs = json.loads(os.environ.get("EVENT_INPUTS_JSON") or "{}") or {}
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          defaults = raw.get("defaults") or {}
+          accounts = raw.get("accounts") or {}
+          account = accounts.get(category) or {}
+          manual_override = ""
+          if event_name == "workflow_dispatch":
+              manual_override = str(inputs.get("dry_run", "")).strip().lower()
+          if manual_override:
+              dry_run = parse_bool(manual_override)
+          else:
+              dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"dry_run={str(dry_run).lower()}\n")
+          PY
+
+      - name: Run runtime diagnostics
+        if: steps.posting_window.outputs.should_run == 'true'
+        run: |
+          mkdir -p tmp
+
+          summary_provider="$(python/.venv/bin/python - <<'PY'
+          import os
+          import yaml
+          from pathlib import Path
+
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          category = os.environ["CATEGORY"]
+          accounts = raw.get("accounts") or {}
+          defaults = raw.get("defaults") or {}
+          account = accounts.get(category) or {}
+          provider = str(account.get("summary_provider") or defaults.get("summary_provider") or "legacy_google_translate").strip().lower()
+          aliases = {
+              "": "legacy_google_translate",
+              "googletrans": "legacy_google_translate",
+              "google_translate": "legacy_google_translate",
+              "legacy_google_translate": "legacy_google_translate",
+              "copilot": "copilot_cli",
+              "copilot_cli": "copilot_cli",
+          }
+          print(aliases.get(provider, provider))
+          PY
+          )"
+
+          if [[ "${summary_provider}" == "copilot_cli" ]]; then
+            if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+              echo "COPILOT_GITHUB_TOKEN secret is required for Copilot summary generation." >&2
+              exit 1
+            fi
+            if [[ "${COPILOT_GITHUB_TOKEN}" == ghp_* ]]; then
+              echo "::error::COPILOT_GITHUB_TOKEN is a classic ghp_ PAT which is not supported by Copilot CLI. Use a fine-grained PAT or GitHub App token with Copilot Requests permission."
+              exit 1
+            fi
+          fi
+
+          copilot --version
+          python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/pic-runtime.json
+
+      - name: Prepare scripts
+        if: steps.posting_window.outputs.should_run == 'true'
+        run: |
+          chmod +x scripts/*.sh scripts/lib/common.sh
+          mkdir -p tmp/state
+
+      - name: Restore post state
+        if: steps.posting_window.outputs.should_run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/state
+          key: ${{ runner.os }}-post-pic-state-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-post-pic-state-
+
+      - name: Fetch candidates and process mode
+        if: steps.posting_window.outputs.should_run == 'true'
+        run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
+
+      - name: Auto reply to incoming replies
+        id: auto_reply
+        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
+        continue-on-error: true
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+
+          import yaml
+          from post_feedback import load_feedback_history
+          from post_reply import fetch_bot_username, run_auto_reply
+
+          category = os.environ["CATEGORY"]
+          output_dir = Path("tmp")
+          runs_dir = output_dir / "runs"
+          runs_dir.mkdir(parents=True, exist_ok=True)
+          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
+          account = (raw.get("accounts") or {}).get(category) or {}
+          reply_cfg = account.get("reply") or {}
+          result_path = runs_dir / f"reply-{category}.json"
+
+          def write_result(payload):
+              result_path.write_text(
+                  json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+          if not reply_cfg.get("enabled", False):
+              write_result({"status": "disabled"})
+              raise SystemExit(0)
+
+          twitter_bin = str(Path("python/.venv/bin/twitter"))
+          feedback_path = output_dir / "state" / f"{category}-feedback-history.jsonl"
+          history = load_feedback_history(feedback_path)
+          if not history:
+              write_result({"status": "no_history"})
+              raise SystemExit(0)
+
+          replied_rel = str(reply_cfg.get("replied_state_file") or f"state/{category}-replied.jsonl")
+          replied_path = output_dir / replied_rel
+          reply_check_rel = str(reply_cfg.get("reply_check_state_file") or f"state/{category}-reply-check.txt")
+          reply_check_path = output_dir / reply_check_rel
+
+          try:
+              bot_username = fetch_bot_username(twitter_bin)
+          except Exception as exc:
+              result = {"status": "error", "error": f"whoami failed: {exc}"}
+              write_result(result)
+              raise SystemExit(0)
+
+          result = run_auto_reply(
+              feedback_history=history,
+              twitter_bin=twitter_bin,
+              bot_username=bot_username,
+              replied_state_path=replied_path,
+              reply_check_state_path=reply_check_path,
+              max_reply_checks=int(reply_cfg.get("max_reply_checks_per_run") or 5),
+              max_replies=int(reply_cfg.get("max_replies_per_run") or 3),
+              copilot_model=str(reply_cfg.get("reply_model") or "gpt-5-mini"),
+              reply_prompt_path=str(reply_cfg.get("reply_prompt_path") or ""),
+              max_reply_length=int(reply_cfg.get("max_reply_length") or 140),
+          )
+          write_result(result)
+          PY
+
+      - name: Write run summary
+        if: always()
+        env:
+          POSTING_WINDOW: ${{ steps.posting_window.outputs.should_run }}
+          POSTING_WINDOW_JST: ${{ steps.posting_window.outputs.now_jst }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+
+          from workflow_summary import load_latest_candidate_payload, render_run_summary
+
+          category = os.environ["CATEGORY"]
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          candidate_files = sorted(Path("tmp/runs").glob(f"candidate-{category}.*"))
+          posting_window = os.environ.get("POSTING_WINDOW", "")
+          posting_window_jst = os.environ.get("POSTING_WINDOW_JST", "")
+
+          payload = None
+          candidate_error = None
+          if candidate_files:
+              payload, candidate_error = load_latest_candidate_payload(candidate_files)
+
+          reply_result = None
+          reply_result_path = Path("tmp/runs") / f"reply-{category}.json"
+          if reply_result_path.is_file():
+              try:
+                  reply_result = json.loads(reply_result_path.read_text(encoding="utf-8"))
+              except Exception:
+                  pass
+
+          lines = render_run_summary(
+              category=category,
+              posting_window=posting_window,
+              posting_window_jst=posting_window_jst,
+              payload=payload,
+              candidate_error=candidate_error,
+              reply_result=reply_result,
+          )
+
+          summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Save post state
+        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: tmp/state
+          key: ${{ runner.os }}-post-pic-state-${{ github.run_id }}
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pic-run
+          path: tmp/
+          if-no-files-found: ignore
