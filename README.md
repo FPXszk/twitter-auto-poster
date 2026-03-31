@@ -399,6 +399,9 @@ PY
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
 - `COPILOT_GITHUB_TOKEN`（Copilot 要約を使う場合。**Classic PAT（`ghp_`）は非対応**、fine-grained PAT または GitHub App token を使用すること）
+- `TIKTOK_CLIENT_KEY`（TikTok パイプラインを使う場合）
+- `TIKTOK_CLIENT_SECRET`（TikTok パイプラインを使う場合）
+- `TIKTOK_REFRESH_TOKEN`（TikTok パイプラインを使う場合）
 
 ### 使い方
 

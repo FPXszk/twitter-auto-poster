@@ -20,7 +20,7 @@ def validate_tiktok_url(url: str) -> str:
     if not value:
         raise ValueError("empty URL is not a valid TikTok URL")
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or parsed.netloc not in ALLOWED_TIKTOK_HOSTS:
+    if parsed.scheme != "https" or parsed.netloc not in ALLOWED_TIKTOK_HOSTS:
         raise ValueError(f"not a valid TikTok URL: {value}")
     return value
 

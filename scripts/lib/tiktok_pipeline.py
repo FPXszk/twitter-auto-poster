@@ -213,6 +213,7 @@ def run_tiktok_pipeline(
 
     # --- fetch & filter ---------------------------------------------------
     all_fetched = 0
+    fetch_errors: list[str] = []
     candidates: list[dict[str, Any]] = []
 
     for creator in enabled_creators:
@@ -225,6 +226,7 @@ def run_tiktok_pipeline(
             videos = client.fetch_user_videos(max_count=max_results)
         except Exception as exc:
             logger.warning("Fetch failed for %s: %s", username, exc)
+            fetch_errors.append(f"{username}: {exc}")
             continue
 
         all_fetched += len(videos)
@@ -272,6 +274,12 @@ def run_tiktok_pipeline(
         data = _empty_data(action, dry_run, category)
         data["candidates_fetched"] = all_fetched
         data["candidates_filtered"] = len(candidates)
+        if fetch_errors and all_fetched == 0:
+            return {
+                "ok": False,
+                "data": data,
+                "message": f"All creators failed to fetch: {'; '.join(fetch_errors)}",
+            }
         return {"ok": True, "data": data, "message": "no eligible TikTok videos found"}
 
     # --- select -----------------------------------------------------------

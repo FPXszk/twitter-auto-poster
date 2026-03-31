@@ -32,6 +32,10 @@ class ValidateTikTokUrlTest(TestCase):
             validate_tiktok_url("https://evil.com/video/123")
         self.assertIn("TikTok", str(ctx.exception))
 
+    def test_http_url_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_tiktok_url("http://www.tiktok.com/@user/video/123")
+
     def test_empty_url_rejected(self) -> None:
         with self.assertRaises(ValueError):
             validate_tiktok_url("")

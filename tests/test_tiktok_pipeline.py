@@ -367,6 +367,31 @@ class TikTokPipelineTest(unittest.TestCase):
             self.assertIn("Test clip", kwargs["tweet_text"])
             self.assertTrue(kwargs["dry_run"])
 
+    # 8 — fetch failure returns error when all creators fail
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_returns_error_when_all_creators_fail_to_fetch(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
+
+            mock_client_cls.from_env.side_effect = ValueError("client_key is required")
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
+                config_path=accounts,
+                output_dir=root,
+                dry_run=True,
+                env={},
+            )
+
+            self.assertFalse(result["ok"])
+            self.assertIn("failed to fetch", result["message"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
