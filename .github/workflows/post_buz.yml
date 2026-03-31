@@ -8,10 +8,8 @@ on:
         required: false
         type: boolean
         default: true
-  # schedule:
-  #   - cron: "0 * * * *"
-  # NOTE: 投稿戦略見直しのため自動投稿を一時停止中 (2026-03-30)
-  # 再開時はコメントアウトを外してください
+  schedule:
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
@@ -43,12 +41,16 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import sys
           from datetime import datetime
           from pathlib import Path
           from zoneinfo import ZoneInfo
 
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+          from posting_window import should_run_in_posting_window
+
           now = datetime.now(ZoneInfo("Asia/Tokyo"))
-          should_run = 8 <= now.hour < 24
+          should_run = should_run_in_posting_window(now)
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"should_run={str(should_run).lower()}\n")
               handle.write(f"now_jst={now.isoformat()}\n")

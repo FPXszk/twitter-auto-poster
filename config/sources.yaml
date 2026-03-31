@@ -5,182 +5,384 @@ defaults:
   exclude_retweets: true
 
 sources:
-  - id: buz-gorillataxjp-big
-    rotation_key: gorillataxjp
+  # --- 旧アカウント定義 (2026-03-30 以前) ---
+  # - id: buz-gorillataxjp-big
+  #   rotation_key: gorillataxjp
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-gorillataxjp-small
+  #   rotation_key: gorillataxjp
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-zanengineer-big
+  #   rotation_key: zanengineer
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-zanengineer-small
+  #   rotation_key: zanengineer
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-tkzwgrs-big
+  #   rotation_key: tkzwgrs
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-tkzwgrs-small
+  #   rotation_key: tkzwgrs
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-sakenmilove-big
+  #   rotation_key: sakenmilove
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-sakenmilove-small
+  #   rotation_key: sakenmilove
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-bovccgdlap95845-big
+  #   rotation_key: bovccgdlap95845
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-bovccgdlap95845-small
+  #   rotation_key: bovccgdlap95845
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-fuwaraidou_2525-big
+  #   rotation_key: fuwaraidou_2525
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-fuwaraidou_2525-small
+  #   rotation_key: fuwaraidou_2525
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-yeskiri-big
+  #   rotation_key: yeskiri
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-yeskiri-small
+  #   rotation_key: yeskiri
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-romi_hoshino-big
+  #   rotation_key: romi_hoshino
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-romi_hoshino-small
+  #   rotation_key: romi_hoshino
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  #
+  # - id: buz-aigare01-big
+  #   rotation_key: aigare01
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+  #   timeline: Top
+  #   max_results: 20
+  #   score_boost: 10
+  #
+  # - id: buz-aigare01-small
+  #   rotation_key: aigare01
+  #   category: buz
+  #   type: search
+  #   enabled: true
+  #   query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:700"
+  #   timeline: Latest
+  #   max_results: 20
+  #   score_boost: 6
+  # --- 旧アカウント定義ここまで ---
+
+  - id: buz-ql_7mxa-big
+    rotation_key: ql_7mxa
     category: buz
     type: search
     enabled: true
-    query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:ql_7mxa -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-gorillataxjp-small
-    rotation_key: gorillataxjp
+  - id: buz-ql_7mxa-small
+    rotation_key: ql_7mxa
     category: buz
     type: search
     enabled: true
-    query: "from:gorillataxjp -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:ql_7mxa -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-zanengineer-big
-    rotation_key: zanengineer
+  - id: buz-yaruki_nash2-big
+    rotation_key: yaruki_nash2
     category: buz
     type: search
     enabled: true
-    query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:yaruki_nash2 -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-zanengineer-small
-    rotation_key: zanengineer
+  - id: buz-yaruki_nash2-small
+    rotation_key: yaruki_nash2
     category: buz
     type: search
     enabled: true
-    query: "from:zanEngineer -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:yaruki_nash2 -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-tkzwgrs-big
-    rotation_key: tkzwgrs
+  - id: buz-rmiqx_-big
+    rotation_key: rmiqx_
     category: buz
     type: search
     enabled: true
-    query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:rmiqx_ -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-tkzwgrs-small
-    rotation_key: tkzwgrs
+  - id: buz-rmiqx_-small
+    rotation_key: rmiqx_
     category: buz
     type: search
     enabled: true
-    query: "from:tkzwgrs -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:rmiqx_ -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-sakenmilove-big
-    rotation_key: sakenmilove
+  - id: buz-pam99ham-big
+    rotation_key: pam99ham
     category: buz
     type: search
     enabled: true
-    query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:pam99ham -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-sakenmilove-small
-    rotation_key: sakenmilove
+  - id: buz-pam99ham-small
+    rotation_key: pam99ham
     category: buz
     type: search
     enabled: true
-    query: "from:sakenmilove -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:pam99ham -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-bovccgdlap95845-big
-    rotation_key: bovccgdlap95845
+  - id: buz-kyomx2_pudding_-big
+    rotation_key: kyomx2_pudding_
     category: buz
     type: search
     enabled: true
-    query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:kyomx2_pudding_ -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-bovccgdlap95845-small
-    rotation_key: bovccgdlap95845
+  - id: buz-kyomx2_pudding_-small
+    rotation_key: kyomx2_pudding_
     category: buz
     type: search
     enabled: true
-    query: "from:bovccgdlap95845 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:kyomx2_pudding_ -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-fuwaraidou_2525-big
-    rotation_key: fuwaraidou_2525
+  - id: buz-aaa_hareharu-big
+    rotation_key: aaa_hareharu
     category: buz
     type: search
     enabled: true
-    query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:aaa_hareharu -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-fuwaraidou_2525-small
-    rotation_key: fuwaraidou_2525
+  - id: buz-aaa_hareharu-small
+    rotation_key: aaa_hareharu
     category: buz
     type: search
     enabled: true
-    query: "from:fuwaraidou_2525 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:aaa_hareharu -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-yeskiri-big
-    rotation_key: yeskiri
+  - id: buz-suzuka_saga-big
+    rotation_key: suzuka_saga
     category: buz
     type: search
     enabled: true
-    query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:suzuka_saga -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-yeskiri-small
-    rotation_key: yeskiri
+  - id: buz-suzuka_saga-small
+    rotation_key: suzuka_saga
     category: buz
     type: search
     enabled: true
-    query: "from:yeskiri -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:suzuka_saga -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-romi_hoshino-big
-    rotation_key: romi_hoshino
+  - id: buz-bibilab158-big
+    rotation_key: bibilab158
     category: buz
     type: search
     enabled: true
-    query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:bibilab158 -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-romi_hoshino-small
-    rotation_key: romi_hoshino
+  - id: buz-bibilab158-small
+    rotation_key: bibilab158
     category: buz
     type: search
     enabled: true
-    query: "from:romi_hoshino -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:bibilab158 -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6
 
-  - id: buz-aigare01-big
-    rotation_key: aigare01
+  - id: buz-hatsunetsu_u-big
+    rotation_key: hatsunetsu_u
     category: buz
     type: search
     enabled: true
-    query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    query: "from:hatsunetsu_u -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
     score_boost: 10
 
-  - id: buz-aigare01-small
-    rotation_key: aigare01
+  - id: buz-hatsunetsu_u-small
+    rotation_key: hatsunetsu_u
     category: buz
     type: search
     enabled: true
-    query: "from:aigare01 -is:retweet -is:reply min_retweets:52 min_faves:700"
+    query: "from:hatsunetsu_u -is:retweet -is:reply min_retweets:52 min_faves:700"
+    timeline: Latest
+    max_results: 20
+    score_boost: 6
+
+  - id: buz-175__chan-big
+    rotation_key: 175__chan
+    category: buz
+    type: search
+    enabled: true
+    query: "from:175__chan -is:retweet -is:reply min_retweets:52 min_faves:3000"
+    timeline: Top
+    max_results: 20
+    score_boost: 10
+
+  - id: buz-175__chan-small
+    rotation_key: 175__chan
+    category: buz
+    type: search
+    enabled: true
+    query: "from:175__chan -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
     score_boost: 6

@@ -174,5 +174,46 @@ class PostSelectionTest(unittest.TestCase):
         self.assertEqual(rot3["selected_source"], "gamma")
 
 
+    def test_round_robin_account_with_new_buz_10_accounts(self) -> None:
+        """新 10 アカウントの順序で round_robin_account が正しくローテーションする。"""
+        new_accounts = [
+            "ql_7mxa", "yaruki_nash2", "rmiqx_", "pam99ham", "kyomx2_pudding_",
+            "aaa_hareharu", "suzuka_saga", "bibilab158", "hatsunetsu_u", "175__chan",
+        ]
+        candidates = [
+            {
+                "id": f"{acct}-big",
+                "source_key": f"buz-{acct}-big",
+                "rotation_key": acct,
+                "score": 90 - i,
+                "views": 100 - i,
+                "replies": 1,
+                "retweets": 5,
+                "likes": 10,
+                "created_at": "2026-03-31T08:00:00+00:00",
+            }
+            for i, acct in enumerate(new_accounts)
+        ]
+
+        _, rot1 = select_candidates(
+            candidates,
+            source_order=new_accounts,
+            max_candidates=1,
+            selection_mode="round_robin_account",
+            previous_source="",
+        )
+        self.assertEqual(rot1["selected_source"], "ql_7mxa")
+
+        _, rot2 = select_candidates(
+            candidates,
+            source_order=new_accounts,
+            max_candidates=1,
+            selection_mode="round_robin_account",
+            previous_source=rot1["selected_source"],
+        )
+        self.assertEqual(rot2["selected_source"], "yaruki_nash2")
+        self.assertEqual(rot2["next_source"], "rmiqx_")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -142,7 +142,7 @@ def render_run_summary(
     lines.append(f"- Current JST: `{posting_window_jst}`")
 
     if posting_window != "true":
-        lines.extend(["", "- Skipped because current JST is outside the 08:00-24:00 posting window."])
+        lines.extend(["", "- Skipped because current JST is outside the 07:00-01:00 hourly posting window."])
         lines.extend(_render_reply_summary(reply_result))
         return lines
 

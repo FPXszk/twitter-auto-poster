@@ -474,6 +474,18 @@ class WorkflowSummaryTest(TestCase):
         result = workflow_summary.load_post_result_payload(None)
         self.assertIsNone(result)
 
+    def test_render_run_summary_skipped_outside_window_shows_new_window(self) -> None:
+        """投稿時間帯外スキップ文言が 07:00-01:00 になること。"""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="false",
+            posting_window_jst="2026-03-31T03:00:00+09:00",
+            payload=None,
+        )
+        joined = "\n".join(lines)
+        self.assertIn("07:00-01:00", joined)
+        self.assertNotIn("08:00-24:00", joined)
+
 
 if __name__ == "__main__":
     main()
