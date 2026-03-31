@@ -122,37 +122,6 @@ accounts:
         - "giveaway"
         - "airdrop"
 
-  tiktok:
-    dry_run: true
-    post_prefix: ""
-    max_candidates: 1
-    summary_prefix: ""
-    single_post_max_length: 280
-    selection_mode: "score"
-    source_reference_mode: "none"
-    state_file: "state/tiktok-posted.txt"
-    allowlist_path: "config/tiktok_allowlist.yaml"
-    download_dir: "tiktok/downloads"
-    score_weights:
-      likes: 1.0
-      retweets: 2.5
-      replies: 3.0
-      views: 0.02
-      velocity: 1.0
-      freshness: 1.0
-      author_virality: 0
-    filters:
-      max_age_hours: 168
-      required_terms: []
-      exclude_keywords:
-        - "giveaway"
-        - "promo"
-        - "telegram"
-      min_likes: 0
-      min_views: 0
-      min_replies: 0
-      min_retweets: 0
-
   news:
     dry_run: true
     post_prefix: "News watch:"
@@ -163,3 +132,34 @@ accounts:
     summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
     filters:
       max_age_hours: 48
+
+  tiktok:
+    dry_run: true
+    post_prefix: ""
+    max_candidates: 1
+    summary_prefix: ""
+    summary_provider: "copilot_cli"
+    summary_model: "gpt-5-mini"
+    summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
+    summary_max_length: 280
+    single_post_max_length: 280
+    selection_mode: "score"
+    state_file: "state/tiktok-posted.txt"
+    allowlist_path: "config/tiktok_allowlist.yaml"
+    score_weights:
+      likes: 1.0
+      retweets: 5.0
+      replies: 3.0
+      views: 0.01
+      velocity: 0.0
+      freshness: 2.0
+      image_bonus: 0.0
+      author_virality: 0.0
+    filters:
+      max_age_hours: 168
+      exclude_keywords:
+        - "広告"
+        - "PR"
+        - "プロモーション"
+        - "sponsored"
+      min_engagement: 1000

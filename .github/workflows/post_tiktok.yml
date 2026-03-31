@@ -1,15 +1,15 @@
-name: Post TikTok
+name: Post tiktok
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Run in validation mode without posting
+        description: Run in preview mode without posting
         required: false
         type: boolean
         default: true
   schedule:
-    - cron: "15 * * * *"
+    - cron: "0 */3 * * *"
 
 permissions:
   contents: read
@@ -55,20 +55,22 @@ jobs:
           should_run = should_run_in_posting_window(now)
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"should_run={str(should_run).lower()}\n")
+              handle.write(f"now_jst={now.isoformat()}\n")
           PY
 
-      - name: Install ffmpeg
+      - name: Install ffprobe and yt-dlp
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+          pip install --quiet yt-dlp
 
       - name: Install runtime dependencies
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install pyyaml yt-dlp twikit==2.3.3 XClientTransaction==1.0.2
+          python/.venv/bin/pip install twikit==2.3.3 XClientTransaction==1.0.2 pyyaml
 
       - name: Load account mode
         id: account_mode
@@ -95,16 +97,23 @@ jobs:
           inputs = json.loads(os.environ.get("EVENT_INPUTS_JSON") or "{}") or {}
           raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
           defaults = raw.get("defaults") or {}
-          account = (raw.get("accounts") or {}).get(category) or {}
-          manual_override = str(inputs.get("dry_run", "")).strip().lower() if event_name == "workflow_dispatch" else ""
-          dry_run = parse_bool(manual_override) if manual_override else parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
+          accounts = raw.get("accounts") or {}
+          account = accounts.get(category) or {}
+          manual_override = ""
+          if event_name == "workflow_dispatch":
+              manual_override = str(inputs.get("dry_run", "")).strip().lower()
+          if manual_override:
+              dry_run = parse_bool(manual_override)
+          else:
+              dry_run = parse_bool(account.get("dry_run", defaults.get("dry_run", True)))
+
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"dry_run={str(dry_run).lower()}\n")
           PY
 
       - name: Prepare runtime directories
         if: steps.posting_window.outputs.should_run == 'true'
-        run: mkdir -p tmp/state tmp/tiktok
+        run: mkdir -p tmp/state tmp/runs tmp/tiktok-download
 
       - name: Restore post state
         if: steps.posting_window.outputs.should_run == 'true'
@@ -118,21 +127,41 @@ jobs:
       - name: Validate secrets for live posting
         if: steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
         run: |
-          if [[ -z "${TWITTER_AUTH_TOKEN:-}" || -z "${TWITTER_CT0:-}" || -z "${TIKTOK_CLIENT_KEY:-}" || -z "${TIKTOK_CLIENT_SECRET:-}" || -z "${TIKTOK_REFRESH_TOKEN:-}" ]]; then
-            echo "TikTok and X secrets are required for live posting." >&2
+          if [[ -z "${TWITTER_AUTH_TOKEN:-}" || -z "${TWITTER_CT0:-}" ]]; then
+            echo "TWITTER_AUTH_TOKEN and TWITTER_CT0 secrets are required for live video posting." >&2
+            exit 1
+          fi
+          if [[ -z "${TIKTOK_CLIENT_KEY:-}" || -z "${TIKTOK_CLIENT_SECRET:-}" || -z "${TIKTOK_REFRESH_TOKEN:-}" ]]; then
+            echo "TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, and TIKTOK_REFRESH_TOKEN secrets are required." >&2
             exit 1
           fi
 
       - name: Run TikTok pipeline
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          python/.venv/bin/python scripts/lib/tiktok_pipeline.py \
-            --category "${CATEGORY}" \
-            --dry-run "${{ steps.account_mode.outputs.dry_run }}" \
-            --output-path tmp/tiktok/tiktok-result.json
+          python/.venv/bin/python -c "
+          import sys, os, json
+          from pathlib import Path
+
+          sys.path.append(str(Path.cwd() / 'scripts' / 'lib'))
+          from tiktok_pipeline import run_tiktok_pipeline
+
+          dry_run = '${{ steps.account_mode.outputs.dry_run }}' == 'true'
+          result = run_tiktok_pipeline(
+              category='${{ env.CATEGORY }}',
+              dry_run=dry_run,
+              output_dir='tmp',
+          )
+          result_path = Path('tmp/runs/tiktok-pipeline-result.json')
+          result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          "
 
       - name: Write run summary
-        if: always() && steps.posting_window.outputs.should_run == 'true'
+        if: always()
+        env:
+          POSTING_WINDOW: ${{ steps.posting_window.outputs.should_run }}
+          POSTING_WINDOW_JST: ${{ steps.posting_window.outputs.now_jst }}
         run: |
           python - <<'PY'
           import json
@@ -140,34 +169,47 @@ jobs:
           from pathlib import Path
 
           summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
-          payload_path = Path("tmp/tiktok/tiktok-result.json")
+          result_path = Path("tmp/runs/tiktok-pipeline-result.json")
+          posting_window = os.environ.get("POSTING_WINDOW", "")
+          posting_window_jst = os.environ.get("POSTING_WINDOW_JST", "")
+
           lines = ["## post tiktok run", ""]
-          if not payload_path.exists():
-              lines.append("result file was not created.")
+          lines.append(f"- Posting window: `{posting_window}` (JST: `{posting_window_jst}`)")
+
+          if not result_path.exists():
+              lines.append("- Result file was not created.")
           else:
-              payload = json.loads(payload_path.read_text(encoding="utf-8"))
+              payload = json.loads(result_path.read_text(encoding="utf-8"))
               data = payload.get("data") or {}
               lines.append(f"- Status: `{'ok' if payload.get('ok') else 'error'}`")
+              lines.append(f"- Action: `{data.get('action', '')}`")
               lines.append(f"- Dry run: `{data.get('dry_run', False)}`")
-              lines.append(f"- Candidate ID: `{data.get('candidate_id', '')}`")
-              lines.append(f"- TikTok user: `{data.get('tiktok_username', '')}`")
-              lines.append(f"- Message: `{payload.get('message', '')}`")
+              lines.append(f"- Creator: `{data.get('creator', '')}`")
+              lines.append(f"- Video ID: `{data.get('video_id', '')}`")
+              lines.append(f"- Candidates fetched: `{data.get('candidates_fetched', 0)}`")
+              lines.append(f"- Candidates after filter: `{data.get('candidates_filtered', 0)}`")
+              if data.get("post_result"):
+                  post = data["post_result"]
+                  lines.append(f"- Tweet ID: `{post.get('data', {}).get('id', '')}`")
+              if payload.get("message"):
+                  lines.append(f"- Message: `{payload['message']}`")
+
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
 
       - name: Save post state
-        if: always() && steps.posting_window.outputs.should_run == 'true'
+        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
         uses: actions/cache/save@v4
         with:
           path: tmp/state
           key: ${{ runner.os }}-post-tiktok-state-${{ github.run_id }}
 
-      - name: Upload TikTok artifacts
-        if: always() && steps.posting_window.outputs.should_run == 'true'
+      - name: Upload run artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: post-tiktok-run
+          name: tiktok-run
           path: |
-            tmp/tiktok
-            tmp/state/tiktok-posted.txt
+            tmp/runs/
+            tmp/state/
           if-no-files-found: ignore

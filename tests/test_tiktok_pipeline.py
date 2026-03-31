@@ -1,164 +1,372 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import sys
 import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 import unittest
 
 import yaml
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts' / 'lib'))
+sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
 
-from tiktok_pipeline import run_tiktok_pipeline, write_pipeline_result
+from tiktok_pipeline import run_tiktok_pipeline
 
 
-class FakeClient:
-    def __init__(self, videos):
-        self.videos = videos
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    def fetch_user_videos(self, max_count):
-        return list(self.videos)
+def _write_accounts(root: Path, *, allowlist_path: str | None = None) -> Path:
+    """Write a minimal accounts.yaml and return its path."""
+    al_path = allowlist_path or str(root / "allowlist.yaml")
+    path = root / "accounts.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "defaults": {
+                    "dry_run": True,
+                    "max_candidates": 1,
+                    "single_post_max_length": 280,
+                    "score_weights": {
+                        "likes": 1, "retweets": 1, "replies": 1,
+                        "views": 1, "velocity": 0, "freshness": 0,
+                        "image_bonus": 0, "author_virality": 0,
+                    },
+                    "filters": {
+                        "max_age_hours": 720,
+                        "required_terms": [],
+                        "exclude_keywords": [],
+                    },
+                },
+                "accounts": {
+                    "tiktok": {
+                        "dry_run": True,
+                        "state_file": "state/tiktok-posted.txt",
+                        "allowlist_path": al_path,
+                    },
+                },
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    return path
 
+
+def _write_allowlist(
+    root: Path,
+    *,
+    consent_type: str = "owner",
+    enabled: bool = True,
+    expires_at: str = "2099-01-01T00:00:00Z",
+    platform_user_id: str = "owner-id",
+    username: str = "exampleowner",
+) -> None:
+    """Write an allowlist.yaml with a single creator."""
+    (root / "allowlist.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "creators": [
+                    {
+                        "platform_user_id": platform_user_id,
+                        "tiktok_username": username,
+                        "enabled": enabled,
+                        "consent_type": consent_type,
+                        "consent_reference": "owned",
+                        "expires_at": expires_at,
+                        "max_results": 10,
+                    },
+                ],
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _make_video(
+    *,
+    video_id: str = "video-1",
+    title: str = "Great TikTok clip",
+    description: str = "caption text",
+    likes: int = 500,
+    views: int = 10000,
+    retweets: int = 50,
+    replies: int = 30,
+) -> dict:
+    return {
+        "id": video_id,
+        "video_id": video_id,
+        "title": title,
+        "description": description,
+        "text": title,
+        "created_at": "2026-03-31T00:00:00+00:00",
+        "create_time": 1743379200,
+        "share_url": f"https://www.tiktok.com/@u/video/{video_id}",
+        "video_page_url": f"https://www.tiktok.com/@u/video/{video_id}",
+        "metrics": {
+            "likes": likes,
+            "views": views,
+            "retweets": retweets,
+            "replies": replies,
+        },
+        "author": {"username": "", "platform_user_id": ""},
+    }
+
+
+FAKE_ENV = {
+    "TIKTOK_CLIENT_KEY": "test-key",
+    "TIKTOK_CLIENT_SECRET": "test-secret",
+    "TIKTOK_REFRESH_TOKEN": "test-token",
+}
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 class TikTokPipelineTest(unittest.TestCase):
-    def write_accounts(self, root: Path) -> Path:
-        path = root / 'accounts.yaml'
-        path.write_text(
-            yaml.safe_dump(
-                {
-                    'defaults': {'dry_run': True, 'max_candidates': 1, 'single_post_max_length': 280, 'score_weights': {'likes': 1, 'retweets': 1, 'replies': 1, 'views': 1, 'velocity': 0, 'freshness': 0}, 'filters': {'max_age_hours': 168, 'required_terms': [], 'exclude_keywords': []}},
-                    'accounts': {'tiktok': {'dry_run': True, 'state_file': 'state/tiktok-posted.txt', 'allowlist_path': str(root / 'allowlist.yaml'), 'download_dir': 'downloads'}}
-                },
-                sort_keys=False,
-                allow_unicode=True,
-            ),
-            encoding='utf-8',
-        )
-        return path
+    """Integration tests for the TikTok pipeline orchestrator."""
 
-    def write_allowlist(self, root: Path, consent_type: str = 'owner', enabled: bool = True) -> None:
-        (root / 'allowlist.yaml').write_text(
-            yaml.safe_dump(
-                {'creators': [{'platform_user_id': 'owner-id', 'tiktok_username': 'exampleowner', 'enabled': enabled, 'consent_type': consent_type, 'consent_reference': 'owned', 'expires_at': '2099-01-01T00:00:00Z', 'max_results': 10}]},
-                sort_keys=False,
-                allow_unicode=True,
-            ),
-            encoding='utf-8',
-        )
+    # 1 — selects the highest-score video from two candidates
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_selects_best_owner_video(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
 
-    def sample_video(self):
-        return {'id': 'video-1', 'title': 'owner video', 'description': 'caption', 'created_at': '2026-03-31T00:00:00Z', 'video_page_url': 'https://www.tiktok.com/@u/video/1', 'metrics': {'likes': 10, 'retweets': 2, 'replies': 3, 'views': 100}}
+            low = _make_video(video_id="low-1", likes=10, views=100, retweets=1, replies=1)
+            high = _make_video(video_id="high-1", likes=5000, views=100000, retweets=500, replies=300)
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [low, high]
+            mock_client_cls.from_env.return_value = fake_client
 
-    def test_pipeline_selects_best_owner_video(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            accounts = self.write_accounts(root)
-            self.write_allowlist(root)
-            calls = []
-            def fake_post_video(tweet_text, video_path, dry_run):
-                calls.append((tweet_text, str(video_path), dry_run))
-                return {'ok': True, 'message': 'posted', 'data': {'action': 'dry_run_video', 'dry_run': dry_run}}
-            payload = run_tiktok_pipeline(
-                category='tiktok',
+            mock_download.return_value = root / "video.mp4"
+            mock_post.return_value = {
+                "ok": True,
+                "message": "posted",
+                "data": {"action": "dry_run_video", "dry_run": True},
+            }
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
                 config_path=accounts,
                 output_dir=root,
                 dry_run=True,
-                client=FakeClient([self.sample_video()]),
-                downloader=lambda url, output_dir: root / 'download.mp4',
-                post_video=fake_post_video,
+                env=FAKE_ENV,
             )
-            self.assertTrue(payload['ok'])
-            self.assertEqual(payload['data']['candidate_id'], 'video-1')
-            self.assertEqual(len(calls), 1)
 
-    def test_pipeline_rejects_non_owner_allowlist_entries_for_live_run(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            accounts = self.write_accounts(root)
-            self.write_allowlist(root, consent_type='explicit')
-            payload = run_tiktok_pipeline(
-                category='tiktok',
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["data"]["selected_video_id"], "high-1")
+            self.assertEqual(result["data"]["candidates_fetched"], 2)
+            self.assertGreaterEqual(result["data"]["candidates_scored"], 1)
+
+    # 2 — explicit consent_type creator rejected in live mode
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_rejects_non_owner_for_live_run(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root, consent_type="explicit")
+
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [_make_video()]
+            mock_client_cls.from_env.return_value = fake_client
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
                 config_path=accounts,
                 output_dir=root,
                 dry_run=False,
-                client=FakeClient([self.sample_video()]),
-                downloader=lambda url, output_dir: root / 'download.mp4',
-                post_video=lambda **kwargs: {'ok': True, 'message': 'posted', 'data': {'dry_run': False}},
+                env=FAKE_ENV,
             )
-            self.assertEqual(payload['data']['candidate_count'], 0)
 
-    def test_pipeline_skips_already_posted_video_ids(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            accounts = self.write_accounts(root)
-            self.write_allowlist(root)
-            state_dir = root / 'state'
+            self.assertTrue(result["ok"])
+            self.assertIn("no eligible", result["message"])
+            mock_post.assert_not_called()
+
+    # 3 — expired creator skipped
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_skips_expired_allowlist_entries(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root, expires_at="2020-01-01T00:00:00Z")
+
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [_make_video()]
+            mock_client_cls.from_env.return_value = fake_client
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
+                config_path=accounts,
+                output_dir=root,
+                dry_run=True,
+                env=FAKE_ENV,
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertIn("no eligible", result["message"])
+            mock_post.assert_not_called()
+
+    # 4 — already-posted video skipped
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_skips_already_posted_video_ids(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
+
+            state_dir = root / "state"
             state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / 'tiktok-posted.txt').write_text('video-1\n', encoding='utf-8')
-            payload = run_tiktok_pipeline(
-                category='tiktok',
-                config_path=accounts,
-                output_dir=root,
-                dry_run=False,
-                client=FakeClient([self.sample_video()]),
-                downloader=lambda url, output_dir: root / 'download.mp4',
-                post_video=lambda **kwargs: {'ok': True, 'message': 'posted', 'data': {'dry_run': False}},
+            (state_dir / "tiktok-posted.txt").write_text(
+                "video-1\n", encoding="utf-8"
             )
-            self.assertEqual(payload['data']['candidate_count'], 0)
 
-    def test_pipeline_dry_run_does_not_mark_state(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            accounts = self.write_accounts(root)
-            self.write_allowlist(root)
-            payload = run_tiktok_pipeline(
-                category='tiktok',
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [_make_video()]
+            mock_client_cls.from_env.return_value = fake_client
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
                 config_path=accounts,
                 output_dir=root,
                 dry_run=True,
-                client=FakeClient([self.sample_video()]),
-                downloader=lambda url, output_dir: root / 'download.mp4',
-                post_video=lambda **kwargs: {'ok': True, 'message': 'posted', 'data': {'dry_run': True}},
+                env=FAKE_ENV,
             )
-            self.assertTrue(payload['ok'])
-            self.assertFalse((root / 'state' / 'tiktok-posted.txt').exists())
 
-    def test_write_pipeline_result_writes_json(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / 'result.json'
-            write_pipeline_result(path, {'ok': True, 'data': {'x': 1}, 'message': 'ok'})
-            payload = json.loads(path.read_text(encoding='utf-8'))
-            self.assertTrue(payload['ok'])
+            self.assertTrue(result["ok"])
+            self.assertIn("no eligible", result["message"])
+            mock_post.assert_not_called()
 
-    def test_pipeline_rejects_multiple_enabled_creators(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            accounts = self.write_accounts(root)
-            (root / 'allowlist.yaml').write_text(
-                yaml.safe_dump(
-                    {
-                        'creators': [
-                            {'platform_user_id': 'owner-id-1', 'tiktok_username': 'ownerone', 'enabled': True, 'consent_type': 'owner', 'consent_reference': 'owned', 'expires_at': '2099-01-01T00:00:00Z', 'max_results': 10},
-                            {'platform_user_id': 'owner-id-2', 'tiktok_username': 'ownertwo', 'enabled': True, 'consent_type': 'owner', 'consent_reference': 'owned', 'expires_at': '2099-01-01T00:00:00Z', 'max_results': 10},
-                        ]
-                    },
-                    sort_keys=False,
-                    allow_unicode=True,
-                ),
-                encoding='utf-8',
+    # 5 — dry_run does not post or update state
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_dry_run_does_not_post_or_mark_state(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
+
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [_make_video()]
+            mock_client_cls.from_env.return_value = fake_client
+            mock_download.return_value = root / "video.mp4"
+            mock_post.return_value = {
+                "ok": True,
+                "message": "dry run",
+                "data": {"action": "dry_run_video", "dry_run": True},
+            }
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
+                config_path=accounts,
+                output_dir=root,
+                dry_run=True,
+                env=FAKE_ENV,
             )
-            with self.assertRaisesRegex(RuntimeError, 'exactly one enabled TikTok allowlist creator'):
-                run_tiktok_pipeline(
-                    category='tiktok',
-                    config_path=accounts,
-                    output_dir=root,
-                    dry_run=False,
-                    client=FakeClient([self.sample_video()]),
-                    downloader=lambda url, output_dir: root / 'download.mp4',
-                    post_video=lambda **kwargs: {'ok': True, 'message': 'posted', 'data': {'dry_run': False}},
-                )
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["data"]["dry_run"])
+            # post_video_tweet is called (for validation) but with dry_run=True
+            mock_post.assert_called_once()
+            _, kwargs = mock_post.call_args
+            self.assertTrue(kwargs["dry_run"])
+            # state file must NOT be created
+            state_file = root / "state" / "tiktok-posted.txt"
+            self.assertFalse(state_file.exists())
+
+    # 6 — download failure returns graceful error
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_handles_download_failure(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
+
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [_make_video()]
+            mock_client_cls.from_env.return_value = fake_client
+            mock_download.side_effect = RuntimeError("yt-dlp crashed")
+
+            result = run_tiktok_pipeline(
+                category="tiktok",
+                config_path=accounts,
+                output_dir=root,
+                dry_run=True,
+                env=FAKE_ENV,
+            )
+
+            self.assertFalse(result["ok"])
+            self.assertIn("Download failed", result["message"])
+            mock_post.assert_not_called()
+
+    # 7 — correct args passed to post_video_tweet
+    @patch("tiktok_pipeline.post_video_tweet")
+    @patch("tiktok_pipeline.download_tiktok_video")
+    @patch("tiktok_pipeline.TikTokClient")
+    def test_pipeline_passes_mp4_to_post_video(
+        self, mock_client_cls, mock_download, mock_post
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            accounts = _write_accounts(root)
+            _write_allowlist(root)
+
+            video = _make_video(title="Test clip")
+            fake_client = MagicMock()
+            fake_client.fetch_user_videos.return_value = [video]
+            mock_client_cls.from_env.return_value = fake_client
+
+            mp4_path = root / "downloaded.mp4"
+            mock_download.return_value = mp4_path
+            mock_post.return_value = {
+                "ok": True,
+                "message": "posted",
+                "data": {"action": "dry_run_video", "dry_run": True},
+            }
+
+            run_tiktok_pipeline(
+                category="tiktok",
+                config_path=accounts,
+                output_dir=root,
+                dry_run=True,
+                env=FAKE_ENV,
+            )
+
+            mock_post.assert_called_once()
+            _, kwargs = mock_post.call_args
+            self.assertEqual(kwargs["video_path"], mp4_path)
+            self.assertIn("Test clip", kwargs["tweet_text"])
+            self.assertTrue(kwargs["dry_run"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
