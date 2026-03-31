@@ -89,9 +89,6 @@ jobs:
                       [
                           f"- Target account: `{payload.get('target_username', '')}`",
                           f"- Requested follows: `{payload.get('requested_follow_count', 0)}`",
-                          f"- Followback candidates: `{payload.get('followback_candidates', 0)}`",
-                          f"- Followed back: `{payload.get('followed_back_count', 0)}`",
-                          f"- Followed back usernames: `{', '.join(payload.get('followed_back_usernames') or [])}`",
                           f"- New follow candidates: `{payload.get('new_follow_candidates', 0)}`",
                           f"- New follows: `{payload.get('followed_new_count', 0)}`",
                           f"- New follow usernames: `{', '.join(payload.get('followed_new_usernames') or [])}`",
