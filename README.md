@@ -265,6 +265,22 @@ python/.venv/bin/python python/bulk_delete.py --execute --yes
 
 補足: `post_buz.yml` の自動投稿スケジュールは投稿戦略見直しのため一時停止中です（2026-03-30〜）。手動実行（`workflow_dispatch`）は引き続き可能です。
 
+### TikTok owner 動画を X 投稿候補として dry-run する
+
+```bash
+TIKTOK_CLIENT_KEY=... \
+TIKTOK_CLIENT_SECRET=... \
+TIKTOK_REFRESH_TOKEN=... \
+python/.venv/bin/python scripts/lib/tiktok_pipeline.py \
+  --category tiktok \
+  --dry-run true
+```
+
+制約:
+- 対象は `config/tiktok_allowlist.yaml` にある **自社保有 TikTok アカウント** のみ
+- v1 では第三者動画の自動転載は扱いません
+- 実投稿時は既存の `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` を利用します
+
 ### auto like を手動確認する
 
 ```bash
@@ -348,6 +364,7 @@ PY
 ### 対象 workflow（スケジュール停止・手動実行のみ）
 
 - `.github/workflows/post_video.yml` — 動画付きツイート投稿（`workflow_dispatch` のみ、twikit + XClientTransaction 優先）
+- `.github/workflows/post_tiktok.yml` — TikTok owner 動画の取得・選定・X 投稿（schedule / workflow_dispatch、owner allowlist 限定）
 - `.github/workflows/morning_post.yml`
 - `.github/workflows/evening_post.yml`
 - `.github/workflows/update_tickers.yml`
