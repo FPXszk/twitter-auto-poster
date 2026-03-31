@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--twitter-bin", type=Path, default=DEFAULT_TWITTER_BIN)
     parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH)
     parser.add_argument("--summary-output", type=Path, default=DEFAULT_SUMMARY_OUTPUT)
-    parser.add_argument("--target-username", default="tkzwgrs")
+    parser.add_argument("--target-username", default="suzuka_saga")
     parser.add_argument("--followers-max", type=int, default=1000)
     parser.add_argument("--following-max", type=int, default=500)
     parser.add_argument("--recent-post-max", type=int, default=5)

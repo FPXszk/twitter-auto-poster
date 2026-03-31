@@ -19,6 +19,7 @@ from auto_follow import (
     has_japanese_signal,
     has_japanese_text,
     matches_stock_keyword,
+    parse_args,
     record_follow,
     record_skip,
 )
@@ -42,6 +43,12 @@ def build_user(
 
 
 class AutoFollowTests(unittest.TestCase):
+    def test_parse_args_uses_suzuka_saga_as_default_target(self) -> None:
+        with patch.object(sys, "argv", ["auto_follow.py"]):
+            args = parse_args()
+
+        self.assertEqual(args.target_username, "suzuka_saga")
+
     def test_has_japanese_text_detects_profile_language(self) -> None:
         self.assertTrue(has_japanese_text("日本株と投資"))
         self.assertFalse(has_japanese_text("US equities only"))
@@ -220,7 +227,7 @@ class FollowbackTests(unittest.TestCase):
             twitter_bin=Path("python/.venv/bin/twitter"),
             state_path=Path("config/follow_state.json"),
             summary_output=Path("tmp/auto_follow_summary.json"),
-            target_username="tkzwgrs",
+            target_username="suzuka_saga",
             followers_max=1000,
             following_max=500,
             recent_post_max=5,

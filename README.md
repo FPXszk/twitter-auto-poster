@@ -99,7 +99,7 @@
 - `post_buz.yml`
   - `buz` 用の定期実行（JST 08:00〜24:00、毎時）/ 手動実行
 - `auto_follow.yml`
-  - 日次の auto follow / auto unfollow（`@tkzwgrs` フォロワーから選定）
+  - 日次の auto follow / auto unfollow（`@suzuka_saga` フォロワーから選定）
 - `auto_like.yml`
   - 定期の auto like
 - `twitter_diagnostic.yml`
@@ -230,11 +230,11 @@ live 投稿に切り替える場合は `--dry-run false` を指定してくだ�
 ### auto follow を手動確認する
 
 ```bash
-python/.venv/bin/python python/auto_follow.py --target-username tkzwgrs
+python/.venv/bin/python python/auto_follow.py --target-username suzuka_saga
 python/.venv/bin/python python/auto_unfollow.py
 ```
 
-`auto_follow.py` は `@tkzwgrs` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。自分のフォロワーのうちフォロー返しが済んでいない相手を優先的にフォローバックし、残り枠を新規フォロー条件（認証済み・日本語・株関連）で埋めます。1 回あたりの合計フォロー件数は 10〜15 件です。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
+`auto_follow.py` は `@suzuka_saga` のフォロワーを最大 1000 人まで調べ、プロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。自分のフォロワーのうちフォロー返しが済んでいない相手を優先的にフォローバックし、残り枠を新規フォロー条件（認証済み・日本語・株関連）で埋めます。1 回あたりの合計フォロー件数は 10〜15 件です。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
 
 ### 既存投稿を一括削除する (bulk delete)
 
