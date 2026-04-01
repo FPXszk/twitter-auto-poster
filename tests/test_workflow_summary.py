@@ -474,6 +474,107 @@ class WorkflowSummaryTest(TestCase):
         result = workflow_summary.load_post_result_payload(None)
         self.assertIsNone(result)
 
+    def test_render_run_summary_shows_refusal_detection_warning(self) -> None:
+        """When summary_validation contains llm_refusal, summary must show a refusal warning."""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-04-01T10:00:00+09:00",
+            payload={
+                "requested_mode": "live",
+                "result_mode": "candidate_ready",
+                "selection_mode": "round_robin_account",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "post_candidates": [],
+                "selected_candidates": [{"id": "2038253848922574941"}],
+                "alerts": [
+                    {
+                        "level": "warning",
+                        "code": "summary_validation_failed",
+                        "message": "llm_refusal",
+                        "tweet_id": "2038253848922574941",
+                        "source_id": "pam99ham",
+                    },
+                ],
+                "diagnostics": {
+                    "summary_attempts": [
+                        {
+                            "tweet_id": "2038253848922574941",
+                            "ok": False,
+                            "error": "summary validation failed: llm_refusal",
+                            "stage": "evaluator",
+                        },
+                    ],
+                },
+            },
+        )
+        rendered = "\n".join(lines)
+        self.assertIn("llm_refusal", rendered)
+        self.assertIn("⚠️ LLM refusal", rendered)
+
+    def test_render_run_summary_shows_source_tweet_and_provider(self) -> None:
+        """Summary must surface source tweet URL, provider, and model."""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-04-01T10:00:00+09:00",
+            payload={
+                "requested_mode": "post",
+                "result_mode": "candidate_ready",
+                "selection_mode": "round_robin_account",
+                "payload_count": 1,
+                "collection": {"user": {}, "search": {}},
+                "selected": {
+                    "id": "2038253848922574941",
+                    "source_id": "pam99ham",
+                    "source_type": "search",
+                    "screen_name": "pam99ham",
+                    "score": 15,
+                    "likes": 10,
+                    "retweets": 5,
+                    "replies": 2,
+                    "views": 1000,
+                    "has_image": False,
+                    "media_classification_source": "default",
+                    "text": "元ツイート本文",
+                    "source_url": "https://x.com/pam99ham/status/2038253848922574941",
+                    "summary_generation": {
+                        "provider": "copilot_cli",
+                        "model": "gpt-5-mini",
+                    },
+                },
+                "post_text": "要約テキスト",
+                "source_url": "https://x.com/pam99ham/status/2038253848922574941",
+                "post_candidates": [{"id": "2038253848922574941"}],
+                "alerts": [],
+                "diagnostics": {},
+            },
+        )
+        rendered = "\n".join(lines)
+        self.assertIn("Source tweet:", rendered)
+        self.assertIn("https://x.com/pam99ham/status/2038253848922574941", rendered)
+        self.assertIn("copilot_cli", rendered)
+        self.assertIn("gpt-5-mini", rendered)
+
+    def test_render_run_summary_shows_hourly_guard_skip(self) -> None:
+        """When hourly_guard data is present, summary must show the skip reason."""
+        lines = workflow_summary.render_run_summary(
+            category="buz",
+            posting_window="true",
+            posting_window_jst="2026-04-01T10:00:00+09:00",
+            payload=None,
+            hourly_guard={
+                "allowed": False,
+                "reason": "already_posted_this_hour",
+                "jst_hour": "2026-04-01T10",
+                "last_posted_at": "2026-04-01T10:05:00+09:00",
+            },
+        )
+        rendered = "\n".join(lines)
+        self.assertIn("Hourly guard", rendered)
+        self.assertIn("already_posted_this_hour", rendered)
+
     def test_render_run_summary_skipped_outside_window_shows_new_window(self) -> None:
         """投稿時間帯外スキップ文言が 07:00-01:00 になること。"""
         lines = workflow_summary.render_run_summary(

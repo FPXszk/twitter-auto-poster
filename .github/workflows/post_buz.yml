@@ -9,7 +9,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
@@ -165,9 +165,82 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-post-buz-state-
 
-      - name: Fetch candidates and process mode
+      - name: Hourly post guard
+        id: hourly_guard
         if: steps.posting_window.outputs.should_run == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+          from hourly_post_guard import check_hourly_guard
+
+          category = os.environ["CATEGORY"]
+          dry_run = os.environ.get("DRY_RUN", "true").strip().lower() == "true"
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
+          state_path = Path("tmp/state") / f"hourly-{category}.json"
+          runs_dir = Path("tmp/runs")
+          runs_dir.mkdir(parents=True, exist_ok=True)
+
+          if dry_run:
+              result = {"allowed": True, "jst_hour": now.strftime("%Y-%m-%dT%H"), "dry_run": True}
+          else:
+              result = check_hourly_guard(state_path, now)
+
+          guard_path = runs_dir / f"hourly-guard-{category}.json"
+          guard_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"allowed={str(result['allowed']).lower()}\n")
+          PY
+        env:
+          DRY_RUN: ${{ steps.account_mode.outputs.dry_run }}
+
+      - name: Fetch candidates and process mode
+        if: steps.posting_window.outputs.should_run == 'true' && steps.hourly_guard.outputs.allowed == 'true'
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
+
+      - name: Record hourly post
+        if: steps.posting_window.outputs.should_run == 'true' && steps.hourly_guard.outputs.allowed == 'true' && steps.account_mode.outputs.dry_run != 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import os
+
+          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
+          from hourly_post_guard import record_hourly_post
+
+          category = os.environ["CATEGORY"]
+          runs_dir = Path("tmp/runs")
+
+          # Only record if an actual post was made (result_mode == "posted").
+          candidate_files = sorted(runs_dir.glob(f"candidate-{category}.*"))
+          candidate_files = [f for f in candidate_files if not f.name.endswith(".tmp")]
+          if not candidate_files:
+              print("No candidate file found; skipping hourly record.")
+              raise SystemExit(0)
+          try:
+              payload = json.loads(candidate_files[-1].read_text(encoding="utf-8"))
+              if str(payload.get("result_mode") or "") != "posted":
+                  print(f"result_mode={payload.get('result_mode')}; skipping hourly record.")
+                  raise SystemExit(0)
+          except (json.JSONDecodeError, OSError) as exc:
+              print(f"Cannot read candidate file: {exc}; skipping hourly record.")
+              raise SystemExit(0)
+
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
+          state_path = Path("tmp/state") / f"hourly-{category}.json"
+          record_hourly_post(state_path, now)
+          PY
 
       - name: Auto reply to incoming replies
         id: auto_reply
@@ -274,6 +347,14 @@ jobs:
               except Exception:
                   pass
 
+          hourly_guard = None
+          hourly_guard_path = Path("tmp/runs") / f"hourly-guard-{category}.json"
+          if hourly_guard_path.is_file():
+              try:
+                  hourly_guard = json.loads(hourly_guard_path.read_text(encoding="utf-8"))
+              except Exception:
+                  pass
+
           lines = render_run_summary(
               category=category,
               posting_window=posting_window,
@@ -281,6 +362,7 @@ jobs:
               payload=payload,
               candidate_error=candidate_error,
               reply_result=reply_result,
+              hourly_guard=hourly_guard,
           )
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

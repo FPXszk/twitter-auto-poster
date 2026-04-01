@@ -99,6 +99,24 @@ def _render_posted_tweet_info(post_result: Mapping[str, Any] | None) -> list[str
     return lines
 
 
+def _render_hourly_guard(guard: Mapping[str, Any]) -> list[str]:
+    """Render hourly post guard skip information."""
+    lines = ["", "### Hourly guard", ""]
+    reason = str(guard.get("reason") or "unknown")
+    jst_hour = str(guard.get("jst_hour") or "")
+    lines.append(f"- Guard result: `skipped`")
+    lines.append(f"- Reason: `{reason}`")
+    if jst_hour:
+        lines.append(f"- JST hour slot: `{jst_hour}`")
+    last_posted = str(guard.get("last_posted_at") or "")
+    if last_posted:
+        lines.append(f"- Last posted at: `{last_posted}`")
+    error = str(guard.get("error") or "")
+    if error:
+        lines.append(f"- Error: `{error}`")
+    return lines
+
+
 def _render_reply_summary(reply_result: Mapping[str, Any] | None) -> list[str]:
     if reply_result is None:
         return []
@@ -136,6 +154,7 @@ def render_run_summary(
     payload: Mapping[str, Any] | None,
     candidate_error: str | None = None,
     reply_result: Mapping[str, Any] | None = None,
+    hourly_guard: Mapping[str, Any] | None = None,
 ) -> list[str]:
     lines = [f"## {category} run summary", ""]
     lines.append(f"- Posting window allowed: `{posting_window}`")
@@ -143,6 +162,11 @@ def render_run_summary(
 
     if posting_window != "true":
         lines.extend(["", "- Skipped because current JST is outside the 07:00-01:00 hourly posting window."])
+        lines.extend(_render_reply_summary(reply_result))
+        return lines
+
+    if hourly_guard and not hourly_guard.get("allowed", True):
+        lines.extend(_render_hourly_guard(hourly_guard))
         lines.extend(_render_reply_summary(reply_result))
         return lines
 
@@ -231,6 +255,13 @@ def render_run_summary(
                     f"- Selected source ID: `{selected.get('source_id', 'unknown')}`",
                     f"- Selected source type: `{selected.get('source_type', 'unknown')}`",
                     f"- Selected tweet ID: `{selected.get('id', '')}`",
+                ]
+            )
+            source_url = str(selected.get("source_url") or "")
+            if source_url:
+                lines.append(f"- Source tweet: [{source_url}]({source_url})")
+            lines.extend(
+                [
                     f"- Author: `{author}`",
                     f"- Score: `{selected.get('score', 0)}`",
                     f"- Likes / Retweets / Replies / Views: `{selected.get('likes', 0)} / {selected.get('retweets', 0)} / {selected.get('replies', 0)} / {selected.get('views', 0)}`",
@@ -277,6 +308,9 @@ def render_run_summary(
             status = "ok" if item.get("ok") else "failed"
             detail = item.get("error") or item.get("provider") or ""
             lines.append(f"- `{item.get('tweet_id', '')}`: `{status}` {detail}".rstrip())
+        has_refusal = any("llm_refusal" in str(a.get("error") or "") for a in summary_attempts)
+        if has_refusal:
+            lines.extend(["", "⚠️ LLM refusal detected — summary contained safety/refusal boilerplate and was rejected."])
 
     skipped = payload.get("skipped_candidates") or []
     if skipped:
