@@ -91,3 +91,6 @@ python/cache/
 _pending/
 docs/working-memory/session-logs/*.md
 !docs/working-memory/session-logs/.gitkeep
+
+
+Falcon_script/
