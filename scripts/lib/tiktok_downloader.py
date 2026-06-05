@@ -21,6 +21,15 @@ post_video_spec.loader.exec_module(post_video_module)
 
 validate_video_path = post_video_module.validate_video_path
 
+NORMALIZER_PATH = Path(__file__).resolve().with_name("tiktok_video_normalizer.py")
+normalizer_spec = importlib.util.spec_from_file_location("repo_tiktok_video_normalizer_helper", NORMALIZER_PATH)
+if normalizer_spec is None or normalizer_spec.loader is None:
+    raise RuntimeError(f"failed to load video normalizer helper from {NORMALIZER_PATH}")
+normalizer_module = importlib.util.module_from_spec(normalizer_spec)
+normalizer_spec.loader.exec_module(normalizer_module)
+
+ensure_normalized_video = normalizer_module.ensure_normalized_video
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_TIKTOK_HOSTS = {"www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "tiktok.com"}
@@ -70,6 +79,29 @@ class TikTokDownloadJob:
     error_code: str = ""
     message: str = ""
     retryable: bool = False
+    source_path: str = ""
+    normalized_path: str = ""
+    source_ffprobe_json_path: str = ""
+    normalized_ffprobe_json_path: str = ""
+    normalize_log_path: str = ""
+    normalization_applied: bool = False
+    normalization_reason: str = ""
+    source_container: str = ""
+    source_video_codec: str = ""
+    source_audio_codec: str = ""
+    source_width: int = 0
+    source_height: int = 0
+    source_fps: float = 0.0
+    source_duration_seconds: float = 0.0
+    source_size_bytes: int = 0
+    normalized_container: str = ""
+    normalized_video_codec: str = ""
+    normalized_audio_codec: str = ""
+    normalized_width: int = 0
+    normalized_height: int = 0
+    normalized_fps: float = 0.0
+    normalized_duration_seconds: float = 0.0
+    normalized_size_bytes: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -387,6 +419,7 @@ def _build_result(
     stage: str = "",
     error_code: str = "",
     retryable: bool = False,
+    normalization_details: dict[str, Any] | None = None,
 ) -> TikTokDownloadJob:
     details = {
         "container": "",
@@ -400,6 +433,8 @@ def _build_result(
     }
     if output_path and output_path.exists():
         details = _ffprobe_details(output_path, ffprobe_json_path)
+
+    normalization = normalization_details or {}
 
     return TikTokDownloadJob(
         ok=ok,
@@ -430,39 +465,29 @@ def _build_result(
         error_code=error_code,
         message=message,
         retryable=retryable,
-    )
-
-
-def _load_existing_job(
-    *,
-    input_url: str,
-    metadata: dict[str, Any],
-    source_path: Path,
-    metadata_path: Path,
-    command_log_path: Path,
-    info_json_path: Path,
-    ffprobe_json_path: Path,
-    result_path: Path,
-    yt_dlp_version: str,
-) -> TikTokDownloadJob:
-    return _build_result(
-        ok=True,
-        input_url=input_url,
-        resolved_url=str(metadata.get("resolved_url") or input_url),
-        video_id=str(metadata.get("video_id") or _safe_id_from_url(input_url)),
-        uploader=str(metadata.get("uploader") or ""),
-        title=str(metadata.get("title") or ""),
-        output_path=validate_video_path(source_path),
-        metadata_path=metadata_path,
-        command_log_path=command_log_path,
-        info_json_path=info_json_path,
-        ffprobe_json_path=ffprobe_json_path,
-        result_path=result_path,
-        yt_dlp_version=yt_dlp_version,
-        download_strategy="reuse",
-        dry_run=False,
-        reused_existing=True,
-        message="reused existing TikTok source video",
+        source_path=str(normalization.get("source_path") or ""),
+        normalized_path=str(normalization.get("normalized_path") or ""),
+        source_ffprobe_json_path=str(normalization.get("source_ffprobe_json_path") or ""),
+        normalized_ffprobe_json_path=str(normalization.get("normalized_ffprobe_json_path") or ""),
+        normalize_log_path=str(normalization.get("normalize_log_path") or ""),
+        normalization_applied=bool(normalization.get("normalization_applied", False)),
+        normalization_reason=str(normalization.get("normalization_reason") or ""),
+        source_container=str(normalization.get("source_container") or ""),
+        source_video_codec=str(normalization.get("source_video_codec") or ""),
+        source_audio_codec=str(normalization.get("source_audio_codec") or ""),
+        source_width=int(normalization.get("source_width") or 0),
+        source_height=int(normalization.get("source_height") or 0),
+        source_fps=float(normalization.get("source_fps") or 0.0),
+        source_duration_seconds=float(normalization.get("source_duration_seconds") or 0.0),
+        source_size_bytes=int(normalization.get("source_size_bytes") or 0),
+        normalized_container=str(normalization.get("normalized_container") or ""),
+        normalized_video_codec=str(normalization.get("normalized_video_codec") or ""),
+        normalized_audio_codec=str(normalization.get("normalized_audio_codec") or ""),
+        normalized_width=int(normalization.get("normalized_width") or 0),
+        normalized_height=int(normalization.get("normalized_height") or 0),
+        normalized_fps=float(normalization.get("normalized_fps") or 0.0),
+        normalized_duration_seconds=float(normalization.get("normalized_duration_seconds") or 0.0),
+        normalized_size_bytes=int(normalization.get("normalized_size_bytes") or 0),
     )
 
 
@@ -523,6 +548,9 @@ def download_tiktok_video_job(
     command_log_path = job_dir / "download.log"
     info_json_path = job_dir / "source.info.json"
     ffprobe_json_path = job_dir / "ffprobe.json"
+    normalized_path = job_dir / "normalized.mp4"
+    normalized_ffprobe_json_path = job_dir / "normalized.ffprobe.json"
+    normalize_log_path = job_dir / "normalize.log"
     result_path = job_dir / "result.json"
     source_path = job_dir / "source.mp4"
 
@@ -536,16 +564,32 @@ def download_tiktok_video_job(
     _write_json(metadata_path, metadata)
 
     if source_path.exists() and not force and not dry_run:
-        job = _load_existing_job(
+        normalization_details = ensure_normalized_video(
+            source_path,
+            normalized_path,
+            source_ffprobe_json_path=ffprobe_json_path,
+            normalized_ffprobe_json_path=normalized_ffprobe_json_path,
+            log_path=normalize_log_path,
+        )
+        job = _build_result(
+            ok=True,
             input_url=resolved_input_url,
-            metadata=metadata,
-            source_path=source_path,
+            resolved_url=str(metadata.get("resolved_url") or input_url),
+            video_id=str(metadata.get("video_id") or _safe_id_from_url(input_url)),
+            uploader=str(metadata.get("uploader") or ""),
+            title=str(metadata.get("title") or ""),
+            output_path=validate_video_path(normalized_path),
             metadata_path=metadata_path,
             command_log_path=command_log_path,
             info_json_path=info_json_path,
-            ffprobe_json_path=ffprobe_json_path,
+            ffprobe_json_path=normalized_ffprobe_json_path,
             result_path=result_path,
             yt_dlp_version=yt_dlp_version,
+            download_strategy="reuse",
+            dry_run=False,
+            reused_existing=True,
+            message="reused existing TikTok source video",
+            normalization_details=normalization_details,
         )
         _write_json(result_path, job.to_dict())
         return job
@@ -620,11 +664,11 @@ def download_tiktok_video_job(
 
         selected_path = video_candidates[0] if video_candidates else media_candidates[0]
         if selected_path.suffix.lower() != ".mp4":
-            normalized_path = temp_dir / "source.mp4"
+            temp_normalized_path = temp_dir / "source.mp4"
             try:
                 selected_path = _normalize_to_mp4(
                     selected_path,
-                    normalized_path,
+                    temp_normalized_path,
                     log_path=command_log_path,
                 )
             except Exception as error:
@@ -641,6 +685,13 @@ def download_tiktok_video_job(
             _write_json(info_json_path, raw_info)
         _write_json(metadata_path, metadata)
         shutil.rmtree(temp_dir, ignore_errors=True)
+        normalization_details = ensure_normalized_video(
+            source_path,
+            normalized_path,
+            source_ffprobe_json_path=ffprobe_json_path,
+            normalized_ffprobe_json_path=normalized_ffprobe_json_path,
+            log_path=normalize_log_path,
+        )
 
         job = _build_result(
             ok=True,
@@ -649,17 +700,18 @@ def download_tiktok_video_job(
             video_id=str(metadata["video_id"]),
             uploader=str(metadata["uploader"]),
             title=str(metadata["title"]),
-            output_path=source_path.resolve(),
+            output_path=normalized_path.resolve(),
             metadata_path=metadata_path,
             command_log_path=command_log_path,
             info_json_path=info_json_path,
-            ffprobe_json_path=ffprobe_json_path,
+            ffprobe_json_path=normalized_ffprobe_json_path,
             result_path=result_path,
             yt_dlp_version=yt_dlp_version,
             download_strategy=f"strategy-{index}",
             dry_run=False,
             reused_existing=False,
             message="downloaded TikTok video",
+            normalization_details=normalization_details,
         )
         _write_json(result_path, job.to_dict())
         return job

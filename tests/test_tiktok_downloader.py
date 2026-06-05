@@ -121,17 +121,19 @@ class DownloadTikTokVideoJobTest(TestCase):
         return result
 
     @patch("tiktok_downloader._ffprobe_details")
+    @patch("tiktok_downloader.ensure_normalized_video")
     @patch("tiktok_downloader.validate_video_path")
     @patch("tiktok_downloader.subprocess.run")
     def test_job_writes_metadata_and_result(
         self,
         mock_run: MagicMock,
         mock_validate: MagicMock,
+        mock_normalize: MagicMock,
         mock_ffprobe: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_run.side_effect = self._dispatch_subprocess
-            expected = Path(tmpdir) / "video-123" / "source.mp4"
+            expected = Path(tmpdir) / "video-123" / "normalized.mp4"
             mock_validate.side_effect = lambda path, max_size_bytes=0: Path(path)
             mock_ffprobe.return_value = {
                 "container": "mp4",
@@ -143,6 +145,21 @@ class DownloadTikTokVideoJobTest(TestCase):
                 "duration_seconds": 12.3,
                 "size_bytes": 128,
             }
+            mock_normalize.return_value = {
+                "source_path": str(Path(tmpdir) / "video-123" / "source.mp4"),
+                "normalized_path": str(expected),
+                "source_ffprobe_json_path": str(Path(tmpdir) / "video-123" / "ffprobe.json"),
+                "normalized_ffprobe_json_path": str(Path(tmpdir) / "video-123" / "normalized.ffprobe.json"),
+                "normalize_log_path": str(Path(tmpdir) / "video-123" / "normalize.log"),
+                "normalized_container": "mp4",
+                "normalized_video_codec": "h264",
+                "normalized_audio_codec": "aac",
+                "normalized_width": 1080,
+                "normalized_height": 1920,
+                "normalized_fps": 30.0,
+                "normalized_duration_seconds": 12.3,
+                "normalized_size_bytes": 128,
+            }
 
             with patch("tiktok_downloader.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
                 result = download_tiktok_video_job(
@@ -152,6 +169,7 @@ class DownloadTikTokVideoJobTest(TestCase):
 
             self.assertTrue(result.ok)
             self.assertEqual(Path(result.output_path), expected)
+            self.assertEqual(Path(result.source_path), Path(tmpdir) / "video-123" / "source.mp4")
             self.assertTrue((Path(tmpdir) / "video-123" / "metadata.json").exists())
             self.assertTrue((Path(tmpdir) / "video-123" / "result.json").exists())
             self.assertEqual(result.download_strategy, "strategy-1")
@@ -199,12 +217,14 @@ class DownloadTikTokVideoJobTest(TestCase):
             self.assertEqual(result.download_strategy, "metadata-only")
 
     @patch("tiktok_downloader._ffprobe_details")
+    @patch("tiktok_downloader.ensure_normalized_video")
     @patch("tiktok_downloader.validate_video_path")
     @patch("tiktok_downloader.subprocess.run")
     def test_job_normalizes_webm_to_mp4(
         self,
         mock_run: MagicMock,
         mock_validate: MagicMock,
+        mock_normalize: MagicMock,
         mock_ffprobe: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -220,6 +240,21 @@ class DownloadTikTokVideoJobTest(TestCase):
                 "duration_seconds": 12.3,
                 "size_bytes": 128,
             }
+            mock_normalize.return_value = {
+                "source_path": str(Path(tmpdir) / "video-123" / "source.mp4"),
+                "normalized_path": str(Path(tmpdir) / "video-123" / "normalized.mp4"),
+                "source_ffprobe_json_path": str(Path(tmpdir) / "video-123" / "ffprobe.json"),
+                "normalized_ffprobe_json_path": str(Path(tmpdir) / "video-123" / "normalized.ffprobe.json"),
+                "normalize_log_path": str(Path(tmpdir) / "video-123" / "normalize.log"),
+                "normalized_container": "mp4",
+                "normalized_video_codec": "h264",
+                "normalized_audio_codec": "aac",
+                "normalized_width": 1080,
+                "normalized_height": 1920,
+                "normalized_fps": 30.0,
+                "normalized_duration_seconds": 12.3,
+                "normalized_size_bytes": 128,
+            }
 
             with patch("tiktok_downloader.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
                 result = download_tiktok_video_job(
@@ -229,16 +264,19 @@ class DownloadTikTokVideoJobTest(TestCase):
 
             self.assertTrue(result.ok)
             self.assertEqual(Path(result.output_path).suffix.lower(), ".mp4")
+            self.assertEqual(Path(result.output_path).name, "normalized.mp4")
             metadata = json.loads((Path(tmpdir) / "video-123" / "metadata.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["normalized_from_ext"], ".webm")
 
     @patch("tiktok_downloader._ffprobe_details")
+    @patch("tiktok_downloader.ensure_normalized_video")
     @patch("tiktok_downloader.validate_video_path")
     @patch("tiktok_downloader.subprocess.run")
     def test_job_reuses_existing_source_mp4(
         self,
         mock_run: MagicMock,
         mock_validate: MagicMock,
+        mock_normalize: MagicMock,
         mock_ffprobe: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -283,6 +321,21 @@ class DownloadTikTokVideoJobTest(TestCase):
                 "duration_seconds": 12.3,
                 "size_bytes": 2,
             }
+            mock_normalize.return_value = {
+                "source_path": str(job_dir / "source.mp4"),
+                "normalized_path": str(job_dir / "normalized.mp4"),
+                "source_ffprobe_json_path": str(job_dir / "ffprobe.json"),
+                "normalized_ffprobe_json_path": str(job_dir / "normalized.ffprobe.json"),
+                "normalize_log_path": str(job_dir / "normalize.log"),
+                "normalized_container": "mp4",
+                "normalized_video_codec": "h264",
+                "normalized_audio_codec": "aac",
+                "normalized_width": 1080,
+                "normalized_height": 1920,
+                "normalized_fps": 30.0,
+                "normalized_duration_seconds": 12.3,
+                "normalized_size_bytes": 2,
+            }
 
             with patch("tiktok_downloader.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
                 result = download_tiktok_video_job(
@@ -293,6 +346,7 @@ class DownloadTikTokVideoJobTest(TestCase):
             self.assertTrue(result.ok)
             self.assertTrue(result.reused_existing)
             self.assertEqual(result.download_strategy, "reuse")
+            self.assertEqual(Path(result.output_path), job_dir / "normalized.mp4")
 
     @patch("tiktok_downloader.subprocess.run")
     def test_job_masks_cookie_file_in_log(self, mock_run: MagicMock) -> None:
