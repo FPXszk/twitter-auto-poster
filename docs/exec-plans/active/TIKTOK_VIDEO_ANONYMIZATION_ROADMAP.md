@@ -108,7 +108,7 @@ Initial stamp scale candidate: 1.6
 | 3 | Face Detection | Completed | User reviewed and approved |
 | 4 | Face Tracking | Completed | Implementation and live validation completed |
 | 5 | Face Stamp Composition | Completed | User reviewed current sample video and approved |
-| 6 | Final Media Quality Validation | In progress | Core technical and coverage checks exist inside overlay flow; standalone phase remains |
+| 6 | Final Media Quality Validation | Completed | Standalone validator added and sample artifact validated |
 | 7 | iCloud Drive Export | Planned | Destination confirmed |
 | 8 | GitHub Actions Integration | Planned | Not reviewed |
 | 9 | State Management, Deduplication, and Retry | Planned | Not reviewed |
@@ -512,6 +512,10 @@ validation.log
 - Face coverage checks pass for every required tracked frame.
 - Output is not exported when any blocking check fails.
 - Failure reason is clear and actionable.
+
+## Status
+
+Completed. A standalone validation step now writes `validation_result.json` and `validation.log`, and the current sample variant passed technical validation, decode validation, and face coverage validation.
 
 ---
 
