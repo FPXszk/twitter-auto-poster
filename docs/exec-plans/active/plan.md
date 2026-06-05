@@ -1,5 +1,13 @@
 # TikTok動画取得・匿名化・自動投稿 実装計画
 
+## 現在地メモ 2026-06-05
+
+- `Phase 0` は実施済み。`tmp/tiktok-debug/environment.txt`、`tmp/tiktok-debug/baseline-test.txt`、`tmp/tiktok-debug/current-flow.md` が作成され、既存のTikTok処理フローと依存状況の確認までは完了している。
+- `Phase 1` は実質完了に近い。`scripts/tiktok/download_video.py` による `dry-run` と実ダウンロードの確認が済み、`source.mp4`、`metadata.json`、`ffprobe.json`、`result.json` などの取得成果物も確認できている。
+- ただし `Phase 1` の中で見つかった「取得できても再生互換性が十分でない」という課題があり、これを解消する追加計画として `TikTok_H264自動変換_実装計画.md` が派生している。
+- `Phase 2` は部分着手。`ffprobe` による形式確認までは進んだが、元プランで想定していた「後続処理が常に互換性の高い動画を使える状態」にはまだ到達していない。
+- `Phase 3` 以降の顔検出、顔スタンプ、投稿文生成、TikTok投稿API、状態管理は未着手。
+
 ## 0. この計画の目的
 
 本計画は、`FPXszk/twitter-auto-poster` に以下の処理を段階的に追加し、最終的にTikTok動画の自動投稿が実現可能かを検証するためのものとする。
