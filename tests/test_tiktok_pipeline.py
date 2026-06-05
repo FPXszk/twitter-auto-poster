@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import unittest
+from datetime import datetime, timedelta, timezone
 
 import yaml
 
@@ -97,14 +98,15 @@ def _make_video(
     retweets: int = 50,
     replies: int = 30,
 ) -> dict:
+    created_at = datetime.now(timezone.utc) - timedelta(hours=1)
     return {
         "id": video_id,
         "video_id": video_id,
         "title": title,
         "description": description,
         "text": title,
-        "created_at": "2026-03-31T00:00:00+00:00",
-        "create_time": 1743379200,
+        "created_at": created_at.isoformat(),
+        "create_time": int(created_at.timestamp()),
         "share_url": f"https://www.tiktok.com/@u/video/{video_id}",
         "video_page_url": f"https://www.tiktok.com/@u/video/{video_id}",
         "metrics": {
