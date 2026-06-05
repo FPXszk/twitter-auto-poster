@@ -177,7 +177,9 @@ class DownloadTikTokVideoJobTest(TestCase):
     @patch("tiktok_downloader.subprocess.run")
     def test_job_rejects_missing_ytdlp(self, mock_run: MagicMock) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("tiktok_downloader.shutil.which", return_value=None):
+            with patch("tiktok_downloader.shutil.which", return_value=None), patch(
+                "tiktok_downloader.importlib_util.find_spec", return_value=None
+            ):
                 with self.assertRaises(RuntimeError) as ctx:
                     download_tiktok_video_job(
                         "https://www.tiktok.com/@user/video/123",

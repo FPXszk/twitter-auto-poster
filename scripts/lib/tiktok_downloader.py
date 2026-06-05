@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import importlib.util as importlib_util
 import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -184,9 +186,18 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _yt_dlp_version(ytdlp_bin: str) -> str:
+def _yt_dlp_command() -> list[str]:
+    ytdlp_bin = shutil.which("yt-dlp")
+    if ytdlp_bin:
+        return [ytdlp_bin]
+    if importlib_util.find_spec("yt_dlp") is not None:
+        return [sys.executable, "-m", "yt_dlp"]
+    raise RuntimeError("yt-dlp is required for TikTok downloads")
+
+
+def _yt_dlp_version(ytdlp_command: list[str]) -> str:
     result = subprocess.run(
-        [ytdlp_bin, "--version"],
+        [*ytdlp_command, "--version"],
         capture_output=True,
         text=True,
         check=False,
@@ -503,11 +514,8 @@ def download_tiktok_video_job(
 ) -> TikTokDownloadJob:
     resolved_input_url = validate_tiktok_url(video_url)
 
-    ytdlp_bin = shutil.which("yt-dlp")
-    if not ytdlp_bin:
-        raise RuntimeError("yt-dlp is required for TikTok downloads")
-
-    yt_dlp_version = _yt_dlp_version(ytdlp_bin)
+    ytdlp_command = _yt_dlp_command()
+    yt_dlp_version = _yt_dlp_version(ytdlp_command)
     cookie_args, secrets = _build_cookie_args(
         cookies_from_browser=cookies_from_browser,
         cookies_file=cookies_file,
@@ -519,7 +527,7 @@ def download_tiktok_video_job(
     preflight_log_path = temp_root / "preflight.log"
 
     info_command = [
-        ytdlp_bin,
+        *ytdlp_command,
         "--no-progress",
         "--no-playlist",
         "--dump-single-json",
@@ -622,7 +630,7 @@ def download_tiktok_video_job(
         temp_dir = Path(tempfile.mkdtemp(prefix=f"tiktok-download-{index}-", dir=job_dir))
         output_template = str(temp_dir / "source.%(ext)s")
         command = [
-            ytdlp_bin,
+            *ytdlp_command,
             "--no-progress",
             "--no-playlist",
             "--force-overwrites",
