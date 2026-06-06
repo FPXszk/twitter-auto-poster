@@ -1,0 +1,88 @@
+name: TikTok anonymization
+
+on:
+  workflow_dispatch:
+    inputs:
+      tiktok_url:
+        description: TikTok video URL
+        required: true
+        type: string
+      force:
+        description: Reprocess an existing video
+        required: true
+        default: false
+        type: boolean
+      stamp_type:
+        description: Stamp asset identifier
+        required: true
+        default: default
+        type: string
+      stamp_scale:
+        description: Face stamp scale
+        required: true
+        default: "1.6"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tiktok-anonymization
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on:
+      - self-hosted
+      - windows-wsl
+      - tiktok-video
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve WSL paths
+        shell: pwsh
+        env:
+          RAW_EXPORT_DIR: ${{ vars.TIKTOK_EXPORT_DIR }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RAW_EXPORT_DIR)) {
+            throw "Repository variable TIKTOK_EXPORT_DIR is required."
+          }
+          $workspace = wsl wslpath -a "${env:GITHUB_WORKSPACE}"
+          $exportDir = wsl wslpath -a "${env:RAW_EXPORT_DIR}"
+          "WSL_WORKSPACE=$workspace" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WSL_TIKTOK_EXPORT_DIR=$exportDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare Python runtime
+        shell: pwsh
+        run: |
+          wsl bash -lc "cd '$env:WSL_WORKSPACE' && python3 -m venv python/.venv && python/.venv/bin/pip install --upgrade pip && python/.venv/bin/pip install pyyaml pillow numpy yt-dlp opencv-python-headless"
+
+      - name: Run TikTok anonymization pipeline
+        shell: pwsh
+        env:
+          INPUT_URL: ${{ inputs.tiktok_url }}
+          INPUT_FORCE: ${{ inputs.force }}
+          INPUT_STAMP_TYPE: ${{ inputs.stamp_type }}
+          INPUT_STAMP_SCALE: ${{ inputs.stamp_scale }}
+        run: |
+          $forceFlag = ""
+          if ("$env:INPUT_FORCE" -eq "true") {
+            $forceFlag = "--force"
+          }
+          wsl bash -lc "cd '$env:WSL_WORKSPACE' && export TIKTOK_EXPORT_DIR='$env:WSL_TIKTOK_EXPORT_DIR' && python/.venv/bin/python scripts/tiktok/run_anonymization_pipeline.py --url '$env:INPUT_URL' --output-root tmp/tiktok-pipeline --stamp-type '$env:INPUT_STAMP_TYPE' --stamp-scale '$env:INPUT_STAMP_SCALE' $forceFlag --log-level INFO"
+
+      - name: Write GitHub Actions summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summaryPath = wsl wslpath -a "${env:GITHUB_STEP_SUMMARY}"
+          wsl bash -lc "cd '$env:WSL_WORKSPACE' && if [ -f tmp/tiktok-pipeline/latest-result.json ]; then python/.venv/bin/python scripts/tiktok/write_actions_summary.py --result-json tmp/tiktok-pipeline/latest-result.json --summary-path '$summaryPath'; else printf '## TikTok anonymization run\n\n- Result: \`error\`\n- Failure reason: \`result file missing\`\n' > '$summaryPath'; fi"
+
+      - name: Upload TikTok pipeline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-anonymization
+          path: |
+            tmp/tiktok-pipeline/
+          if-no-files-found: ignore

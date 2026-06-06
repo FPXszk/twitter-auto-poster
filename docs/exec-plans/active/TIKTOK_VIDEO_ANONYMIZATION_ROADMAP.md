@@ -109,11 +109,11 @@ Initial stamp scale candidate: 1.6
 | 4 | Face Tracking | Completed | Implementation and live validation completed |
 | 5 | Face Stamp Composition | Completed | User reviewed current sample video and approved |
 | 6 | Final Media Quality Validation | Completed | Standalone validator added and sample artifact validated |
-| 7 | iCloud Drive Export | Planned | Destination confirmed |
-| 8 | GitHub Actions Integration | Planned | Not reviewed |
-| 9 | State Management, Deduplication, and Retry | Planned | Not reviewed |
-| 10 | Self-hosted Runner Operations | Planned | Not reviewed |
-| 11 | iPhone Manual Publishing Runbook | Planned | Publishing method confirmed |
+| 7 | iCloud Drive Export | Completed | Implemented with validated export helper and live destination confirmed |
+| 8 | GitHub Actions Integration | Completed | workflow_dispatch workflow added for the self-hosted Windows/WSL runner |
+| 9 | State Management, Deduplication, and Retry | Completed | State file, lock file, skip logic, and bounded retry added |
+| 10 | Self-hosted Runner Operations | Completed | Operations runbook added for startup, health checks, and recovery |
+| 11 | iPhone Manual Publishing Runbook | Completed | Runbook documented with mandatory human checks |
 
 ## 6. Global Engineering Rules
 
@@ -572,6 +572,10 @@ TikTokReady/
 - Re-running without `force` does not unexpectedly overwrite an existing export.
 - Export failures leave no apparently complete partial video.
 
+## Status
+
+Completed. Export now requires a successful `validation_result.json`, copies through a temporary file, verifies SHA-256, writes a manual-post package, and avoids accidental overwrite unless `force=true`.
+
 ---
 
 # Phase 8 — GitHub Actions Integration
@@ -654,6 +658,10 @@ Failure category and reason, when applicable
 - Failure artifacts are available for diagnosis.
 - The workflow does not perform TikTok upload or publishing.
 
+## Status
+
+Completed. A dedicated `workflow_dispatch` workflow now runs the supported CLI entry point on the labeled self-hosted Windows/WSL runner, writes a GitHub Actions Summary, and uploads pipeline diagnostics.
+
 ---
 
 # Phase 9 — State Management, Deduplication, and Retry
@@ -710,6 +718,10 @@ FAILED
 - Retry behavior is bounded and phase-aware.
 - Concurrent duplicate runs are prevented.
 
+## Status
+
+Completed. The pipeline now persists per-video state, records attempts and failures, skips already exported videos unless forced, uses a lock file to block duplicate concurrent processing, and retries transient filesystem/export failures within a bounded count.
+
 ---
 
 # Phase 10 — Self-hosted Runner Operations
@@ -740,6 +752,10 @@ Keep the Windows, WSL, runner, and iCloud synchronization environment reliable e
 - Low disk space blocks new processing before corruption occurs.
 - Logs do not grow without limit.
 - iCloud export remains available after restart.
+
+## Status
+
+Completed. Operational recovery, health checks, and environment expectations are documented in `docs/runbooks/tiktok_anonymization_operations.md` for the Windows host, WSL runtime, runner availability, and iCloud export path.
 
 ---
 
@@ -793,6 +809,10 @@ Press Publish
 - The human can review the full video before publishing.
 - No automated step presses the TikTok publish button.
 - The procedure is understandable without repository knowledge.
+
+## Status
+
+Completed. The iPhone-side manual publishing procedure and mandatory human review checks are now documented in the operations runbook.
 
 ---
 
