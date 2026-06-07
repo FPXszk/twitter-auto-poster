@@ -17,6 +17,7 @@ cookies.json
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # エディタ
 .vscode/

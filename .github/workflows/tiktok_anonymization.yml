@@ -36,26 +36,51 @@ jobs:
       - self-hosted
       - windows-wsl
       - tiktok-video
+    env:
+      RAW_EXPORT_DIR: ${{ vars.TIKTOK_EXPORT_DIR }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve WSL paths
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate export directory
         shell: pwsh
-        env:
-          RAW_EXPORT_DIR: ${{ vars.TIKTOK_EXPORT_DIR }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RAW_EXPORT_DIR)) {
             throw "Repository variable TIKTOK_EXPORT_DIR is required."
           }
-          $workspace = wsl wslpath -a "${env:GITHUB_WORKSPACE}"
-          $exportDir = wsl wslpath -a "${env:RAW_EXPORT_DIR}"
-          "WSL_WORKSPACE=$workspace" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WSL_TIKTOK_EXPORT_DIR=$exportDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (-not (Test-Path $env:RAW_EXPORT_DIR)) {
+            New-Item -ItemType Directory -Force -Path $env:RAW_EXPORT_DIR | Out-Null
+          }
+
+      - name: Prepare ffmpeg
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if ($ffmpeg) {
+            "FFMPEG_BIN=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            exit 0
+          }
+          $zipPath = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+          $ffmpegExe = Get-ChildItem -Path $extractDir -Recurse -Filter ffmpeg.exe | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ffmpegExe) {
+            throw "ffmpeg.exe was not found after archive extraction."
+          }
+          $ffmpegDir = Split-Path -Parent $ffmpegExe
+          "FFMPEG_BIN=$ffmpegExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$ffmpegDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Prepare Python runtime
         shell: pwsh
         run: |
-          wsl bash -lc "cd '$env:WSL_WORKSPACE' && python3 -m venv python/.venv && python/.venv/bin/pip install --upgrade pip && python/.venv/bin/pip install pyyaml pillow numpy yt-dlp opencv-python-headless"
+          python -m venv python\.venv
+          python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          python\.venv\Scripts\python.exe -m pip install pyyaml pillow numpy yt-dlp opencv-python-headless
 
       - name: Run TikTok anonymization pipeline
         shell: pwsh
@@ -69,14 +94,22 @@ jobs:
           if ("$env:INPUT_FORCE" -eq "true") {
             $forceFlag = "--force"
           }
-          wsl bash -lc "cd '$env:WSL_WORKSPACE' && export TIKTOK_EXPORT_DIR='$env:WSL_TIKTOK_EXPORT_DIR' && python/.venv/bin/python scripts/tiktok/run_anonymization_pipeline.py --url '$env:INPUT_URL' --output-root tmp/tiktok-pipeline --stamp-type '$env:INPUT_STAMP_TYPE' --stamp-scale '$env:INPUT_STAMP_SCALE' $forceFlag --log-level INFO"
+          python\.venv\Scripts\python.exe scripts/tiktok/run_anonymization_pipeline.py --url "$env:INPUT_URL" --output-root tmp/tiktok-pipeline --export-dir "$env:RAW_EXPORT_DIR" --stamp-type "$env:INPUT_STAMP_TYPE" --stamp-scale "$env:INPUT_STAMP_SCALE" $forceFlag --log-level INFO
 
       - name: Write GitHub Actions summary
         if: always()
         shell: pwsh
         run: |
-          $summaryPath = wsl wslpath -a "${env:GITHUB_STEP_SUMMARY}"
-          wsl bash -lc "cd '$env:WSL_WORKSPACE' && if [ -f tmp/tiktok-pipeline/latest-result.json ]; then python/.venv/bin/python scripts/tiktok/write_actions_summary.py --result-json tmp/tiktok-pipeline/latest-result.json --summary-path '$summaryPath'; else printf '## TikTok anonymization run\n\n- Result: \`error\`\n- Failure reason: \`result file missing\`\n' > '$summaryPath'; fi"
+          if (Test-Path "tmp/tiktok-pipeline/latest-result.json") {
+            python\.venv\Scripts\python.exe scripts/tiktok/write_actions_summary.py --result-json "tmp/tiktok-pipeline/latest-result.json" --summary-path "$env:GITHUB_STEP_SUMMARY"
+          } else {
+            @(
+              "## TikTok anonymization run"
+              ""
+              "- Result: `error`"
+              "- Failure reason: `result file missing`"
+            ) | Set-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          }
 
       - name: Upload TikTok pipeline artifacts
         if: always()
