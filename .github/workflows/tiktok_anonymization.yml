@@ -41,10 +41,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Validate export directory
         shell: pwsh
         run: |
@@ -54,6 +50,19 @@ jobs:
           if (-not (Test-Path $env:RAW_EXPORT_DIR)) {
             New-Item -ItemType Directory -Force -Path $env:RAW_EXPORT_DIR | Out-Null
           }
+
+      - name: Resolve Python bootstrap
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Users\szk\miniconda3\python.exe",
+            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe"
+          )
+          $pythonExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $pythonExe) {
+            throw "No usable Python bootstrap interpreter was found on the runner."
+          }
+          "PYTHON_BOOTSTRAP=$pythonExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Prepare ffmpeg
         shell: pwsh
@@ -78,7 +87,7 @@ jobs:
       - name: Prepare Python runtime
         shell: pwsh
         run: |
-          python -m venv python\.venv
+          & "$env:PYTHON_BOOTSTRAP" -m venv python\.venv
           python\.venv\Scripts\python.exe -m pip install --upgrade pip
           python\.venv\Scripts\python.exe -m pip install pyyaml pillow numpy yt-dlp opencv-python-headless
 
@@ -104,10 +113,10 @@ jobs:
             python\.venv\Scripts\python.exe scripts/tiktok/write_actions_summary.py --result-json "tmp/tiktok-pipeline/latest-result.json" --summary-path "$env:GITHUB_STEP_SUMMARY"
           } else {
             @(
-              "## TikTok anonymization run"
-              ""
-              "- Result: `error`"
-              "- Failure reason: `result file missing`"
+              '## TikTok anonymization run'
+              ''
+              '- Result: `error`'
+              '- Failure reason: `result file missing`'
             ) | Set-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
           }
 
