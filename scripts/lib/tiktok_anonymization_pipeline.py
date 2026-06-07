@@ -16,6 +16,8 @@ from tiktok_face_detector import detect_faces_in_video
 from tiktok_face_overlay import overlay_faces_on_video
 from tiktok_face_tracker import track_faces_in_detections
 from tiktok_final_validator import validate_final_video
+from tiktok_reference_audio import extract_reference_audio_from_tiktok
+from tiktok_similarity_variant import generate_similarity_variant
 from tiktok_processing_state import (
     begin_attempt,
     create_initial_state,
@@ -29,6 +31,13 @@ from tiktok_processing_state import (
 )
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_VARIANT_BRIGHTNESS = -0.12
+_DEFAULT_VARIANT_CONTRAST = 0.95
+_DEFAULT_VARIANT_SATURATION = 0.92
+_DEFAULT_VARIANT_SPEED = 0.8
+_DEFAULT_VARIANT_MOSAIC_BOTTOM_RATIO = 0.35
+_DEFAULT_VARIANT_MOSAIC_BLOCK_SIZE = 24
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -65,6 +74,9 @@ def _result_payload(
     track_count: int = 0,
     validation_ok: bool = False,
     export_payload: dict[str, Any] | None = None,
+    similarity_variant_applied: bool = False,
+    used_external_reference_audio: bool = False,
+    reference_audio_url: str = "",
 ) -> dict[str, Any]:
     payload = {
         "ok": ok,
@@ -77,6 +89,9 @@ def _result_payload(
         "detected_face_count": int(detected_face_count),
         "track_count": int(track_count),
         "validation_ok": bool(validation_ok),
+        "similarity_variant_applied": bool(similarity_variant_applied),
+        "used_external_reference_audio": bool(used_external_reference_audio),
+        "reference_audio_url": str(reference_audio_url or ""),
         "failure": dict(failure or {}),
         "result_path": str(job_dir / "result.json"),
         "output_filename": "ready_to_post.mp4" if export_payload else "",
@@ -120,6 +135,14 @@ def run_tiktok_anonymization_pipeline(
     tiktok_url: str,
     output_root: str | Path,
     export_dir: str | Path | None = None,
+    reference_audio_url: str = "",
+    apply_similarity_variant: bool = True,
+    variant_speed: float = _DEFAULT_VARIANT_SPEED,
+    variant_brightness: float = _DEFAULT_VARIANT_BRIGHTNESS,
+    variant_contrast: float = _DEFAULT_VARIANT_CONTRAST,
+    variant_saturation: float = _DEFAULT_VARIANT_SATURATION,
+    variant_mosaic_bottom_ratio: float = _DEFAULT_VARIANT_MOSAIC_BOTTOM_RATIO,
+    variant_mosaic_block_size: int = _DEFAULT_VARIANT_MOSAIC_BLOCK_SIZE,
     stamp_type: str = "default",
     stamp_scale: float = 1.6,
     force: bool = False,
@@ -137,6 +160,7 @@ def run_tiktok_anonymization_pipeline(
     if not raw_export_dir:
         raise RuntimeError("export_dir or TIKTOK_EXPORT_DIR is required")
     export_root = Path(raw_export_dir).expanduser()
+    normalized_reference_audio_url = str(reference_audio_url or "").strip()
 
     stamp_path = _resolve_stamp_asset(stamp_type)
 
@@ -173,6 +197,14 @@ def run_tiktok_anonymization_pipeline(
                 config={
                     "stamp_type": stamp_type,
                     "stamp_scale": float(stamp_scale),
+                    "apply_similarity_variant": bool(apply_similarity_variant),
+                    "reference_audio_url": normalized_reference_audio_url,
+                    "variant_speed": float(variant_speed),
+                    "variant_brightness": float(variant_brightness),
+                    "variant_contrast": float(variant_contrast),
+                    "variant_saturation": float(variant_saturation),
+                    "variant_mosaic_bottom_ratio": float(variant_mosaic_bottom_ratio),
+                    "variant_mosaic_block_size": int(variant_mosaic_block_size),
                     "max_retries": int(max_retries),
                     "detector_min_confidence": float(detector_min_confidence),
                     "preview_interval": int(preview_interval),
@@ -189,6 +221,9 @@ def run_tiktok_anonymization_pipeline(
                 processing_seconds=time.perf_counter() - started_at,
                 validation_ok=True,
                 export_payload=state.get("export") or {},
+                similarity_variant_applied=bool(state.get("artifacts", {}).get("variant_video_path")),
+                used_external_reference_audio=bool(state.get("artifacts", {}).get("reference_audio_path")),
+                reference_audio_url=normalized_reference_audio_url,
             )
             _write_json(job_dir / "result.json", result)
             _write_json(latest_result, result)
@@ -216,6 +251,51 @@ def run_tiktok_anonymization_pipeline(
         save_processing_state(state_path, state)
 
         try:
+            reference_video_path = normalized_path
+            detection_input_path = normalized_path
+            used_external_reference_audio = False
+            if apply_similarity_variant:
+                variant_dir = job_dir / "variant"
+                variant_video_path = variant_dir / "variant.mp4"
+                reference_audio_path = None
+                if normalized_reference_audio_url:
+                    reference_audio_job = extract_reference_audio_from_tiktok(
+                        normalized_reference_audio_url,
+                        downloads_root / "reference-audio",
+                        force=force,
+                    )
+                    reference_audio_path = Path(reference_audio_job.audio_path)
+                    used_external_reference_audio = True
+                variant_summary_path = variant_dir / "variant-summary.json"
+                if variant_summary_path.exists() and variant_video_path.exists() and not force:
+                    _read_json(variant_summary_path)
+                else:
+                    generate_similarity_variant(
+                        normalized_path,
+                        variant_video_path,
+                        speed=variant_speed,
+                        brightness=variant_brightness,
+                        contrast=variant_contrast,
+                        saturation=variant_saturation,
+                        mosaic_bottom_ratio=variant_mosaic_bottom_ratio,
+                        mosaic_block_size=variant_mosaic_block_size,
+                        audio_input=reference_audio_path,
+                        force=force,
+                    )
+                reference_video_path = variant_video_path
+                detection_input_path = variant_video_path
+                transition_state(
+                    state,
+                    "VARIANT_GENERATED",
+                    message="similarity variant generated",
+                    artifacts={
+                        "variant_video_path": str(variant_video_path),
+                        "variant_summary_path": str(variant_summary_path),
+                        "reference_audio_path": str(reference_audio_path or ""),
+                    },
+                )
+                save_processing_state(state_path, state)
+
             detection_dir = job_dir / "faces"
             detections_path = detection_dir / "detections.json"
             detection_summary_path = detection_dir / "summary.json"
@@ -223,7 +303,7 @@ def run_tiktok_anonymization_pipeline(
                 detection_summary = _read_json(detection_summary_path)
             else:
                 detection_summary = detect_faces_in_video(
-                    normalized_path,
+                    detection_input_path,
                     detection_dir,
                     min_confidence=detector_min_confidence,
                     preview_interval=preview_interval,
@@ -271,7 +351,7 @@ def run_tiktok_anonymization_pipeline(
                 overlay_summary = _read_json(overlay_summary_path)
             else:
                 overlay_summary = overlay_faces_on_video(
-                    normalized_path,
+                    detection_input_path,
                     tracked_path,
                     stamp_path,
                     candidate_video_path,
@@ -296,7 +376,7 @@ def run_tiktok_anonymization_pipeline(
                 validation_payload = _read_json(validation_result_path)
             else:
                 validation_payload = validate_final_video(
-                    normalized_path,
+                    reference_video_path,
                     candidate_video_path,
                     coverage_report_path=coverage_report_path,
                     overlay_summary_path=overlay_summary_path,
@@ -353,6 +433,9 @@ def run_tiktok_anonymization_pipeline(
                 state_path=state_path,
                 processing_seconds=time.perf_counter() - started_at,
                 failure=state.get("failure") or {},
+                similarity_variant_applied=bool(state.get("artifacts", {}).get("variant_video_path")),
+                used_external_reference_audio=bool(state.get("artifacts", {}).get("reference_audio_path")),
+                reference_audio_url=normalized_reference_audio_url,
             )
             _write_json(job_dir / "result.json", result)
             _write_json(latest_result, result)
@@ -370,6 +453,9 @@ def run_tiktok_anonymization_pipeline(
             track_count=int(tracking_summary.get("track_count") or 0),
             validation_ok=bool(validation_payload.get("ok")),
             export_payload=export_payload,
+            similarity_variant_applied=apply_similarity_variant,
+            used_external_reference_audio=used_external_reference_audio,
+            reference_audio_url=normalized_reference_audio_url,
         )
         _write_json(job_dir / "result.json", result)
         _write_json(latest_result, result)

@@ -21,6 +21,8 @@ def render_actions_summary(payload: Mapping[str, Any]) -> list[str]:
     lines.append(f"- Detected face count: `{payload.get('detected_face_count', 0)}`")
     lines.append(f"- Track count: `{payload.get('track_count', 0)}`")
     lines.append(f"- Validation result: `{payload.get('validation_ok', False)}`")
+    lines.append(f"- Similarity variant applied: `{payload.get('similarity_variant_applied', False)}`")
+    lines.append(f"- External reference audio used: `{payload.get('used_external_reference_audio', False)}`")
     lines.append(f"- Cloud export destination: `{payload.get('export_dir_name', '')}`")
     lines.append(f"- Output filename: `{payload.get('output_filename', '')}`")
     lines.append(f"- Processing duration: `{payload.get('processing_seconds', 0)}`")

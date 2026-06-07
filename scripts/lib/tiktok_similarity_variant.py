@@ -112,6 +112,10 @@ def _build_filter_complex(config: SimilarityVariantConfig) -> str:
     )
 
 
+def _audio_needs_retime(*, has_source_audio: bool, external_audio_path: Path | None) -> bool:
+    return external_audio_path is not None or has_source_audio
+
+
 def generate_similarity_variant(
     input_path: str | Path,
     output_path: str | Path,
@@ -200,7 +204,7 @@ def generate_similarity_variant(
         command.extend(["-map", "1:a:0"])
     else:
         command.extend(["-map", "0:a?"])
-    if external_audio_path is None and has_source_audio:
+    if _audio_needs_retime(has_source_audio=has_source_audio, external_audio_path=external_audio_path):
         command.extend(["-filter:a", f"atempo={config.speed:.6f}"])
     command.extend(
         [

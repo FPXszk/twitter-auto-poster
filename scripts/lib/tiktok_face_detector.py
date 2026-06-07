@@ -73,6 +73,64 @@ def _sort_faces(faces: list[dict[str, float]]) -> list[dict[str, float]]:
     return sorted(faces, key=lambda item: (item["x"], item["y"], item["width"], item["height"]))
 
 
+def _area(face: Mapping[str, float]) -> float:
+    return max(0.0, float(face["width"]) * float(face["height"]))
+
+
+def _center(face: Mapping[str, float]) -> tuple[float, float]:
+    return (float(face["x"]) + float(face["width"]) / 2.0, float(face["y"]) + float(face["height"]) / 2.0)
+
+
+def _distance_to_frame_center(face: Mapping[str, float]) -> float:
+    center_x, center_y = _center(face)
+    return ((center_x - 0.5) ** 2 + (center_y - 0.5) ** 2) ** 0.5
+
+
+def _aspect_ratio(face: Mapping[str, float]) -> float:
+    height = max(float(face["height"]), 1e-9)
+    return float(face["width"]) / height
+
+
+def _looks_like_false_positive(
+    face: Mapping[str, float],
+    *,
+    primary_face: Mapping[str, float] | None,
+) -> bool:
+    area = _area(face)
+    confidence = float(face["confidence"])
+    aspect_ratio = _aspect_ratio(face)
+    _center_x, center_y = _center(face)
+    distance_to_center = _distance_to_frame_center(face)
+
+    if area < 0.0025:
+        return True
+    if aspect_ratio < 0.55 or aspect_ratio > 1.35:
+        return True
+    if primary_face is None or face is primary_face:
+        return False
+
+    primary_area = max(_area(primary_face), 1e-9)
+    area_ratio = area / primary_area
+    if confidence < 0.75 and area_ratio < 0.75 and (distance_to_center > 0.28 or center_y > 0.68):
+        return True
+    return False
+
+
+def _filter_face_candidates(faces: list[dict[str, float]]) -> list[dict[str, float]]:
+    if not faces:
+        return []
+    primary_face = max(
+        faces,
+        key=lambda face: (
+            _area(face) * max(face["confidence"], 1e-6),
+            face["confidence"],
+            -_distance_to_frame_center(face),
+        ),
+    )
+    filtered = [face for face in faces if not _looks_like_false_positive(face, primary_face=primary_face)]
+    return _sort_faces(filtered)
+
+
 def _default_yunet_model_path() -> Path:
     return Path(__file__).resolve().parents[2] / "models" / "opencv" / "face_detection_yunet_2023mar.onnx"
 
@@ -114,7 +172,7 @@ def _create_detector(min_confidence: float):
                         }
                     )
                 )
-            return _sort_faces(faces)
+            return _filter_face_candidates(faces)
 
         def close(self) -> None:
             return None
@@ -152,7 +210,7 @@ def _create_detector(min_confidence: float):
                         }
                     )
                 )
-            return _sort_faces(faces)
+            return _filter_face_candidates(faces)
 
         def close(self) -> None:
             return None
@@ -167,7 +225,7 @@ def _create_detector(min_confidence: float):
 
 def _extract_faces(detections: Any) -> list[dict[str, float]]:
     if detections and isinstance(detections, list) and isinstance(detections[0], dict):
-        return _sort_faces([_normalize_face(item) for item in detections])
+        return _filter_face_candidates([_normalize_face(item) for item in detections])
     faces: list[dict[str, float]] = []
     for detection in detections or []:
         score = float((detection.score or [0.0])[0])
@@ -183,7 +241,7 @@ def _extract_faces(detections: Any) -> list[dict[str, float]]:
                 }
             )
         )
-    return _sort_faces(faces)
+    return _filter_face_candidates(faces)
 
 
 def _write_preview(

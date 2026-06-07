@@ -19,6 +19,8 @@ class TikTokActionsSummaryTest(unittest.TestCase):
                 "detected_face_count": 12,
                 "track_count": 1,
                 "validation_ok": True,
+                "similarity_variant_applied": True,
+                "used_external_reference_audio": True,
                 "export_dir_name": "2026-06-06_7621519315451448596",
                 "output_filename": "ready_to_post.mp4",
                 "processing_seconds": 3.14,
@@ -29,6 +31,8 @@ class TikTokActionsSummaryTest(unittest.TestCase):
         self.assertIn("Video ID", rendered)
         self.assertIn("EXPORTED", rendered)
         self.assertIn("ready_to_post.mp4", rendered)
+        self.assertIn("Similarity variant applied", rendered)
+        self.assertIn("External reference audio used", rendered)
 
 
 if __name__ == "__main__":

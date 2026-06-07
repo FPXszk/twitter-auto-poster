@@ -97,7 +97,7 @@ class TikTokSimilarityVariantTest(unittest.TestCase):
 
             with patch("tiktok_similarity_variant.probe_video", side_effect=fake_probe), patch(
                 "tiktok_similarity_variant.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"
-            ), patch("tiktok_similarity_variant.subprocess.run", side_effect=dispatch):
+            ), patch("tiktok_similarity_variant.subprocess.run", side_effect=dispatch) as mock_run:
                 payload = generate_similarity_variant(
                     source,
                     output,
@@ -106,6 +106,9 @@ class TikTokSimilarityVariantTest(unittest.TestCase):
 
             self.assertTrue(payload["ok"])
             self.assertTrue(payload["used_external_audio"])
+            ffmpeg_call = mock_run.call_args_list[0].args[0]
+            self.assertIn("-filter:a", ffmpeg_call)
+            self.assertIn("atempo=0.800000", ffmpeg_call)
             self.assertTrue(output.exists())
             self.assertTrue((output.parent / "variant-summary.json").exists())
 

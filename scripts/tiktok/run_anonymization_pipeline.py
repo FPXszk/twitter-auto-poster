@@ -32,6 +32,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--url", required=True, help="TikTok video URL.")
     parser.add_argument("--output-root", type=Path, required=True, help="Root directory for job artifacts.")
     parser.add_argument("--export-dir", type=Path, default=None, help="Override TIKTOK_EXPORT_DIR.")
+    parser.add_argument("--reference-audio-url", default="", help="Optional TikTok URL to extract replacement audio from.")
+    parser.add_argument("--disable-similarity-variant", action="store_true", help="Skip the pre-overlay similarity variant phase.")
+    parser.add_argument("--variant-speed", type=float, default=0.8)
+    parser.add_argument("--variant-brightness", type=float, default=-0.12)
+    parser.add_argument("--variant-contrast", type=float, default=0.95)
+    parser.add_argument("--variant-saturation", type=float, default=0.92)
+    parser.add_argument("--variant-mosaic-bottom-ratio", type=float, default=0.35)
+    parser.add_argument("--variant-mosaic-block-size", type=int, default=24)
     parser.add_argument("--stamp-type", default="default")
     parser.add_argument("--stamp-scale", type=float, default=1.6)
     parser.add_argument("--max-retries", type=int, default=2)
@@ -50,6 +58,14 @@ def main(argv: list[str] | None = None) -> int:
             tiktok_url=args.url,
             output_root=args.output_root,
             export_dir=args.export_dir,
+            reference_audio_url=args.reference_audio_url,
+            apply_similarity_variant=not args.disable_similarity_variant,
+            variant_speed=args.variant_speed,
+            variant_brightness=args.variant_brightness,
+            variant_contrast=args.variant_contrast,
+            variant_saturation=args.variant_saturation,
+            variant_mosaic_bottom_ratio=args.variant_mosaic_bottom_ratio,
+            variant_mosaic_block_size=args.variant_mosaic_block_size,
             stamp_type=args.stamp_type,
             stamp_scale=args.stamp_scale,
             force=args.force,

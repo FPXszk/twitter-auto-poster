@@ -222,6 +222,92 @@ class FaceDetectorTest(TestCase):
             self.assertAlmostEqual(face["height"], 0.3, places=6)
             self.assertAlmostEqual(face["confidence"], 0.93, places=6)
 
+    def test_detect_faces_filters_hand_like_false_positive(self) -> None:
+        frames = [np.zeros((240, 320, 3), dtype=np.uint8)]
+        fake_cv2 = _FakeCv2(frames)
+        fake_mp = SimpleNamespace(__version__="0.test")
+        detector = _FakeYuNetDetector(
+            [
+                [
+                    {
+                        "x": 0.38,
+                        "y": 0.23,
+                        "width": 0.29,
+                        "height": 0.25,
+                        "confidence": 0.91,
+                    },
+                    {
+                        "x": 0.75,
+                        "y": 0.55,
+                        "width": 0.24,
+                        "height": 0.15,
+                        "confidence": 0.62,
+                    },
+                ]
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = Path(tmpdir) / "normalized.mp4"
+            video_path.write_bytes(b"video")
+
+            with patch("tiktok_face_detector._lazy_import_cv2", return_value=fake_cv2), patch(
+                "tiktok_face_detector._lazy_import_mediapipe", return_value=fake_mp
+            ):
+                summary = detect_faces_in_video(
+                    video_path,
+                    Path(tmpdir) / "faces",
+                    preview_interval=1,
+                    detector_factory=lambda _min_confidence: detector,
+                )
+
+            self.assertTrue(summary["ok"])
+            detections = json.loads((Path(tmpdir) / "faces" / "detections.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(detections["frames"][0]["faces"]), 1)
+
+    def test_detect_faces_keeps_two_plausible_faces(self) -> None:
+        frames = [np.zeros((240, 320, 3), dtype=np.uint8)]
+        fake_cv2 = _FakeCv2(frames)
+        fake_mp = SimpleNamespace(__version__="0.test")
+        detector = _FakeYuNetDetector(
+            [
+                [
+                    {
+                        "x": 0.18,
+                        "y": 0.18,
+                        "width": 0.2,
+                        "height": 0.23,
+                        "confidence": 0.9,
+                    },
+                    {
+                        "x": 0.57,
+                        "y": 0.19,
+                        "width": 0.19,
+                        "height": 0.22,
+                        "confidence": 0.88,
+                    },
+                ]
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = Path(tmpdir) / "normalized.mp4"
+            video_path.write_bytes(b"video")
+
+            with patch("tiktok_face_detector._lazy_import_cv2", return_value=fake_cv2), patch(
+                "tiktok_face_detector._lazy_import_mediapipe", return_value=fake_mp
+            ):
+                summary = detect_faces_in_video(
+                    video_path,
+                    Path(tmpdir) / "faces",
+                    preview_interval=1,
+                    detector_factory=lambda _min_confidence: detector,
+                )
+
+            self.assertTrue(summary["ok"])
+            detections = json.loads((Path(tmpdir) / "faces" / "detections.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(detections["frames"][0]["faces"]), 2)
+
 
 if __name__ == "__main__":
     main()

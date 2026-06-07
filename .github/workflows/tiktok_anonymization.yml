@@ -12,6 +12,26 @@ on:
         required: true
         default: false
         type: boolean
+      reference_audio_url:
+        description: Optional TikTok URL used to extract replacement audio
+        required: false
+        default: ""
+        type: string
+      similarity_variant:
+        description: Apply mirror, 0.8x, dark grade, and bottom mosaic before face overlay
+        required: true
+        default: true
+        type: boolean
+      variant_speed:
+        description: Playback speed used for the similarity variant
+        required: true
+        default: "0.8"
+        type: string
+      variant_mosaic_bottom_ratio:
+        description: Bottom-area mosaic coverage ratio for the similarity variant
+        required: true
+        default: "0.35"
+        type: string
       stamp_type:
         description: Stamp asset identifier
         required: true
@@ -97,6 +117,10 @@ jobs:
         env:
           INPUT_URL: ${{ inputs.tiktok_url }}
           INPUT_FORCE: ${{ inputs.force }}
+          INPUT_REFERENCE_AUDIO_URL: ${{ inputs.reference_audio_url }}
+          INPUT_SIMILARITY_VARIANT: ${{ inputs.similarity_variant }}
+          INPUT_VARIANT_SPEED: ${{ inputs.variant_speed }}
+          INPUT_VARIANT_MOSAIC_BOTTOM_RATIO: ${{ inputs.variant_mosaic_bottom_ratio }}
           INPUT_STAMP_TYPE: ${{ inputs.stamp_type }}
           INPUT_STAMP_SCALE: ${{ inputs.stamp_scale }}
         run: |
@@ -109,6 +133,10 @@ jobs:
             "tmp/tiktok-pipeline"
             "--export-dir"
             "$env:RAW_EXPORT_DIR"
+            "--variant-speed"
+            "$env:INPUT_VARIANT_SPEED"
+            "--variant-mosaic-bottom-ratio"
+            "$env:INPUT_VARIANT_MOSAIC_BOTTOM_RATIO"
             "--stamp-type"
             "$env:INPUT_STAMP_TYPE"
             "--stamp-scale"
@@ -116,6 +144,12 @@ jobs:
             "--log-level"
             "INFO"
           )
+          if (-not [string]::IsNullOrWhiteSpace("$env:INPUT_REFERENCE_AUDIO_URL")) {
+            $args += @("--reference-audio-url", "$env:INPUT_REFERENCE_AUDIO_URL")
+          }
+          if ("$env:INPUT_SIMILARITY_VARIANT" -ne "true") {
+            $args += "--disable-similarity-variant"
+          }
           if ("$env:INPUT_FORCE" -eq "true") {
             $args += "--force"
           }
