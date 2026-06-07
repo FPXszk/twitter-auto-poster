@@ -100,12 +100,26 @@ jobs:
           INPUT_STAMP_TYPE: ${{ inputs.stamp_type }}
           INPUT_STAMP_SCALE: ${{ inputs.stamp_scale }}
         run: |
-          $forceFlag = ""
           $venvPython = Join-Path $PWD "python\.venv\Scripts\python.exe"
+          $args = @(
+            "scripts/tiktok/run_anonymization_pipeline.py"
+            "--url"
+            "$env:INPUT_URL"
+            "--output-root"
+            "tmp/tiktok-pipeline"
+            "--export-dir"
+            "$env:RAW_EXPORT_DIR"
+            "--stamp-type"
+            "$env:INPUT_STAMP_TYPE"
+            "--stamp-scale"
+            "$env:INPUT_STAMP_SCALE"
+            "--log-level"
+            "INFO"
+          )
           if ("$env:INPUT_FORCE" -eq "true") {
-            $forceFlag = "--force"
+            $args += "--force"
           }
-          & $venvPython scripts/tiktok/run_anonymization_pipeline.py --url "$env:INPUT_URL" --output-root tmp/tiktok-pipeline --export-dir "$env:RAW_EXPORT_DIR" --stamp-type "$env:INPUT_STAMP_TYPE" --stamp-scale "$env:INPUT_STAMP_SCALE" $forceFlag --log-level INFO
+          & $venvPython @args
 
       - name: Write GitHub Actions summary
         if: always()
