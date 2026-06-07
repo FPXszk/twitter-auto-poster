@@ -34,7 +34,7 @@ ensure_normalized_video = normalizer_module.ensure_normalized_video
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_TIKTOK_HOSTS = {"www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "tiktok.com"}
+ALLOWED_TIKTOK_HOSTS = {"www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "tiktok.com"}
 DEFAULT_MAX_SIZE_BYTES = 512 * 1024 * 1024
 DEFAULT_STRATEGIES = (
     ("bestvideo*+bestaudio/best", "mp4"),

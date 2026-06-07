@@ -34,6 +34,11 @@ class ValidateTikTokUrlTest(TestCase):
         result = validate_tiktok_url(url)
         self.assertEqual(result, url)
 
+    def test_vt_tiktok_url_passes(self) -> None:
+        url = "https://vt.tiktok.com/abc123/"
+        result = validate_tiktok_url(url)
+        self.assertEqual(result, url)
+
     def test_non_tiktok_url_rejected(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             validate_tiktok_url("https://evil.com/video/123")
@@ -51,6 +56,7 @@ class ValidateTikTokUrlTest(TestCase):
         self.assertIn("www.tiktok.com", ALLOWED_TIKTOK_HOSTS)
         self.assertIn("m.tiktok.com", ALLOWED_TIKTOK_HOSTS)
         self.assertIn("vm.tiktok.com", ALLOWED_TIKTOK_HOSTS)
+        self.assertIn("vt.tiktok.com", ALLOWED_TIKTOK_HOSTS)
 
 
 class DownloadTikTokVideoJobTest(TestCase):
