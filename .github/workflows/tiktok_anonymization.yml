@@ -55,8 +55,8 @@ jobs:
         shell: pwsh
         run: |
           $candidates = @(
-            "C:\Users\szk\miniconda3\python.exe",
-            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe"
+            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe",
+            "C:\Users\szk\miniconda3\python.exe"
           )
           $pythonExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $pythonExe) {
