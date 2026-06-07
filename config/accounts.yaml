@@ -43,9 +43,10 @@ accounts:
     post_prefix: ""
     max_candidates: 1
     summary_prefix: ""
-    summary_provider: "copilot_cli"
-    summary_model: "gpt-5-mini"
-    summary_prompt_path: "config/copilot_summary_prompt_ja.txt"
+    summary_language: "raw"
+    summary_provider: "legacy_google_translate"
+    summary_model: ""
+    summary_prompt_path: ""
     summary_max_length: 280
     single_post_max_length: 280
     selection_mode: "round_robin_account"
@@ -55,7 +56,7 @@ accounts:
     state_file: "state/buz-posted.txt"
     media_state_file: "state/buz-hot-selection.json"
     reply:
-      enabled: true
+      enabled: false
       max_reply_checks_per_run: 5
       max_replies_per_run: 3
       replied_state_file: "state/buz-replied.jsonl"

@@ -174,11 +174,10 @@ class PostSelectionTest(unittest.TestCase):
         self.assertEqual(rot3["selected_source"], "gamma")
 
 
-    def test_round_robin_account_with_new_buz_10_accounts(self) -> None:
-        """新 10 アカウントの順序で round_robin_account が正しくローテーションする。"""
+    def test_round_robin_account_with_requested_buz_3_accounts(self) -> None:
+        """依頼された 3 アカウントの順序で round_robin_account が正しくローテーションする。"""
         new_accounts = [
-            "ql_7mxa", "yaruki_nash2", "rmiqx_", "pam99ham", "kyomx2_pudding_",
-            "aaa_hareharu", "suzuka_saga", "bibilab158", "hatsunetsu_u", "175__chan",
+            "ql_7mxa", "yaruki_nash2", "rmiqx_",
         ]
         candidates = [
             {

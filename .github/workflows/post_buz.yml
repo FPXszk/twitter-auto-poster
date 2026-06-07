@@ -9,7 +9,9 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 23 * * *"
+    - cron: "30 3 * * *"
+    - cron: "0 12 * * *"
 
 permissions:
   contents: read
@@ -26,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CATEGORY: buz
-      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
@@ -38,6 +39,8 @@ jobs:
 
       - name: Evaluate posting window
         id: posting_window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           python - <<'PY'
           import os
@@ -50,21 +53,21 @@ jobs:
           from posting_window import should_run_in_posting_window
 
           now = datetime.now(ZoneInfo("Asia/Tokyo"))
-          should_run = should_run_in_posting_window(now)
+          if os.environ.get("EVENT_NAME") == "workflow_dispatch":
+              should_run = True
+          else:
+              should_run = should_run_in_posting_window(
+                  now,
+                  allowed_times=[(8, 0), (12, 30), (21, 0)],
+              )
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"should_run={str(should_run).lower()}\n")
               handle.write(f"now_jst={now.isoformat()}\n")
           PY
 
-      - uses: actions/setup-node@v4
-        if: steps.posting_window.outputs.should_run == 'true'
-        with:
-          node-version: "24"
-
       - name: Install runtime dependencies
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          npm install -g @github/copilot
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
@@ -112,42 +115,6 @@ jobs:
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
           mkdir -p tmp
-
-          summary_provider="$(python/.venv/bin/python - <<'PY'
-          import os
-          import yaml
-          from pathlib import Path
-
-          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
-          category = os.environ["CATEGORY"]
-          accounts = raw.get("accounts") or {}
-          defaults = raw.get("defaults") or {}
-          account = accounts.get(category) or {}
-          provider = str(account.get("summary_provider") or defaults.get("summary_provider") or "legacy_google_translate").strip().lower()
-          aliases = {
-              "": "legacy_google_translate",
-              "googletrans": "legacy_google_translate",
-              "google_translate": "legacy_google_translate",
-              "legacy_google_translate": "legacy_google_translate",
-              "copilot": "copilot_cli",
-              "copilot_cli": "copilot_cli",
-          }
-          print(aliases.get(provider, provider))
-          PY
-          )"
-
-          if [[ "${summary_provider}" == "copilot_cli" ]]; then
-            if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
-              echo "COPILOT_GITHUB_TOKEN secret is required for Copilot summary generation." >&2
-              exit 1
-            fi
-            if [[ "${COPILOT_GITHUB_TOKEN}" == ghp_* ]]; then
-              echo "::error::COPILOT_GITHUB_TOKEN is a classic ghp_ PAT which is not supported by Copilot CLI. Use a fine-grained PAT or GitHub App token with Copilot Requests permission."
-              exit 1
-            fi
-          fi
-
-          copilot --version
           python/.venv/bin/python python/check_python_runtime.py --module yaml --output tmp/buz-runtime.json
 
       - name: Prepare scripts
@@ -240,76 +207,6 @@ jobs:
           now = datetime.now(ZoneInfo("Asia/Tokyo"))
           state_path = Path("tmp/state") / f"hourly-{category}.json"
           record_hourly_post(state_path, now)
-          PY
-
-      - name: Auto reply to incoming replies
-        id: auto_reply
-        if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
-        continue-on-error: true
-        run: |
-          python/.venv/bin/python - <<'PY'
-          import json
-          import os
-          import sys
-          from pathlib import Path
-
-          sys.path.append(str(Path.cwd() / "scripts" / "lib"))
-
-          import yaml
-          from post_feedback import load_feedback_history
-          from post_reply import fetch_bot_username, run_auto_reply
-
-          category = os.environ["CATEGORY"]
-          output_dir = Path("tmp")
-          runs_dir = output_dir / "runs"
-          runs_dir.mkdir(parents=True, exist_ok=True)
-          raw = yaml.safe_load(Path("config/accounts.yaml").read_text(encoding="utf-8")) or {}
-          account = (raw.get("accounts") or {}).get(category) or {}
-          reply_cfg = account.get("reply") or {}
-          result_path = runs_dir / f"reply-{category}.json"
-
-          def write_result(payload):
-              result_path.write_text(
-                  json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                  encoding="utf-8",
-              )
-
-          if not reply_cfg.get("enabled", False):
-              write_result({"status": "disabled"})
-              raise SystemExit(0)
-
-          twitter_bin = str(Path("python/.venv/bin/twitter"))
-          feedback_path = output_dir / "state" / f"{category}-feedback-history.jsonl"
-          history = load_feedback_history(feedback_path)
-          if not history:
-              write_result({"status": "no_history"})
-              raise SystemExit(0)
-
-          replied_rel = str(reply_cfg.get("replied_state_file") or f"state/{category}-replied.jsonl")
-          replied_path = output_dir / replied_rel
-          reply_check_rel = str(reply_cfg.get("reply_check_state_file") or f"state/{category}-reply-check.txt")
-          reply_check_path = output_dir / reply_check_rel
-
-          try:
-              bot_username = fetch_bot_username(twitter_bin)
-          except Exception as exc:
-              result = {"status": "error", "error": f"whoami failed: {exc}"}
-              write_result(result)
-              raise SystemExit(0)
-
-          result = run_auto_reply(
-              feedback_history=history,
-              twitter_bin=twitter_bin,
-              bot_username=bot_username,
-              replied_state_path=replied_path,
-              reply_check_state_path=reply_check_path,
-              max_reply_checks=int(reply_cfg.get("max_reply_checks_per_run") or 5),
-              max_replies=int(reply_cfg.get("max_replies_per_run") or 3),
-              copilot_model=str(reply_cfg.get("reply_model") or "gpt-5-mini"),
-              reply_prompt_path=str(reply_cfg.get("reply_prompt_path") or ""),
-              max_reply_length=int(reply_cfg.get("max_reply_length") or 140),
-          )
-          write_result(result)
           PY
 
       - name: Write run summary

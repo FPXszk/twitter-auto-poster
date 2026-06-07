@@ -8,18 +8,12 @@ import unittest
 import yaml
 
 SOURCES_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
+ACCOUNTS_PATH = Path(__file__).resolve().parents[1] / "config" / "accounts.yaml"
 
 EXPECTED_NEW_ACCOUNTS = [
     "ql_7mxa",
     "yaruki_nash2",
     "rmiqx_",
-    "pam99ham",
-    "kyomx2_pudding_",
-    "aaa_hareharu",
-    "suzuka_saga",
-    "bibilab158",
-    "hatsunetsu_u",
-    "175__chan",
 ]
 
 OLD_ACCOUNTS = [
@@ -44,10 +38,10 @@ class SourcesConfigTest(unittest.TestCase):
         cls.sources = raw.get("sources") or []
         cls.buz_sources = [s for s in cls.sources if s.get("category") == "buz" and s.get("enabled", True)]
 
-    def test_buz_enabled_count_is_20(self) -> None:
-        self.assertEqual(len(self.buz_sources), 20)
+    def test_buz_enabled_count_is_6(self) -> None:
+        self.assertEqual(len(self.buz_sources), 6)
 
-    def test_buz_rotation_keys_are_new_10_accounts(self) -> None:
+    def test_buz_rotation_keys_are_only_requested_3_accounts(self) -> None:
         rotation_keys = sorted(set(s["rotation_key"] for s in self.buz_sources))
         self.assertEqual(rotation_keys, sorted(EXPECTED_NEW_ACCOUNTS))
 
@@ -85,6 +79,23 @@ class SourcesConfigTest(unittest.TestCase):
             if key not in seen:
                 seen.append(key)
         self.assertEqual(seen, EXPECTED_NEW_ACCOUNTS)
+
+
+class BuzAccountConfigTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        raw = yaml.safe_load(ACCOUNTS_PATH.read_text(encoding="utf-8")) or {}
+        cls.buz = ((raw.get("accounts") or {}).get("buz") or {})
+
+    def test_buz_summary_language_is_raw(self) -> None:
+        self.assertEqual(self.buz.get("summary_language"), "raw")
+
+    def test_buz_summary_provider_is_legacy_for_raw_passthrough(self) -> None:
+        self.assertEqual(self.buz.get("summary_provider"), "legacy_google_translate")
+
+    def test_buz_reply_disabled(self) -> None:
+        reply = self.buz.get("reply") or {}
+        self.assertFalse(reply.get("enabled", True))
 
 
 if __name__ == "__main__":

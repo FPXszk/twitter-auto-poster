@@ -200,6 +200,16 @@ class PostSummaryTest(TestCase):
             "I keep getting asked:\n\nWhat's the PT of $SIVE?\n\nstocks",
         )
 
+    def test_build_summary_raw_preserves_body_without_ai_rewrite(self) -> None:
+        summary = post_summary.build_summary(
+            "1行目\n\n2行目🙂 https://example.com @user #topic",
+            prefix="",
+            language="raw",
+            max_length=280,
+        )
+
+        self.assertEqual(summary, "1行目\n\n2行目🙂 topic")
+
     # --- has_candidate_content ---
 
     def test_has_candidate_content_rejects_url_only_text_without_image(self) -> None:

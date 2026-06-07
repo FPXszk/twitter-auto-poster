@@ -74,10 +74,10 @@ class PicSourcesConfigTest(unittest.TestCase):
                 seen.append(key)
         self.assertEqual(seen, EXPECTED_PIC_ACCOUNTS)
 
-    def test_buz_sources_still_20(self) -> None:
-        """Adding pic must not affect buz source count."""
+    def test_buz_sources_still_6(self) -> None:
+        """Pic configuration must not affect the reduced buz source count."""
         buz = [s for s in self.sources if s.get("category") == "buz" and s.get("enabled", True)]
-        self.assertEqual(len(buz), 20)
+        self.assertEqual(len(buz), 6)
 
     def test_news_sources_still_2(self) -> None:
         """Adding pic must not affect news source count."""

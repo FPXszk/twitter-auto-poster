@@ -251,7 +251,7 @@ sources:
     rotation_key: pam99ham
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:pam99ham -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -261,7 +261,7 @@ sources:
     rotation_key: pam99ham
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:pam99ham -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -271,7 +271,7 @@ sources:
     rotation_key: kyomx2_pudding_
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:kyomx2_pudding_ -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -281,7 +281,7 @@ sources:
     rotation_key: kyomx2_pudding_
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:kyomx2_pudding_ -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -291,7 +291,7 @@ sources:
     rotation_key: aaa_hareharu
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:aaa_hareharu -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -301,7 +301,7 @@ sources:
     rotation_key: aaa_hareharu
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:aaa_hareharu -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -311,7 +311,7 @@ sources:
     rotation_key: suzuka_saga
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:suzuka_saga -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -321,7 +321,7 @@ sources:
     rotation_key: suzuka_saga
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:suzuka_saga -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -331,7 +331,7 @@ sources:
     rotation_key: bibilab158
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:bibilab158 -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -341,7 +341,7 @@ sources:
     rotation_key: bibilab158
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:bibilab158 -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -351,7 +351,7 @@ sources:
     rotation_key: hatsunetsu_u
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:hatsunetsu_u -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -361,7 +361,7 @@ sources:
     rotation_key: hatsunetsu_u
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:hatsunetsu_u -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20
@@ -371,7 +371,7 @@ sources:
     rotation_key: 175__chan
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:175__chan -is:retweet -is:reply min_retweets:52 min_faves:3000"
     timeline: Top
     max_results: 20
@@ -381,7 +381,7 @@ sources:
     rotation_key: 175__chan
     category: buz
     type: search
-    enabled: true
+    enabled: false
     query: "from:175__chan -is:retweet -is:reply min_retweets:52 min_faves:700"
     timeline: Latest
     max_results: 20

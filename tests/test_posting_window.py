@@ -1,4 +1,4 @@
-"""Tests for posting window logic (JST 7:00–1:00 hourly run window)."""
+"""Tests for posting window logic."""
 
 from __future__ import annotations
 
@@ -18,39 +18,35 @@ JST = ZoneInfo("Asia/Tokyo")
 class PostingWindowTest(unittest.TestCase):
     """Boundary tests for should_run_in_posting_window."""
 
-    def test_jst_7am_is_within_window(self) -> None:
+    def test_default_window_still_allows_jst_7am(self) -> None:
         dt = datetime(2026, 3, 31, 7, 0, 0, tzinfo=JST)
         self.assertTrue(should_run_in_posting_window(dt))
 
-    def test_jst_0am_is_within_window(self) -> None:
-        dt = datetime(2026, 3, 31, 0, 0, 0, tzinfo=JST)
-        self.assertTrue(should_run_in_posting_window(dt))
+    def test_explicit_slot_allows_jst_8am(self) -> None:
+        dt = datetime(2026, 3, 31, 8, 0, 0, tzinfo=JST)
+        self.assertTrue(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
 
-    def test_jst_0_59_is_within_window(self) -> None:
-        dt = datetime(2026, 3, 31, 0, 59, 59, tzinfo=JST)
-        self.assertTrue(should_run_in_posting_window(dt))
+    def test_explicit_slot_allows_jst_12_30pm(self) -> None:
+        dt = datetime(2026, 3, 31, 12, 30, 0, tzinfo=JST)
+        self.assertTrue(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
 
-    def test_jst_1am_is_within_window(self) -> None:
-        dt = datetime(2026, 3, 31, 1, 0, 0, tzinfo=JST)
-        self.assertTrue(should_run_in_posting_window(dt))
+    def test_explicit_slot_allows_jst_9pm(self) -> None:
+        dt = datetime(2026, 3, 31, 21, 0, 0, tzinfo=JST)
+        self.assertTrue(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
 
-    def test_jst_6am_is_outside_window(self) -> None:
-        dt = datetime(2026, 3, 31, 6, 0, 0, tzinfo=JST)
-        self.assertFalse(should_run_in_posting_window(dt))
+    def test_explicit_slot_rejects_jst_8_01am(self) -> None:
+        dt = datetime(2026, 3, 31, 8, 1, 0, tzinfo=JST)
+        self.assertFalse(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
 
-    def test_jst_6_59_is_outside_window(self) -> None:
-        dt = datetime(2026, 3, 31, 6, 59, 59, tzinfo=JST)
-        self.assertFalse(should_run_in_posting_window(dt))
-
-    def test_jst_23pm_is_within_window(self) -> None:
-        dt = datetime(2026, 3, 31, 23, 0, 0, tzinfo=JST)
-        self.assertTrue(should_run_in_posting_window(dt))
-
-    def test_jst_12pm_is_within_window(self) -> None:
+    def test_explicit_slot_rejects_jst_12pm(self) -> None:
         dt = datetime(2026, 3, 31, 12, 0, 0, tzinfo=JST)
-        self.assertTrue(should_run_in_posting_window(dt))
+        self.assertFalse(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
 
-    def test_jst_3am_is_outside_window(self) -> None:
+    def test_explicit_slot_rejects_jst_20_59pm(self) -> None:
+        dt = datetime(2026, 3, 31, 20, 59, 0, tzinfo=JST)
+        self.assertFalse(should_run_in_posting_window(dt, allowed_times=[(8, 0), (12, 30), (21, 0)]))
+
+    def test_default_window_rejects_jst_3am(self) -> None:
         dt = datetime(2026, 3, 31, 3, 0, 0, tzinfo=JST)
         self.assertFalse(should_run_in_posting_window(dt))
 

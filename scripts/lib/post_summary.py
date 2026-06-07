@@ -549,6 +549,8 @@ def build_summary(
     )
     if not body:
         body = "話題の投稿を紹介します"
+    if language == "raw":
+        return truncate_post_text(body.rstrip(), max_length)
     return format_translation_post(body, max_length=max_length)
 
 
