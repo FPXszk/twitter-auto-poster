@@ -88,8 +88,8 @@ jobs:
         shell: pwsh
         run: |
           & "$env:PYTHON_BOOTSTRAP" -m venv python\.venv
-          python\.venv\Scripts\python.exe -m pip install --upgrade pip
-          python\.venv\Scripts\python.exe -m pip install pyyaml pillow numpy yt-dlp opencv-python-headless
+          & "python\.venv\Scripts\python.exe" -m pip install --upgrade pip
+          & "python\.venv\Scripts\python.exe" -m pip install pyyaml pillow numpy yt-dlp opencv-python-headless
 
       - name: Run TikTok anonymization pipeline
         shell: pwsh
@@ -103,14 +103,14 @@ jobs:
           if ("$env:INPUT_FORCE" -eq "true") {
             $forceFlag = "--force"
           }
-          python\.venv\Scripts\python.exe scripts/tiktok/run_anonymization_pipeline.py --url "$env:INPUT_URL" --output-root tmp/tiktok-pipeline --export-dir "$env:RAW_EXPORT_DIR" --stamp-type "$env:INPUT_STAMP_TYPE" --stamp-scale "$env:INPUT_STAMP_SCALE" $forceFlag --log-level INFO
+          & "python\.venv\Scripts\python.exe" scripts/tiktok/run_anonymization_pipeline.py --url "$env:INPUT_URL" --output-root tmp/tiktok-pipeline --export-dir "$env:RAW_EXPORT_DIR" --stamp-type "$env:INPUT_STAMP_TYPE" --stamp-scale "$env:INPUT_STAMP_SCALE" $forceFlag --log-level INFO
 
       - name: Write GitHub Actions summary
         if: always()
         shell: pwsh
         run: |
           if (Test-Path "tmp/tiktok-pipeline/latest-result.json") {
-            python\.venv\Scripts\python.exe scripts/tiktok/write_actions_summary.py --result-json "tmp/tiktok-pipeline/latest-result.json" --summary-path "$env:GITHUB_STEP_SUMMARY"
+            & "python\.venv\Scripts\python.exe" scripts/tiktok/write_actions_summary.py --result-json "tmp/tiktok-pipeline/latest-result.json" --summary-path "$env:GITHUB_STEP_SUMMARY"
           } else {
             @(
               '## TikTok anonymization run'
