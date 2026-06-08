@@ -160,7 +160,7 @@ jobs:
         id: hourly_guard
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          python - <<'PY'
+          python/.venv/bin/python - <<'PY'
           import json
           import os
           import sys
@@ -199,7 +199,7 @@ jobs:
       - name: Record hourly post
         if: steps.posting_window.outputs.should_run == 'true' && steps.hourly_guard.outputs.allowed == 'true' && steps.account_mode.outputs.dry_run != 'true'
         run: |
-          python - <<'PY'
+          python/.venv/bin/python - <<'PY'
           import json
           import sys
           from datetime import datetime
