@@ -30,7 +30,7 @@ jobs:
       - windows-wsl
     defaults:
       run:
-        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
+        shell: C:/Progra~1/Git/bin/bash.exe --noprofile --norc -eo pipefail {0}
     env:
       CATEGORY: buz
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
