@@ -194,6 +194,9 @@ jobs:
 
       - name: Fetch candidates and process mode
         if: steps.posting_window.outputs.should_run == 'true' && steps.hourly_guard.outputs.allowed == 'true'
+        env:
+          PYTHON_BIN: python/.venv/bin/python
+          TWITTER_BIN: python/.venv/bin/twitter
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
 
       - name: Record hourly post
