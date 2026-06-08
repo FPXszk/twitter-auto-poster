@@ -83,8 +83,6 @@ jobs:
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
           "${PYTHON_BOOTSTRAP}" -m venv python/.venv
-          python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             mkdir -p python/.venv/bin
             cat > python/.venv/bin/python <<'EOF'
@@ -95,11 +93,16 @@ jobs:
             #!/usr/bin/env bash
             exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
             EOF
+            chmod +x python/.venv/bin/python python/.venv/bin/pip
+          fi
+          python/.venv/bin/pip install --upgrade pip
+          python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
             cat > python/.venv/bin/twitter <<'EOF'
             #!/usr/bin/env bash
             exec "$(dirname "$0")/../Scripts/twitter.exe" "$@"
             EOF
-            chmod +x python/.venv/bin/python python/.venv/bin/pip python/.venv/bin/twitter
+            chmod +x python/.venv/bin/twitter
           fi
 
       - name: Load account mode
