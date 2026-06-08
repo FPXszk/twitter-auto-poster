@@ -30,7 +30,7 @@ jobs:
       - windows-wsl
     defaults:
       run:
-        shell: bash
+        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
     env:
       CATEGORY: buz
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
@@ -38,16 +38,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Resolve Python bootstrap
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe",
+            "C:\Users\szk\miniconda3\python.exe"
+          )
+          $pythonExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $pythonExe) {
+            throw "No usable Python bootstrap interpreter was found on the runner."
+          }
+          "PYTHON_BOOTSTRAP=$pythonExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Evaluate posting window
         id: posting_window
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          python - <<'PY'
+          "${PYTHON_BOOTSTRAP}" - <<'PY'
           import os
           import sys
           from datetime import datetime
@@ -73,7 +82,7 @@ jobs:
       - name: Install runtime dependencies
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          python -m venv python/.venv
+          "${PYTHON_BOOTSTRAP}" -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
@@ -236,7 +245,7 @@ jobs:
           POSTING_WINDOW: ${{ steps.posting_window.outputs.should_run }}
           POSTING_WINDOW_JST: ${{ steps.posting_window.outputs.now_jst }}
         run: |
-          python - <<'PY'
+          "${PYTHON_BOOTSTRAP}" - <<'PY'
           import json
           import os
           from pathlib import Path
