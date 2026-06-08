@@ -23,7 +23,12 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - windows-wsl
+    defaults:
+      run:
+        shell: bash
     env:
       CATEGORY: tiktok
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
@@ -61,9 +66,16 @@ jobs:
       - name: Install ffprobe and yt-dlp
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install --quiet yt-dlp
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            if [[ "${RUNNER_OS}" == "Linux" ]]; then
+              sudo apt-get update
+              sudo apt-get install -y ffmpeg
+            else
+              echo "ffmpeg is required on the self-hosted runner PATH." >&2
+              exit 1
+            fi
+          fi
+          python -m pip install --quiet yt-dlp
 
       - name: Install runtime dependencies
         if: steps.posting_window.outputs.should_run == 'true'
@@ -71,6 +83,18 @@ jobs:
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install twikit==2.3.3 XClientTransaction==1.0.2 pyyaml
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            mkdir -p python/.venv/bin
+            cat > python/.venv/bin/python <<'EOF'
+            #!/usr/bin/env bash
+            exec "$(dirname "$0")/../Scripts/python.exe" "$@"
+            EOF
+            cat > python/.venv/bin/pip <<'EOF'
+            #!/usr/bin/env bash
+            exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
+            EOF
+            chmod +x python/.venv/bin/python python/.venv/bin/pip
+          fi
 
       - name: Load account mode
         id: account_mode

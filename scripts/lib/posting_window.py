@@ -23,8 +23,10 @@ def should_run_in_posting_window(
 
     jst_now = now.astimezone(JST)
     if allowed_times is not None:
-        allowed_slots = {(hour, minute) for hour, minute in allowed_times}
-        return (jst_now.hour, jst_now.minute) in allowed_slots
+        for hour, minute in allowed_times:
+            if jst_now.hour == hour and jst_now.minute >= minute:
+                return True
+        return False
 
     jst_hour = jst_now.hour
     return jst_hour >= 7 or jst_hour <= 1

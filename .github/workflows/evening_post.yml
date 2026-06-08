@@ -57,7 +57,12 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - windows-wsl
+    defaults:
+      run:
+        shell: bash
     env:
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
@@ -116,6 +121,22 @@ jobs:
           python -m venv python/.venv
           python/.venv/bin/pip install --upgrade pip
           python/.venv/bin/pip install yfinance pandas twitter-cli pyyaml
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            mkdir -p python/.venv/bin
+            cat > python/.venv/bin/python <<'EOF'
+            #!/usr/bin/env bash
+            exec "$(dirname "$0")/../Scripts/python.exe" "$@"
+            EOF
+            cat > python/.venv/bin/pip <<'EOF'
+            #!/usr/bin/env bash
+            exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
+            EOF
+            cat > python/.venv/bin/twitter <<'EOF'
+            #!/usr/bin/env bash
+            exec "$(dirname "$0")/../Scripts/twitter.exe" "$@"
+            EOF
+            chmod +x python/.venv/bin/python python/.venv/bin/pip python/.venv/bin/twitter
+          fi
 
       - name: Run runtime diagnostics
         if: steps.market_day.outputs.should_run == 'true' || steps.run_options.outputs.ignore_market_day == 'true'
