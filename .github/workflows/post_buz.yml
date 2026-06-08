@@ -198,7 +198,7 @@ jobs:
         if: steps.posting_window.outputs.should_run == 'true' && steps.hourly_guard.outputs.allowed == 'true'
         env:
           PYTHON_BIN: python/.venv/bin/python
-          TWITTER_BIN: python/.venv/bin/twitter
+          TWITTER_BIN: python/.venv/Scripts/twitter.exe
         run: bash scripts/fetch_and_post.sh --category "${CATEGORY}" --dry-run "${{ steps.account_mode.outputs.dry_run }}"
 
       - name: Record hourly post
