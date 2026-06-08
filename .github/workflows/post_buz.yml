@@ -89,8 +89,8 @@ jobs:
             printf '%s\n' '#!/usr/bin/env bash' 'exec "$(dirname "$0")/../Scripts/pip.exe" "$@"' > python/.venv/bin/pip
             chmod +x python/.venv/bin/python python/.venv/bin/pip
           fi
-          python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install pyyaml twitter-cli googletrans==4.0.0rc1
+          python/.venv/bin/python -m pip install --upgrade pip
+          python/.venv/bin/python -m pip install pyyaml twitter-cli googletrans==4.0.0rc1
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             printf '%s\n' '#!/usr/bin/env bash' 'exec "$(dirname "$0")/../Scripts/twitter.exe" "$@"' > python/.venv/bin/twitter
             chmod +x python/.venv/bin/twitter
