@@ -69,6 +69,28 @@ class PostFiltersTest(unittest.TestCase):
 
         self.assertIn("tweet is older than max_age_hours", reasons)
 
+    def test_candidate_rejection_rejects_too_recent_tweet_with_min_age(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="Micron demand is improving this quarter.",
+            created_at=created_at,
+            raw_filters={"min_age_hours": 72},
+        )
+
+        self.assertIn("tweet is newer than min_age_hours", reasons)
+
+    def test_candidate_rejection_allows_old_enough_tweet_with_min_age(self) -> None:
+        created_at = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+
+        reasons = candidate_rejection_reasons(
+            text="Micron demand is improving this quarter.",
+            created_at=created_at,
+            raw_filters={"min_age_hours": 72},
+        )
+
+        self.assertNotIn("tweet is newer than min_age_hours", reasons)
+
     def test_candidate_rejection_rejects_author_with_too_many_followers(self) -> None:
         created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 

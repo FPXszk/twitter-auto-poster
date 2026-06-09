@@ -99,6 +99,8 @@ def build_feedback_entry(
         "source_username": str(selected_candidate.get("source_username") or "").strip(),
         "source_type": str(selected_candidate.get("source_type") or "").strip(),
         "source_score": float(selected_candidate.get("score") or 0.0),
+        "posted_text": str(selected_candidate.get("summary_text") or "").strip(),
+        "normalized_post_text": " ".join(str(selected_candidate.get("summary_text") or "").split()),
         "post_metrics": dict(selected_candidate.get("post_metrics") or {}),
         "last_refreshed_at": None,
     }

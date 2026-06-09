@@ -187,65 +187,29 @@ sources:
   #   score_boost: 6
   # --- 旧アカウント定義ここまで ---
 
-  - id: buz-ql_7mxa-big
+  - id: buz-ql_7mxa
     rotation_key: ql_7mxa
     category: buz
-    type: search
+    type: user
     enabled: true
-    query: "from:ql_7mxa -is:retweet -is:reply min_retweets:52 min_faves:3000"
-    timeline: Top
-    max_results: 20
-    score_boost: 10
+    username: ql_7mxa
+    max_results: 120
 
-  - id: buz-ql_7mxa-small
-    rotation_key: ql_7mxa
-    category: buz
-    type: search
-    enabled: true
-    query: "from:ql_7mxa -is:retweet -is:reply min_retweets:52 min_faves:700"
-    timeline: Latest
-    max_results: 20
-    score_boost: 6
-
-  - id: buz-yaruki_nash2-big
+  - id: buz-yaruki_nash2
     rotation_key: yaruki_nash2
     category: buz
-    type: search
+    type: user
     enabled: true
-    query: "from:yaruki_nash2 -is:retweet -is:reply min_retweets:52 min_faves:3000"
-    timeline: Top
-    max_results: 20
-    score_boost: 10
+    username: yaruki_nash2
+    max_results: 120
 
-  - id: buz-yaruki_nash2-small
-    rotation_key: yaruki_nash2
-    category: buz
-    type: search
-    enabled: true
-    query: "from:yaruki_nash2 -is:retweet -is:reply min_retweets:52 min_faves:700"
-    timeline: Latest
-    max_results: 20
-    score_boost: 6
-
-  - id: buz-rmiqx_-big
+  - id: buz-rmiqx_
     rotation_key: rmiqx_
     category: buz
-    type: search
+    type: user
     enabled: true
-    query: "from:rmiqx_ -is:retweet -is:reply min_retweets:52 min_faves:3000"
-    timeline: Top
-    max_results: 20
-    score_boost: 10
-
-  - id: buz-rmiqx_-small
-    rotation_key: rmiqx_
-    category: buz
-    type: search
-    enabled: true
-    query: "from:rmiqx_ -is:retweet -is:reply min_retweets:52 min_faves:700"
-    timeline: Latest
-    max_results: 20
-    score_boost: 6
+    username: rmiqx_
+    max_results: 120
 
   - id: buz-pam99ham-big
     rotation_key: pam99ham

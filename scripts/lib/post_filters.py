@@ -16,6 +16,7 @@ DEFAULT_NOISE_KEYWORDS = [
 ]
 
 FILTER_KEYS = (
+    "min_age_hours",
     "max_age_hours",
     "required_terms",
     "exclude_keywords",
@@ -37,6 +38,7 @@ def merge_filters(base_filters: Mapping[str, Any] | None, override_filters: Mapp
 
 def normalize_filters(raw_filters: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = {
+        "min_age_hours": None,
         "max_age_hours": None,
         "required_terms": [],
         "exclude_keywords": list(DEFAULT_NOISE_KEYWORDS),
@@ -46,6 +48,9 @@ def normalize_filters(raw_filters: Mapping[str, Any] | None) -> dict[str, Any]:
 
     if not raw_filters:
         return payload
+
+    if raw_filters.get("min_age_hours") is not None:
+        payload["min_age_hours"] = float(raw_filters["min_age_hours"])
 
     if raw_filters.get("max_age_hours") is not None:
         payload["max_age_hours"] = float(raw_filters["max_age_hours"])
@@ -86,6 +91,12 @@ def candidate_rejection_reasons(
     filters = normalize_filters(raw_filters)
     lowered_text = text.casefold()
     reasons: list[str] = []
+
+    min_age_hours = filters.get("min_age_hours")
+    if min_age_hours is not None:
+        parsed = parse_created_at(created_at)
+        if parsed is not None and parsed > datetime.now(timezone.utc) - timedelta(hours=min_age_hours):
+            reasons.append("tweet is newer than min_age_hours")
 
     max_age_hours = filters.get("max_age_hours")
     if max_age_hours is not None:

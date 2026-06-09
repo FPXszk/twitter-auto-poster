@@ -50,7 +50,17 @@ accounts:
     summary_max_length: 280
     single_post_max_length: 280
     selection_mode: "round_robin_account"
+    candidate_order: "random"
     fallback_candidates: 3
+    random_min_age_hours:
+      - 72
+      - 96
+      - 168
+      - 240
+      - 720
+      - 8760
+    recent_duplicate_lookback_days: 7
+    recent_duplicate_check_max_posts: 40
     rotation_state_file: "state/buz-robin.txt"
     source_reference_mode: "none"
     state_file: "state/buz-posted.txt"
@@ -65,16 +75,15 @@ accounts:
       reply_model: "gpt-5-mini"
       max_reply_length: 140
     score_weights:
-      likes: 1.0
-      retweets: 3.5
-      replies: 4.5
-      views: 0.015
-      velocity: 2.0
-      freshness: 1.5
-      image_bonus: 12
-      author_virality: 30
+      likes: 0.0
+      retweets: 0.0
+      replies: 0.0
+      views: 0.0
+      velocity: 0.0
+      freshness: 0.0
+      image_bonus: 0.0
+      author_virality: 0.0
     filters:
-      max_age_hours: 72
       min_author_followers: 1000
       exclude_keywords:
         - "フォロー"

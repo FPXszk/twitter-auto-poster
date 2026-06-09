@@ -493,6 +493,7 @@ PY
   if ! PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${category}" "${source_state_file}" "${rotation_state_file}" "${media_state_file}" "${feedback_history_file}" "${account_json}" "${source_config_json}" "${collection_status_json}" "${feedback_refresh_summary_json}" "${requested_mode}" "${payload_files[@]}" > "${candidate_tmp_file}" <<'PY'
 import json
 import pathlib
+import random
 import re
 import sys
 from post_author import enrich_author_metrics
@@ -542,8 +543,11 @@ selection_mode = str(account.get("selection_mode") or "score")
 source_reference_mode = str(account.get("source_reference_mode") or "url").strip().lower()
 score_weights = account.get("score_weights") or {}
 account_filters = account.get("filters") or {}
+candidate_order = str(account.get("candidate_order") or "score").strip().lower()
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
 fallback_candidates = max(int(account.get("fallback_candidates") or max_candidates or 1), 1)
+random_min_age_hours = [float(item) for item in (account.get("random_min_age_hours") or []) if float(item) > 0]
+selected_min_age_hours = random.choice(random_min_age_hours) if random_min_age_hours else None
 source_order = deduplicate_source_order([str((source_configs.get(source_id) or {}).get("rotation_key") or (source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()])
 rotation_raw = ""
 if rotation_state_file is not None:
@@ -592,6 +596,8 @@ for payload_path in payload_files:
     source_username = str(source_config.get("username") or "")
     source_media_mode = str(source_config.get("media_mode") or "any")
     effective_filters = merge_filters(account_filters, source_filters)
+    if selected_min_age_hours is not None:
+        effective_filters["min_age_hours"] = selected_min_age_hours
     try:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -686,6 +692,7 @@ selected_candidates, rotation = select_candidates(
     source_order=source_order,
     max_candidates=max(max_candidates, fallback_candidates),
     selection_mode=selection_mode,
+    ordering_mode=candidate_order,
     previous_source=previous_source,
     preferred_media_mode=target_media_mode,
 )
@@ -799,6 +806,8 @@ payload = {
         "summary_attempts": summary_attempts,
         "summary_evaluator": summary_evaluator,
         "fallback_candidates": fallback_candidates,
+        "candidate_order": candidate_order,
+        "selected_min_age_hours": selected_min_age_hours,
     },
     "skipped_candidates": skipped_candidates[:20],
     "alerts": alerts[:20],
@@ -950,12 +959,43 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(len(payload.get("post_candidates") or []))
 PY
   )"
+  recent_duplicate_lookback_days="$(python_cmd - "${account_json}" <<'PY'
+import json
+import sys
+
+account = json.loads(sys.argv[1])
+print(int(account.get("recent_duplicate_lookback_days") or 7))
+PY
+  )"
+  recent_duplicate_check_max_posts="$(python_cmd - "${account_json}" <<'PY'
+import json
+import sys
+
+account = json.loads(sys.argv[1])
+print(int(account.get("recent_duplicate_check_max_posts") or 40))
+PY
+  )"
+  duplicate_index_json="$(PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${feedback_history_file}" "$(resolve_twitter_bin)" "${recent_duplicate_lookback_days}" "${recent_duplicate_check_max_posts}" <<'PY'
+import json
+import sys
+
+from post_duplicate_guard import build_recent_duplicate_index
+
+index = build_recent_duplicate_index(
+    sys.argv[1],
+    sys.argv[2],
+    lookback_days=int(sys.argv[3]),
+    max_posts=int(sys.argv[4]),
+)
+print(json.dumps(index, ensure_ascii=False))
+PY
+  )"
 
   publish_succeeded="false"
   post_result_file=""
   post_error=""
   for ((post_candidate_index=0; post_candidate_index<post_candidates_count; post_candidate_index++)); do
-    mapfile -t post_candidate_fields < <(python_cmd - "${candidate_file}" "${post_candidate_index}" <<'PY'
+    post_candidate_json="$(python_cmd - "${candidate_file}" "${post_candidate_index}" <<'PY'
 import json
 import pathlib
 import sys
@@ -964,19 +1004,84 @@ payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 items = payload.get("post_candidates") or []
 index = int(sys.argv[2])
 item = items[index]
+print(json.dumps(item, ensure_ascii=False))
+PY
+    )"
+    post_text="$(python_cmd - "${post_candidate_json}" <<'PY'
+import json
+import sys
+
+item = json.loads(sys.argv[1])
 print(item.get("summary_text") or "")
+PY
+    )"
+    selected_tweet_id="$(python_cmd - "${post_candidate_json}" <<'PY'
+import json
+import sys
+
+item = json.loads(sys.argv[1])
 print(item.get("id") or "")
+PY
+    )"
+    source_url="$(python_cmd - "${post_candidate_json}" <<'PY'
+import json
+import sys
+
+item = json.loads(sys.argv[1])
 print(item.get("source_url") or "")
+PY
+    )"
+    selected_media_mode="$(python_cmd - "${post_candidate_json}" <<'PY'
+import json
+import sys
+
+item = json.loads(sys.argv[1])
 print(item.get("media_mode") or "")
+PY
+    )"
+    selected_image_urls_json="$(python_cmd - "${post_candidate_json}" <<'PY'
+import json
+import sys
+
+item = json.loads(sys.argv[1])
 print(json.dumps(item.get("image_urls") or [], ensure_ascii=False))
 PY
-    )
+    )"
+    duplicate_check_json="$(PYTHONPATH="${SCRIPT_DIR}/lib${PYTHONPATH:+:${PYTHONPATH}}" python_cmd - "${duplicate_index_json}" "${post_text}" <<'PY'
+import json
+import sys
 
-    post_text="${post_candidate_fields[0]:-}"
-    selected_tweet_id="${post_candidate_fields[1]:-}"
-    source_url="${post_candidate_fields[2]:-}"
-    selected_media_mode="${post_candidate_fields[3]:-}"
-    selected_image_urls_json="${post_candidate_fields[4]:-[]}"
+from post_duplicate_guard import find_duplicate_in_index
+
+index = json.loads(sys.argv[1])
+result = find_duplicate_in_index(sys.argv[2], index)
+print(json.dumps(result, ensure_ascii=False))
+PY
+    )"
+    is_recent_duplicate="$(python_cmd - "${duplicate_check_json}" <<'PY'
+import json
+import sys
+
+print(str(bool(json.loads(sys.argv[1]).get("duplicate"))).lower())
+PY
+    )"
+    if [[ "${is_recent_duplicate}" == "true" ]]; then
+      post_error="$(python_cmd - "${duplicate_check_json}" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(
+    "recent duplicate matched "
+    f"{payload.get('source', 'unknown')}"
+    f" tweet_id={payload.get('tweet_id', '')}"
+    f" created_at={payload.get('created_at', '')}"
+)
+PY
+      )"
+      warn "skipping duplicate candidate '${selected_tweet_id}': ${post_error}"
+      continue
+    fi
     post_result_file="$(make_run_file "${output_dir}" "post-${category}")"
     update_selected_candidate "${candidate_file}" "${selected_tweet_id}"
 

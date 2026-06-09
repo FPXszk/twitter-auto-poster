@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
 
@@ -97,6 +98,24 @@ class PostSelectionTest(unittest.TestCase):
         self.assertEqual(selected[0]["id"], "image-1")
         self.assertEqual(rotation["target_media_mode"], "image")
         self.assertTrue(rotation["media_preference_satisfied"])
+
+    def test_random_mode_uses_shuffled_order_without_score_sort(self) -> None:
+        candidates = [
+            {"id": "a", "source_key": "alpha", "score": 100, "views": 100, "replies": 1, "retweets": 5, "likes": 10, "created_at": "2026-03-22T08:00:00+00:00"},
+            {"id": "b", "source_key": "beta", "score": 1, "views": 1, "replies": 0, "retweets": 0, "likes": 0, "created_at": "2026-03-22T08:30:00+00:00"},
+        ]
+
+        with patch("post_selection.random.shuffle", side_effect=lambda items: items.reverse()):
+            selected, rotation = select_candidates(
+                candidates,
+                source_order=[],
+                max_candidates=1,
+                selection_mode="score",
+                ordering_mode="random",
+            )
+
+        self.assertEqual(selected[0]["id"], "b")
+        self.assertEqual(rotation["ordering_mode"], "random")
 
 
     def test_deduplicate_source_order_removes_consecutive_duplicates(self) -> None:

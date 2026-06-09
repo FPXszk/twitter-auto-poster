@@ -10,7 +10,8 @@ on:
         default: true
   schedule:
     - cron: "0 23 * * *"
-    - cron: "30 3 * * *"
+    - cron: "0 3 * * *"
+    - cron: "0 9 * * *"
     - cron: "0 12 * * *"
 
 permissions:
@@ -74,7 +75,7 @@ jobs:
           else:
               should_run = should_run_in_posting_window(
                   now,
-                  allowed_times=[(8, 0), (12, 30), (21, 0)],
+                  allowed_times=[(8, 0), (12, 0), (18, 0), (21, 0)],
               )
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
               handle.write(f"should_run={str(should_run).lower()}\n")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Any, Mapping, Sequence
 
 from post_media import normalize_media_mode
@@ -99,10 +100,15 @@ def select_candidates(
     source_order: Sequence[str],
     max_candidates: int,
     selection_mode: str,
+    ordering_mode: str = "score",
     previous_source: str = "",
     preferred_media_mode: str = "any",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    ordered_candidates = sort_candidates(candidates)
+    if ordering_mode == "random":
+        ordered_candidates = [dict(item) for item in candidates]
+        random.shuffle(ordered_candidates)
+    else:
+        ordered_candidates = sort_candidates(candidates)
     limit = max(max_candidates, 1)
 
     if selection_mode not in {"round_robin", "round_robin_account"} or not source_order:
@@ -113,6 +119,7 @@ def select_candidates(
         )
         return selected, {
             "selection_mode": "score",
+            "ordering_mode": ordering_mode,
             "source_order": list(source_order),
             "previous_source": "",
             "start_index": 0,
@@ -145,6 +152,7 @@ def select_candidates(
             )
             return selected, {
                 "selection_mode": selection_mode,
+                "ordering_mode": ordering_mode,
                 "source_order": normalized_source_order,
                 "previous_source": normalized_previous_source,
                 "start_index": start_index,
@@ -155,6 +163,7 @@ def select_candidates(
 
     return [], {
         "selection_mode": selection_mode,
+        "ordering_mode": ordering_mode,
         "source_order": normalized_source_order,
         "previous_source": normalized_previous_source,
         "start_index": start_index,

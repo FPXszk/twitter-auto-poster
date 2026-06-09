@@ -421,6 +421,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
         raise SystemExit(f"{label}.summary_language must be 'ja' or 'raw'")
     if "selection_mode" in block and str(block["selection_mode"]).strip() not in {"score", "round_robin", "round_robin_account"}:
         raise SystemExit(f"{label}.selection_mode must be 'score', 'round_robin', or 'round_robin_account'")
+    if "candidate_order" in block and str(block["candidate_order"]).strip() not in {"score", "random"}:
+        raise SystemExit(f"{label}.candidate_order must be 'score' or 'random'")
     if "source_reference_mode" in block and str(block["source_reference_mode"]).strip() not in {"url", "quote", "none"}:
         raise SystemExit(f"{label}.source_reference_mode must be 'url', 'quote', or 'none'")
     if "dry_run" in block:
@@ -441,6 +443,8 @@ for label, block in [("defaults", defaults), *[(f"accounts.{name}", value) for n
             raise SystemExit(f"{label}.filters must be a mapping")
         if "max_age_hours" in filters and filters["max_age_hours"] is not None and float(filters["max_age_hours"]) <= 0:
             raise SystemExit(f"{label}.filters.max_age_hours must be > 0")
+        if "min_age_hours" in filters and filters["min_age_hours"] is not None and float(filters["min_age_hours"]) <= 0:
+            raise SystemExit(f"{label}.filters.min_age_hours must be > 0")
         if "min_author_followers" in filters and filters["min_author_followers"] is not None and int(filters["min_author_followers"]) < 0:
             raise SystemExit(f"{label}.filters.min_author_followers must be >= 0")
         if "max_author_followers" in filters and filters["max_author_followers"] is not None and int(filters["max_author_followers"]) < 0:
