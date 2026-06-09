@@ -34,6 +34,7 @@ jobs:
         shell: C:/Progra~1/Git/bin/bash.exe --noprofile --norc -eo pipefail {0}
     env:
       CATEGORY: buz
+      PERSISTENT_STATE_DIR: C:/actions-runner-twitter/state/post-buz
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
@@ -149,37 +150,31 @@ jobs:
         run: |
           chmod +x scripts/*.sh scripts/lib/common.sh
           mkdir -p tmp/state
+          mkdir -p "${PERSISTENT_STATE_DIR}"
 
-      - name: Install gzip shim for cache actions
+      - name: Restore persistent post state
         if: steps.posting_window.outputs.should_run == 'true'
         run: |
-          mkdir -p tmp/tooling
-          cat > tmp/tooling/gzip <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec python/.venv/bin/python - <<'PY'
-          import gzip
+          python/.venv/bin/python - <<'PY'
+          import os
           import shutil
-          import sys
+          from pathlib import Path
 
-          try:
-              with gzip.GzipFile(fileobj=sys.stdout.buffer, mode="wb") as handle:
-                  shutil.copyfileobj(sys.stdin.buffer, handle)
-          except BrokenPipeError:
+          source = Path(os.environ["PERSISTENT_STATE_DIR"])
+          target = Path("tmp/state")
+          target.mkdir(parents=True, exist_ok=True)
+          if not source.exists():
               raise SystemExit(0)
-          PY
-          SH
-          chmod +x tmp/tooling/gzip
-          printf '%s\n' "$(pwd)/tmp/tooling" >> "$GITHUB_PATH"
 
-      - name: Restore post state
-        if: steps.posting_window.outputs.should_run == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: tmp/state
-          key: ${{ runner.os }}-post-buz-state-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-post-buz-state-
+          for item in source.iterdir():
+              destination = target / item.name
+              if item.is_dir():
+                  if destination.exists():
+                      shutil.rmtree(destination)
+                  shutil.copytree(item, destination)
+              else:
+                  shutil.copy2(item, destination)
+          PY
 
       - name: Hourly post guard
         id: hourly_guard
@@ -317,12 +312,34 @@ jobs:
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
 
-      - name: Save post state
+      - name: Save persistent post state
         if: always() && steps.posting_window.outputs.should_run == 'true' && steps.account_mode.outputs.dry_run != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: tmp/state
-          key: ${{ runner.os }}-post-buz-state-${{ github.run_id }}
+        run: |
+          python/.venv/bin/python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source = Path("tmp/state")
+          target = Path(os.environ["PERSISTENT_STATE_DIR"])
+          target.mkdir(parents=True, exist_ok=True)
+
+          for item in list(target.iterdir()):
+              if item.is_dir():
+                  shutil.rmtree(item)
+              else:
+                  item.unlink()
+
+          if not source.exists():
+              raise SystemExit(0)
+
+          for item in source.iterdir():
+              destination = target / item.name
+              if item.is_dir():
+                  shutil.copytree(item, destination)
+              else:
+                  shutil.copy2(item, destination)
+          PY
 
       - name: Upload run artifacts
         if: always()

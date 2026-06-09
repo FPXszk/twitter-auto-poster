@@ -84,7 +84,6 @@ accounts:
       image_bonus: 0.0
       author_virality: 0.0
     filters:
-      min_author_followers: 1000
       exclude_keywords:
         - "フォロー"
         - "プレゼント企画"

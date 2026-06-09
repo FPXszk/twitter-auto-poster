@@ -190,9 +190,10 @@ sources:
   - id: buz-ql_7mxa
     rotation_key: ql_7mxa
     category: buz
-    type: user
+    type: search
     enabled: true
-    username: ql_7mxa
+    query: "from:ql_7mxa -is:retweet -is:reply"
+    timeline: Latest
     max_results: 120
 
   - id: buz-yaruki_nash2

@@ -547,7 +547,10 @@ candidate_order = str(account.get("candidate_order") or "score").strip().lower()
 max_candidates = max(int(account.get("max_candidates") or 1), 1)
 fallback_candidates = max(int(account.get("fallback_candidates") or max_candidates or 1), 1)
 random_min_age_hours = [float(item) for item in (account.get("random_min_age_hours") or []) if float(item) > 0]
-selected_min_age_hours = random.choice(random_min_age_hours) if random_min_age_hours else None
+min_age_attempts = list(random_min_age_hours)
+random.shuffle(min_age_attempts)
+if not min_age_attempts:
+    min_age_attempts = [None]
 source_order = deduplicate_source_order([str((source_configs.get(source_id) or {}).get("rotation_key") or (source_configs.get(source_id) or {}).get("username") or source_id) for source_id in source_configs.keys()])
 rotation_raw = ""
 if rotation_state_file is not None:
@@ -585,107 +588,122 @@ if media_state_file.is_file():
 target_media_mode = preferred_media_mode_from_previous(previous_media_mode)
 
 
-for payload_path in payload_files:
-    source_id = payload_path.stem
-    source_config = source_configs.get(source_id) or {}
-    source_filters = source_config.get("filters") or {}
-    source_type = str(source_config.get("type") or "")
-    source_score_boost = float(source_config.get("score_boost") or 0)
-    source_feedback = feedback_boosts.get(source_id) or {}
-    feedback_boost = float(source_feedback.get("feedback_boost") or 0.0)
-    source_username = str(source_config.get("username") or "")
-    source_media_mode = str(source_config.get("media_mode") or "any")
-    effective_filters = merge_filters(account_filters, source_filters)
-    if selected_min_age_hours is not None:
-        effective_filters["min_age_hours"] = selected_min_age_hours
-    try:
-        payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        warnings.append(f"{payload_path.name}: failed to parse JSON ({exc})")
-        continue
-
-    if payload.get("ok") is not True:
-        warnings.append(f"{payload_path.name}: ok != true")
-        continue
-
-    for item in payload.get("data") or []:
-        tweet_id = str(item.get("id") or "").strip()
-        raw_text = str(item.get("text") or "")
-        text = clean_source_text(raw_text)
-        post_source_text = clean_post_source_text(raw_text)
-        media = extract_candidate_media(item, fallback_mode=source_media_mode)
-        has_image = bool(media.get("has_image"))
-        if not tweet_id or not has_candidate_content(raw_text, has_image=has_image):
+selected_min_age_hours = None
+for min_age_hours in min_age_attempts:
+    attempt_candidates = []
+    attempt_skipped = []
+    attempt_seen_ids = set()
+    attempt_seen_text = set()
+    for payload_path in payload_files:
+        source_id = payload_path.stem
+        source_config = source_configs.get(source_id) or {}
+        source_filters = source_config.get("filters") or {}
+        source_type = str(source_config.get("type") or "")
+        source_score_boost = float(source_config.get("score_boost") or 0)
+        source_feedback = feedback_boosts.get(source_id) or {}
+        feedback_boost = float(source_feedback.get("feedback_boost") or 0.0)
+        source_username = str(source_config.get("username") or "")
+        source_media_mode = str(source_config.get("media_mode") or "any")
+        effective_filters = merge_filters(account_filters, source_filters)
+        if min_age_hours is not None:
+            effective_filters["min_age_hours"] = min_age_hours
+        try:
+            payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            warnings.append(f"{payload_path.name}: failed to parse JSON ({exc})")
             continue
 
-        if tweet_id in posted_ids or tweet_id in seen_ids:
+        if payload.get("ok") is not True:
+            warnings.append(f"{payload_path.name}: ok != true")
             continue
 
-        normalized_text = build_candidate_dedup_key(raw_text, has_image=has_image, tweet_id=tweet_id)
-        if normalized_text in seen_text:
-            continue
+        for item in payload.get("data") or []:
+            tweet_id = str(item.get("id") or "").strip()
+            raw_text = str(item.get("text") or "")
+            text = clean_source_text(raw_text)
+            post_source_text = clean_post_source_text(raw_text)
+            media = extract_candidate_media(item, fallback_mode=source_media_mode)
+            has_image = bool(media.get("has_image"))
+            if not tweet_id or not has_candidate_content(raw_text, has_image=has_image):
+                continue
 
-        created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
-        author = item.get("author") or {}
-        author_metrics, author_warning = enrich_author_metrics(item, cache=author_cache, diagnostics=author_diagnostics)
-        if author_warning:
-            warnings.append(f"{source_id}:{tweet_id}: {author_warning}")
-        rejection_reasons = candidate_rejection_reasons(
-            text=text,
-            created_at=created_at,
-            raw_filters=effective_filters,
-            author_metrics=author_metrics,
-        )
-        if rejection_reasons:
-            skipped_candidates.append({"id": tweet_id, "source_id": source_id, "text": text[:2000], "reasons": rejection_reasons})
-            continue
+            if tweet_id in posted_ids or tweet_id in attempt_seen_ids:
+                continue
 
-        metrics = extract_candidate_metrics(item)
-        score, score_breakdown = calculate_score(
-            metrics,
-            score_weights,
-            created_at=created_at,
-            max_age_hours=effective_filters.get("max_age_hours"),
-            source_boost=source_score_boost,
-            feedback_boost=feedback_boost,
-            has_image=has_image,
-            author_metrics=author_metrics,
-        )
+            normalized_text = build_candidate_dedup_key(raw_text, has_image=has_image, tweet_id=tweet_id)
+            if normalized_text in attempt_seen_text:
+                continue
 
-        candidates.append(
-            {
-                "id": tweet_id,
-                "source_id": source_id,
-                "source_type": source_type,
-                "source_key": source_username or source_id,
-                "source_username": source_username,
-                "rotation_key": str(source_config.get("rotation_key") or source_username or source_id),
-                "text": text or raw_text.strip(),
-                "post_source_text": post_source_text or text or raw_text.strip(),
-                "screen_name": str(author_metrics.get("screen_name") or author.get("screenName") or ""),
-                "author_name": str(author.get("name") or ""),
-                "author_followers": int(author_metrics.get("followers") or 0),
-                "author_following": int(author_metrics.get("following") or 0),
-                "author_verified": bool(author_metrics.get("verified")),
-                "likes": metrics["likes"],
-                "retweets": metrics["retweets"],
-                "replies": metrics["replies"],
-                "views": metrics["views"],
-                "has_image": has_image,
-                "image_urls": media.get("image_urls") or [],
-                "media_mode": str(media.get("media_mode") or "text"),
-                "media_types": media.get("media_types") or [],
-                "media_classification_source": str(media.get("classification_source") or "default"),
-                "score": round(score, 2),
-                "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
-                "feedback_boost": round(feedback_boost, 2),
-                "feedback_history_count": int(source_feedback.get("history_count") or 0),
-                "created_at": created_at,
-                "source_score_boost": round(source_score_boost, 2),
-            }
-        )
-        seen_ids.add(tweet_id)
-        seen_text.add(normalized_text)
+            created_at = str(item.get("createdAtISO") or item.get("createdAt") or "")
+            author = item.get("author") or {}
+            author_metrics, author_warning = enrich_author_metrics(item, cache=author_cache, diagnostics=author_diagnostics)
+            if author_warning:
+                warnings.append(f"{source_id}:{tweet_id}: {author_warning}")
+            rejection_reasons = candidate_rejection_reasons(
+                text=text,
+                created_at=created_at,
+                raw_filters=effective_filters,
+                author_metrics=author_metrics,
+            )
+            if rejection_reasons:
+                attempt_skipped.append({"id": tweet_id, "source_id": source_id, "text": text[:2000], "reasons": rejection_reasons})
+                continue
+
+            metrics = extract_candidate_metrics(item)
+            score, score_breakdown = calculate_score(
+                metrics,
+                score_weights,
+                created_at=created_at,
+                max_age_hours=effective_filters.get("max_age_hours"),
+                source_boost=source_score_boost,
+                feedback_boost=feedback_boost,
+                has_image=has_image,
+                author_metrics=author_metrics,
+            )
+
+            attempt_candidates.append(
+                {
+                    "id": tweet_id,
+                    "source_id": source_id,
+                    "source_type": source_type,
+                    "source_key": source_username or source_id,
+                    "source_username": source_username,
+                    "rotation_key": str(source_config.get("rotation_key") or source_username or source_id),
+                    "text": text or raw_text.strip(),
+                    "post_source_text": post_source_text or text or raw_text.strip(),
+                    "screen_name": str(author_metrics.get("screen_name") or author.get("screenName") or ""),
+                    "author_name": str(author.get("name") or ""),
+                    "author_followers": int(author_metrics.get("followers") or 0),
+                    "author_following": int(author_metrics.get("following") or 0),
+                    "author_verified": bool(author_metrics.get("verified")),
+                    "likes": metrics["likes"],
+                    "retweets": metrics["retweets"],
+                    "replies": metrics["replies"],
+                    "views": metrics["views"],
+                    "has_image": has_image,
+                    "image_urls": media.get("image_urls") or [],
+                    "media_mode": str(media.get("media_mode") or "text"),
+                    "media_types": media.get("media_types") or [],
+                    "media_classification_source": str(media.get("classification_source") or "default"),
+                    "score": round(score, 2),
+                    "score_breakdown": {key: round(value, 2) for key, value in score_breakdown.items()},
+                    "feedback_boost": round(feedback_boost, 2),
+                    "feedback_history_count": int(source_feedback.get("history_count") or 0),
+                    "created_at": created_at,
+                    "source_score_boost": round(source_score_boost, 2),
+                }
+            )
+            attempt_seen_ids.add(tweet_id)
+            attempt_seen_text.add(normalized_text)
+
+    if attempt_candidates:
+        candidates = attempt_candidates
+        skipped_candidates = attempt_skipped
+        selected_min_age_hours = min_age_hours
+        break
+
+    if not skipped_candidates:
+        skipped_candidates = attempt_skipped
 
 selected_candidates, rotation = select_candidates(
     candidates,
