@@ -1099,7 +1099,7 @@ PY
     exit 1
   fi
 
-  if [[ "${selection_mode}" == "round_robin" || "${selection_mode}" == "round_robin_account" ]] && -n "${selected_source_name}" ]]; then
+  if [[ ( "${selection_mode}" == "round_robin" || "${selection_mode}" == "round_robin_account" ) && -n "${selected_source_name}" ]]; then
     update_rotation_state "${rotation_state_file}" "${selected_source_name}"
   fi
   update_media_state "${media_state_file}" "${selected_media_mode}" "${selected_tweet_id}"

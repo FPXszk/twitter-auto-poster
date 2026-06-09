@@ -607,6 +607,7 @@ payload = {
     "dry_run": parse_bool(account.get("dry_run", defaults.get("dry_run", True))),
     "post_prefix": str(account.get("post_prefix") or defaults.get("post_prefix") or "Update:"),
     "max_candidates": int(account.get("max_candidates") or defaults.get("max_candidates") or 1),
+    "candidate_order": str(account.get("candidate_order") or defaults.get("candidate_order") or "score"),
     "summary_prefix": str(
         account.get("summary_prefix")
         or account.get("post_prefix")
@@ -621,6 +622,9 @@ payload = {
     "media_state_file": str(account.get("media_state_file") or defaults.get("media_state_file") or ""),
     "selection_mode": str(account.get("selection_mode") or defaults.get("selection_mode") or "score"),
     "fallback_candidates": int(account.get("fallback_candidates") or defaults.get("fallback_candidates") or 1),
+    "random_min_age_hours": account.get("random_min_age_hours") or defaults.get("random_min_age_hours") or [],
+    "recent_duplicate_lookback_days": int(account.get("recent_duplicate_lookback_days") or defaults.get("recent_duplicate_lookback_days") or 7),
+    "recent_duplicate_check_max_posts": int(account.get("recent_duplicate_check_max_posts") or defaults.get("recent_duplicate_check_max_posts") or 40),
     "source_reference_mode": str(account.get("source_reference_mode") or defaults.get("source_reference_mode") or "url"),
     "rotation_state_file": str(account.get("rotation_state_file") or defaults.get("rotation_state_file") or ""),
     "summary_provider": str(account.get("summary_provider") or defaults.get("summary_provider") or "legacy_google_translate"),
@@ -637,6 +641,7 @@ payload = {
         "author_virality": float(account_score_weights.get("author_virality", default_score_weights.get("author_virality", 0))),
     },
     "filters": {
+        "min_age_hours": account_filters.get("min_age_hours", default_filters.get("min_age_hours")),
         "max_age_hours": account_filters.get("max_age_hours", default_filters.get("max_age_hours")),
         "required_terms": account_filters.get("required_terms", default_filters.get("required_terms", [])) or [],
         "exclude_keywords": account_filters.get("exclude_keywords", default_filters.get("exclude_keywords", [])) or [],

@@ -150,6 +150,18 @@ jobs:
           chmod +x scripts/*.sh scripts/lib/common.sh
           mkdir -p tmp/state
 
+      - name: Install gzip shim for cache actions
+        if: steps.posting_window.outputs.should_run == 'true'
+        run: |
+          mkdir -p tmp/tooling
+          cat > tmp/tooling/gzip <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          python/.venv/bin/python -c 'import gzip, sys; sys.stdout.buffer.write(gzip.compress(sys.stdin.buffer.read()))'
+          SH
+          chmod +x tmp/tooling/gzip
+          printf '%s\n' "$(pwd)/tmp/tooling" >> "$GITHUB_PATH"
+
       - name: Restore post state
         if: steps.posting_window.outputs.should_run == 'true'
         uses: actions/cache/restore@v4
