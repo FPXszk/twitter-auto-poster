@@ -157,7 +157,17 @@ jobs:
           cat > tmp/tooling/gzip <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          python/.venv/bin/python -c 'import gzip, sys; sys.stdout.buffer.write(gzip.compress(sys.stdin.buffer.read()))'
+          exec python/.venv/bin/python - <<'PY'
+          import gzip
+          import shutil
+          import sys
+
+          try:
+              with gzip.GzipFile(fileobj=sys.stdout.buffer, mode="wb") as handle:
+                  shutil.copyfileobj(sys.stdin.buffer, handle)
+          except BrokenPipeError:
+              raise SystemExit(0)
+          PY
           SH
           chmod +x tmp/tooling/gzip
           printf '%s\n' "$(pwd)/tmp/tooling" >> "$GITHUB_PATH"
