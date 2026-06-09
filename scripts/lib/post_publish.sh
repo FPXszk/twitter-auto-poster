@@ -608,6 +608,7 @@ execute_twitter_post() {
 
   if [[ -n "${media_paths_json}" && "${media_paths_json}" != "[]" ]]; then
     while IFS= read -r image_path; do
+      image_path="${image_path%$'\r'}"
       [[ -n "${image_path}" ]] || continue
       image_args+=(--image "${image_path}")
     done < <(python_cmd - "${media_paths_json}" <<'PY'
