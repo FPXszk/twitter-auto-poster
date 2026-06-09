@@ -202,15 +202,16 @@ sources:
     type: user
     enabled: true
     username: yaruki_nash2
-    max_results: 120
+    max_results: 200
 
   - id: buz-rmiqx_
     rotation_key: rmiqx_
     category: buz
-    type: user
+    type: search
     enabled: true
-    username: rmiqx_
-    max_results: 120
+    query: "from:rmiqx_ -is:retweet -is:reply"
+    timeline: Latest
+    max_results: 100
 
   - id: buz-pam99ham-big
     rotation_key: pam99ham
