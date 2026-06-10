@@ -38,21 +38,21 @@ class SourcesConfigTest(unittest.TestCase):
         cls.sources = raw.get("sources") or []
         cls.buz_sources = [s for s in cls.sources if s.get("category") == "buz" and s.get("enabled", True)]
 
-    def test_buz_enabled_count_is_6(self) -> None:
-        self.assertEqual(len(self.buz_sources), 6)
+    def test_buz_enabled_count_is_3(self) -> None:
+        self.assertEqual(len(self.buz_sources), 3)
 
     def test_buz_rotation_keys_are_only_requested_3_accounts(self) -> None:
         rotation_keys = sorted(set(s["rotation_key"] for s in self.buz_sources))
         self.assertEqual(rotation_keys, sorted(EXPECTED_NEW_ACCOUNTS))
 
-    def test_each_account_has_big_and_small(self) -> None:
+    def test_each_account_has_single_enabled_source(self) -> None:
         for account in EXPECTED_NEW_ACCOUNTS:
             variants = [s for s in self.buz_sources if s["rotation_key"] == account]
             ids = sorted(s["id"] for s in variants)
             self.assertEqual(
                 ids,
-                sorted([f"buz-{account}-big", f"buz-{account}-small"]),
-                f"{account} should have big and small entries",
+                [f"buz-{account}"],
+                f"{account} should have exactly one enabled source",
             )
 
     def test_old_accounts_not_in_enabled_buz(self) -> None:
@@ -60,13 +60,16 @@ class SourcesConfigTest(unittest.TestCase):
         for old in OLD_ACCOUNTS:
             self.assertNotIn(old, enabled_keys, f"Old account {old} should not be enabled")
 
-    def test_buz_sources_preserve_thresholds(self) -> None:
+    def test_buz_sources_preserve_requested_fetch_shapes(self) -> None:
+        expected = {
+            "buz-ql_7mxa": {"type": "search", "max_results": 120},
+            "buz-yaruki_nash2": {"type": "user", "max_results": 200},
+            "buz-rmiqx_": {"type": "search", "max_results": 100},
+        }
         for source in self.buz_sources:
-            self.assertEqual(source["max_results"], 20, f"{source['id']} max_results")
-            if source["id"].endswith("-big"):
-                self.assertEqual(source["score_boost"], 10, f"{source['id']} score_boost")
-            else:
-                self.assertEqual(source["score_boost"], 6, f"{source['id']} score_boost")
+            with self.subTest(source=source["id"]):
+                self.assertEqual(source["type"], expected[source["id"]]["type"])
+                self.assertEqual(source["max_results"], expected[source["id"]]["max_results"])
 
     def test_news_sources_unchanged(self) -> None:
         news = [s for s in self.sources if s.get("category") == "news"]
@@ -96,6 +99,10 @@ class BuzAccountConfigTest(unittest.TestCase):
     def test_buz_reply_disabled(self) -> None:
         reply = self.buz.get("reply") or {}
         self.assertFalse(reply.get("enabled", True))
+
+    def test_buz_max_age_hours_is_disabled(self) -> None:
+        filters = self.buz.get("filters") or {}
+        self.assertIsNone(filters.get("max_age_hours"))
 
 
 if __name__ == "__main__":

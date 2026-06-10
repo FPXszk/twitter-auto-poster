@@ -75,6 +75,8 @@ class WorkflowSummaryTest(TestCase):
                     "feedback_boosts": {"alpha-big": {"feedback_boost": 2.5, "history_count": 2}},
                     "summary_attempts": [{"tweet_id": "123", "ok": False, "error": "boom"}, {"tweet_id": "456", "ok": True, "provider": "copilot"}],
                     "summary_evaluator": {"accepted": 1, "rejected": 1},
+                    "selected_min_age_hours": 72,
+                    "eligible_min_age_hours": [72, 96, 168],
                 },
                 "alerts": [
                     {"level": "warning", "code": "summary_validation_failed", "message": "contains_url", "tweet_id": "789"}
@@ -89,6 +91,8 @@ class WorkflowSummaryTest(TestCase):
         self.assertIn("Feedback refresh", rendered)
         self.assertIn("Feedback-enabled sources", rendered)
         self.assertIn("summary_validation_failed", rendered)
+        self.assertIn("Selected min age hours", rendered)
+        self.assertIn("Eligible min age hours", rendered)
         self.assertIn("123", rendered)
 
     def test_render_run_summary_highlights_post_failure(self) -> None:

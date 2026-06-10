@@ -84,6 +84,7 @@ accounts:
       image_bonus: 0.0
       author_virality: 0.0
     filters:
+      max_age_hours:
       exclude_keywords:
         - "フォロー"
         - "プレゼント企画"

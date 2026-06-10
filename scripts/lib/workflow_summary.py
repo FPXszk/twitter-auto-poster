@@ -191,6 +191,8 @@ def render_run_summary(
     summary_evaluator = diagnostics.get("summary_evaluator") or {}
     post_candidates = payload.get("post_candidates") or []
     alerts = payload.get("alerts") or []
+    eligible_min_age_hours = diagnostics.get("eligible_min_age_hours") or []
+    selected_min_age_hours = diagnostics.get("selected_min_age_hours")
 
     lines.extend(
         [
@@ -240,6 +242,10 @@ def render_run_summary(
                 f"- Summary evaluator rejected: `{summary_evaluator.get('rejected', 0)}`",
             ]
         )
+    if selected_min_age_hours is not None:
+        lines.append(f"- Selected min age hours: `{selected_min_age_hours}`")
+    if eligible_min_age_hours:
+        lines.append(f"- Eligible min age hours: `{eligible_min_age_hours}`")
 
     selected = payload.get("selected")
     if not selected and result_mode != "summary_exhausted":

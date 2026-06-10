@@ -589,11 +589,15 @@ target_media_mode = preferred_media_mode_from_previous(previous_media_mode)
 
 
 selected_min_age_hours = None
+min_age_attempt_diagnostics = []
+successful_attempts = []
 for min_age_hours in min_age_attempts:
     attempt_candidates = []
     attempt_skipped = []
     attempt_seen_ids = set()
     attempt_seen_text = set()
+    attempt_counts_by_source = {}
+    attempt_skipped_by_source = {}
     for payload_path in payload_files:
         source_id = payload_path.stem
         source_config = source_configs.get(source_id) or {}
@@ -647,6 +651,7 @@ for min_age_hours in min_age_attempts:
             )
             if rejection_reasons:
                 attempt_skipped.append({"id": tweet_id, "source_id": source_id, "text": text[:2000], "reasons": rejection_reasons})
+                attempt_skipped_by_source[source_id] = attempt_skipped_by_source.get(source_id, 0) + 1
                 continue
 
             metrics = extract_candidate_metrics(item)
@@ -693,17 +698,36 @@ for min_age_hours in min_age_attempts:
                     "source_score_boost": round(source_score_boost, 2),
                 }
             )
+            attempt_counts_by_source[source_id] = attempt_counts_by_source.get(source_id, 0) + 1
             attempt_seen_ids.add(tweet_id)
             attempt_seen_text.add(normalized_text)
 
-    if attempt_candidates:
-        candidates = attempt_candidates
-        skipped_candidates = attempt_skipped
-        selected_min_age_hours = min_age_hours
-        break
+    min_age_attempt_diagnostics.append(
+        {
+            "min_age_hours": min_age_hours,
+            "candidate_count": len(attempt_candidates),
+            "skipped_count": len(attempt_skipped),
+            "candidate_counts_by_source": attempt_counts_by_source,
+            "skipped_counts_by_source": attempt_skipped_by_source,
+        }
+    )
 
-    if not skipped_candidates:
+    if attempt_candidates:
+        successful_attempts.append(
+            {
+                "min_age_hours": min_age_hours,
+                "candidates": attempt_candidates,
+                "skipped_candidates": attempt_skipped,
+            }
+        )
+    elif not skipped_candidates:
         skipped_candidates = attempt_skipped
+
+if successful_attempts:
+    selected_attempt = random.choice(successful_attempts)
+    candidates = selected_attempt["candidates"]
+    skipped_candidates = selected_attempt["skipped_candidates"]
+    selected_min_age_hours = selected_attempt["min_age_hours"]
 
 selected_candidates, rotation = select_candidates(
     candidates,
@@ -825,6 +849,8 @@ payload = {
         "summary_evaluator": summary_evaluator,
         "fallback_candidates": fallback_candidates,
         "candidate_order": candidate_order,
+        "min_age_attempts": min_age_attempt_diagnostics,
+        "eligible_min_age_hours": [attempt["min_age_hours"] for attempt in successful_attempts],
         "selected_min_age_hours": selected_min_age_hours,
     },
     "skipped_candidates": skipped_candidates[:20],
