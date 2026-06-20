@@ -58,22 +58,18 @@ jobs:
 
       - name: Resolve Python
         run: |
-          $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+          $candidates = @(
+            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe",
+            "C:\Users\szk\miniconda3\python.exe"
+          )
+          $python = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $python) {
-            $py = Get-Command py -ErrorAction SilentlyContinue
-            if ($py) {
-              $python = $py.Source
-              "PYTHON_BOOTSTRAP=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-              "PYTHON_BOOTSTRAP_ARGS=-3" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-              & $python -3 --version
-              exit 0
-            }
+            $python = (Get-Command python -ErrorAction SilentlyContinue).Source
           }
           if (-not $python) {
             throw "Python was not found on PATH."
           }
           "PYTHON_BOOTSTRAP=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PYTHON_BOOTSTRAP_ARGS=" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & $python --version
 
       - name: Resolve run options
@@ -82,10 +78,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
         run: |
-          $bootstrapArgs = @()
-          if (-not [string]::IsNullOrWhiteSpace($env:PYTHON_BOOTSTRAP_ARGS)) {
-            $bootstrapArgs = $env:PYTHON_BOOTSTRAP_ARGS -split " "
-          }
           @'
           import json
           import os
@@ -110,22 +102,18 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               for name, value in values.items():
                   handle.write(f"{name}={value}\n")
-          '@ | & "$env:PYTHON_BOOTSTRAP" @bootstrapArgs -
+          '@ | & "$env:PYTHON_BOOTSTRAP" -
 
       - name: Install runtime dependencies
         run: |
-          $bootstrapArgs = @()
-          if (-not [string]::IsNullOrWhiteSpace($env:PYTHON_BOOTSTRAP_ARGS)) {
-            $bootstrapArgs = $env:PYTHON_BOOTSTRAP_ARGS -split " "
-          }
-          & "$env:PYTHON_BOOTSTRAP" @bootstrapArgs -m venv python\.venv
-          python\.venv\Scripts\python.exe -m pip install --upgrade pip
-          python\.venv\Scripts\python.exe -m pip install twitter-cli
+          & "$env:PYTHON_BOOTSTRAP" -m venv python\.venv
+          .\python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\python\.venv\Scripts\python.exe -m pip install twitter-cli
 
       - name: Run runtime diagnostics
         run: |
           New-Item -ItemType Directory -Force tmp\diagnostics | Out-Null
-          python\.venv\Scripts\python.exe python/check_python_runtime.py --output tmp/diagnostics/runtime.json
+          .\python\.venv\Scripts\python.exe python/check_python_runtime.py --output tmp/diagnostics/runtime.json
 
       - name: Restore score history
         uses: actions/cache/restore@v4
@@ -151,7 +139,7 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace($env:TWEET_ID_2)) {
             $extraArgs += @("--tweet-id", $env:TWEET_ID_2)
           }
-          python\.venv\Scripts\python.exe python\twitter_account_diagnostic.py `
+          .\python\.venv\Scripts\python.exe python\twitter_account_diagnostic.py `
             --diagnostics-dir tmp\diagnostics `
             --summary-output tmp\diagnostics\account-score.json `
             --history-path tmp\diagnostics\account-score-history.jsonl `
@@ -246,7 +234,7 @@ jobs:
                               lines.append(f"  - Error: {item.get('error')}")
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          '@ | python\.venv\Scripts\python.exe -
+          '@ | .\python\.venv\Scripts\python.exe -
 
       - name: Save score history
         if: always()
