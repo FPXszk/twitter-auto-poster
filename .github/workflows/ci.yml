@@ -16,10 +16,10 @@ jobs:
   validate:
     runs-on:
       - self-hosted
-      - windows-wsl
+      - Windows
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
@@ -30,42 +30,48 @@ jobs:
       - name: Install validation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyyaml yfinance pandas xlrd twitter-cli twikit==2.3.3 XClientTransaction==1.0.2
+          python -m pip install pyyaml yfinance pandas xlrd numpy pillow twitter-cli twikit==2.3.3 XClientTransaction==1.0.2
 
       - name: Run unit tests
         run: python -m unittest discover -s tests
 
       - name: Validate shell scripts
         run: |
-          set -euo pipefail
-          mapfile -t shell_files < <(find scripts -type f -name '*.sh' | sort)
-          if [ "${#shell_files[@]}" -eq 0 ]; then
-            echo "No shell scripts found." >&2
-            exit 1
-          fi
-          bash -n "${shell_files[@]}"
+          $bashCandidates = @(
+            "C:\Program Files\Git\bin\bash.exe",
+            "C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          $bash = $bashCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $bash) {
+            $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $bash) {
+            throw "bash was not found on PATH; install Git Bash or migrate the remaining shell scripts first."
+          }
+          if ($bash -like "*\Windows\system32\bash.exe") {
+            throw "Refusing WSL bash for Windows native validation; install Git Bash or migrate the remaining shell scripts first."
+          }
+
+          $shellFiles = Get-ChildItem scripts -Recurse -File -Filter *.sh | Sort-Object FullName
+          if (-not $shellFiles) {
+            throw "No shell scripts found."
+          }
+
+          & $bash -n @($shellFiles.FullName)
 
       - name: Validate Python modules
         run: |
-          set -euo pipefail
-          mapfile -t python_files < <(find python scripts/lib -type f -name '*.py' ! -path '*/.*' ! -path '*/.venv/*' | sort)
-          if [ "${#python_files[@]}" -eq 0 ]; then
-            echo "No Python files found." >&2
-            exit 1
-          fi
-          python -m py_compile "${python_files[@]}"
+          $pythonFiles = @(
+            Get-ChildItem python, scripts/lib -Recurse -File -Filter *.py |
+              Where-Object { $_.FullName -notmatch "\\\.venv\\" } |
+              Sort-Object FullName |
+              ForEach-Object { $_.FullName }
+          )
+          if (-not $pythonFiles) {
+            throw "No Python files found."
+          }
+
+          python -m py_compile @pythonFiles
 
       - name: Validate YAML files
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          paths = sorted(Path("config").glob("*.yaml")) + sorted(Path(".github/workflows").glob("*.yml"))
-          if not paths:
-              raise SystemExit("No YAML files found.")
-
-          for path in paths:
-              yaml.safe_load(path.read_text(encoding="utf-8"))
-              print(f"OK {path}")
-          PY
+        run: python scripts/dev/validate_yaml.py

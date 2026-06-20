@@ -18,10 +18,10 @@ jobs:
   run:
     runs-on:
       - self-hosted
-      - windows-wsl
+      - Windows
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
@@ -41,29 +41,16 @@ jobs:
         if: steps.market_day.outputs.should_run == 'true'
         run: |
           python -m venv python/.venv
-          python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install xlrd pyyaml
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            mkdir -p python/.venv/bin
-            cat > python/.venv/bin/python <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/python.exe" "$@"
-            EOF
-            cat > python/.venv/bin/pip <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
-            EOF
-            chmod +x python/.venv/bin/python python/.venv/bin/pip
-          fi
+          python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          python\.venv\Scripts\python.exe -m pip install xlrd pyyaml
 
       - name: Run runtime diagnostics
         if: steps.market_day.outputs.should_run == 'true'
-        run: |
-          python/.venv/bin/python python/check_python_runtime.py --module xlrd --module yaml --output tmp/update-tickers-jp-runtime.json
+        run: python\.venv\Scripts\python.exe python/check_python_runtime.py --module xlrd --module yaml --output tmp/update-tickers-jp-runtime.json
 
       - name: Update JP ticker CSV
         if: steps.market_day.outputs.should_run == 'true'
-        run: python/.venv/bin/python python/update_tickers_jp.py
+        run: python\.venv\Scripts\python.exe python/update_tickers_jp.py
 
       - name: Write run summary
         if: always()
@@ -73,7 +60,7 @@ jobs:
           SKIP_REASON: ${{ steps.market_day.outputs.reason }}
           FIRST_BUSINESS_DAY: ${{ steps.market_day.outputs.first_business_day }}
         run: |
-          python - <<'PY'
+          @'
           import json
           import os
           from pathlib import Path
@@ -154,7 +141,7 @@ jobs:
                       lines.extend(["", f"- Detail lists are capped at `{detail_limit}` rows in the summary artifact."])
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
+          '@ | python -
 
       - name: Upload JP ticker artifacts
         if: steps.market_day.outputs.should_run == 'true'

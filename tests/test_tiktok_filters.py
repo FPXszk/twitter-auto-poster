@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime, timezone
+from datetime import timedelta
 from pathlib import Path
 import unittest
 
@@ -15,7 +16,7 @@ def _make_video(
     video_id: str = "v001",
     title: str = "Fun Video",
     description: str = "Great content here",
-    created_at: str = "2026-03-31T12:00:00+00:00",
+    created_at: str | None = None,
     likes: int = 500,
     views: int = 10000,
     retweets: int = 50,
@@ -23,6 +24,8 @@ def _make_video(
     username: str = "testuser",
     platform_user_id: str = "111222333",
 ) -> dict:
+    if created_at is None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     return {
         "video_id": video_id,
         "title": title,

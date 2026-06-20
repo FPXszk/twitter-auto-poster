@@ -6,7 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "lib"))
@@ -322,7 +322,7 @@ class PostVideoTest(unittest.TestCase):
         payload = build_post_video_success_payload(
             tweet_id="12345",
             tweet_text="video caption",
-            video_path=Path("/tmp/video.mp4"),
+            video_path=PurePosixPath("/tmp/video.mp4"),
             dry_run=False,
         )
 
@@ -339,7 +339,7 @@ class PostVideoTest(unittest.TestCase):
         payload = build_post_video_success_payload(
             tweet_id="12345",
             tweet_text="動画キャプション",
-            video_path=Path("/tmp/video.mp4"),
+            video_path=PurePosixPath("/tmp/video.mp4"),
             dry_run=True,
         )
 

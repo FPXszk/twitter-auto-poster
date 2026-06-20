@@ -8,7 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Callable, Mapping
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ def build_post_video_success_payload(
     action = "dry_run_video" if dry_run else "post_video"
     message = "dry-run validated video post" if dry_run else f"posted video tweet {normalized_id}"
     normalized_text = normalize_tweet_text(tweet_text)
-    normalized_video_path = str(Path(video_path))
+    normalized_video_path = str(video_path) if isinstance(video_path, PurePath) else str(Path(video_path))
     return {
         "ok": True,
         "data": {
@@ -191,7 +191,7 @@ def build_post_video_failure_payload(
     dry_run: bool,
 ) -> dict[str, Any]:
     normalized_text = str(tweet_text or "").strip()
-    normalized_video_path = str(Path(video_path))
+    normalized_video_path = str(video_path) if isinstance(video_path, PurePath) else str(Path(video_path))
     action = "dry_run_video" if dry_run else "post_video"
     return {
         "ok": False,

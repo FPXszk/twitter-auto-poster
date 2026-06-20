@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from unittest import TestCase, main
@@ -12,9 +15,35 @@ class PostPublishTest(TestCase):
     common_sh = root_dir / "scripts" / "lib" / "common.sh"
     post_publish_sh = root_dir / "scripts" / "lib" / "post_publish.sh"
 
+    @staticmethod
+    def bash_executable() -> str:
+        for candidate in (
+            Path("C:/Program Files/Git/bin/bash.exe"),
+            Path("C:/Program Files/Git/usr/bin/bash.exe"),
+        ):
+            if candidate.exists():
+                return str(candidate)
+        return shutil.which("bash") or "bash"
+
+    @staticmethod
+    def bash_path(path: str | Path) -> str:
+        resolved = Path(path).resolve()
+        if os.name != "nt":
+            return str(resolved)
+        bash = PostPublishTest.bash_executable().replace("\\", "/").lower()
+        drive = resolved.drive.rstrip(":").lower()
+        tail = resolved.as_posix()[3:]
+        if bash.endswith("/windows/system32/bash.exe"):
+            return f"/mnt/{drive}/{tail}"
+        return f"/{drive}/{tail}"
+
+    @classmethod
+    def python_bash_path(cls) -> str:
+        return cls.bash_path(sys.executable)
+
     def run_bash(self, script: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", "-lc", script],
+            [self.bash_executable(), "-lc", script],
             cwd=self.root_dir,
             text=True,
             capture_output=True,
@@ -28,14 +57,18 @@ class PostPublishTest(TestCase):
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
             limits_path = temp_path / "single-post-limits.txt"
+            result_bash = self.bash_path(result_path)
+            state_bash = self.bash_path(state_path)
+            source_state_bash = self.bash_path(source_state_path)
+            limits_bash = self.bash_path(limits_path)
 
             result = self.run_bash(
                 f'''
-                source "{self.common_sh}"
-                source "{self.post_publish_sh}"
+                source "{self.bash_path(self.common_sh)}"
+                source "{self.bash_path(self.post_publish_sh)}"
 
                 python_cmd() {{
-                  python3 "$@"
+                  "{self.python_bash_path()}" "$@"
                 }}
 
                 post_calls=0
@@ -49,7 +82,7 @@ class PostPublishTest(TestCase):
                   local stdout_path="$5"
                   local stderr_path="$6"
 
-                  printf '%s\n' "${{single_post_max_length}}" >> "{limits_path}"
+                  printf '%s\n' "${{single_post_max_length}}" >> "{limits_bash}"
                   build_plan_calls=$((build_plan_calls + 1))
 
                   if (( build_plan_calls == 1 )); then
@@ -66,7 +99,7 @@ class PostPublishTest(TestCase):
                 }}
 
                 count_thread_posts() {{
-                  python3 - "$1" <<'PY'
+                  python_cmd - "$1" <<'PY'
 import json
 import sys
 
@@ -126,9 +159,9 @@ PY
                   "https://x.com/example/status/12345" \
                   "quote" \
                   "4000" \
-                  "{state_path}" \
-                  "{source_state_path}" \
-                  "{result_path}"
+                  "{state_bash}" \
+                  "{source_state_bash}" \
+                  "{result_bash}"
                 status="$?"
                 printf 'status=%s\\n' "${{status}}"
                 printf 'post_calls=%s\\n' "${{post_calls}}"
@@ -152,14 +185,18 @@ PY
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
             cleanup_path = temp_path / "cleanup.txt"
+            result_bash = self.bash_path(result_path)
+            state_bash = self.bash_path(state_path)
+            source_state_bash = self.bash_path(source_state_path)
+            cleanup_bash = self.bash_path(cleanup_path)
 
             result = self.run_bash(
                 f'''
-                source "{self.common_sh}"
-                source "{self.post_publish_sh}"
+                source "{self.bash_path(self.common_sh)}"
+                source "{self.bash_path(self.post_publish_sh)}"
 
                 python_cmd() {{
-                  python3 "$@"
+                  "{self.python_bash_path()}" "$@"
                 }}
 
                 build_thread_plan_json() {{
@@ -174,7 +211,7 @@ PY
                 }}
 
                 count_thread_posts() {{
-                  python3 - "$1" <<'PY'
+                  python_cmd - "$1" <<'PY'
 import json
 import sys
 
@@ -192,7 +229,7 @@ PY
                 }}
 
                 cleanup_image_attachments() {{
-                  printf '%s\\n' "$1" > "{cleanup_path}"
+                  printf '%s\\n' "$1" > "{cleanup_bash}"
                 }}
 
                 execute_twitter_post() {{
@@ -225,9 +262,9 @@ PY
                   "https://x.com/example/status/12345" \
                   "url" \
                   "280" \
-                  "{state_path}" \
-                  "{source_state_path}" \
-                  "{result_path}" \
+                  "{state_bash}" \
+                  "{source_state_bash}" \
+                  "{result_bash}" \
                   '["https://pbs.twimg.com/media/example-1.jpg"]'
                 status="$?"
                 printf 'status=%s\\n' "${{status}}"
@@ -244,14 +281,17 @@ PY
             result_path = temp_path / "post-result.json"
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
+            result_bash = self.bash_path(result_path)
+            state_bash = self.bash_path(state_path)
+            source_state_bash = self.bash_path(source_state_path)
 
             result = self.run_bash(
                 f'''
-                source "{self.common_sh}"
-                source "{self.post_publish_sh}"
+                source "{self.bash_path(self.common_sh)}"
+                source "{self.bash_path(self.post_publish_sh)}"
 
                 python_cmd() {{
-                  python3 "$@"
+                  "{self.python_bash_path()}" "$@"
                 }}
 
                 build_thread_plan_json() {{
@@ -284,9 +324,9 @@ PY
                   "https://x.com/example/status/12345" \
                   "none" \
                   "280" \
-                  "{state_path}" \
-                  "{source_state_path}" \
-                  "{result_path}"
+                  "{state_bash}" \
+                  "{source_state_bash}" \
+                  "{result_bash}"
                 status="$?"
                 return_trap="$(trap -p RETURN)"
                 printf 'status=%s\\n' "${{status}}"
@@ -305,14 +345,17 @@ PY
             result_path = temp_path / "post-result.json"
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
+            result_bash = self.bash_path(result_path)
+            state_bash = self.bash_path(state_path)
+            source_state_bash = self.bash_path(source_state_path)
 
             result = self.run_bash(
                 f'''
-                source "{self.common_sh}"
-                source "{self.post_publish_sh}"
+                source "{self.bash_path(self.common_sh)}"
+                source "{self.bash_path(self.post_publish_sh)}"
 
                 python_cmd() {{
-                  python3 "$@"
+                  "{self.python_bash_path()}" "$@"
                 }}
 
                 build_thread_plan_json() {{
@@ -333,7 +376,7 @@ PY
                 }}
 
                 count_thread_posts() {{
-                  python3 - "$1" <<'PY'
+                  python_cmd - "$1" <<'PY'
 import json
 import sys
 
@@ -371,9 +414,9 @@ PY
                   "https://x.com/example/status/12345" \
                   "none" \
                   "280" \
-                  "{state_path}" \
-                  "{source_state_path}" \
-                  "{result_path}"
+                  "{state_bash}" \
+                  "{source_state_bash}" \
+                  "{result_bash}"
                 status="$?"
                 printf 'status=%s\\n' "${{status}}"
                 '''
@@ -388,14 +431,17 @@ PY
             result_path = temp_path / "post-result.json"
             state_path = temp_path / "posted.txt"
             source_state_path = temp_path / "source-posted.txt"
+            result_bash = self.bash_path(result_path)
+            state_bash = self.bash_path(state_path)
+            source_state_bash = self.bash_path(source_state_path)
 
             result = self.run_bash(
                 f'''
-                source "{self.common_sh}"
-                source "{self.post_publish_sh}"
+                source "{self.bash_path(self.common_sh)}"
+                source "{self.bash_path(self.post_publish_sh)}"
 
                 python_cmd() {{
-                  python3 "$@"
+                  "{self.python_bash_path()}" "$@"
                 }}
 
                 build_thread_plan_json() {{
@@ -410,7 +456,7 @@ PY
                 }}
 
                 count_thread_posts() {{
-                  python3 - "$1" <<'PY'
+                  python_cmd - "$1" <<'PY'
 import json
 import sys
 print(len(json.loads(sys.argv[1])))
@@ -452,9 +498,9 @@ PY
                   "https://x.com/example/status/12345" \
                   "none" \
                   "280" \
-                  "{state_path}" \
-                  "{source_state_path}" \
-                  "{result_path}" \
+                  "{state_bash}" \
+                  "{source_state_bash}" \
+                  "{result_bash}" \
                   '["https://pbs.twimg.com/media/example-1.jpg"]'
                 status="$?"
                 printf 'status=%s\\n' "${{status}}"

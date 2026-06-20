@@ -18,10 +18,10 @@ jobs:
   run:
     runs-on:
       - self-hosted
-      - windows-wsl
+      - Windows
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
@@ -41,33 +41,20 @@ jobs:
         if: steps.market_day.outputs.should_run == 'true'
         run: |
           python -m venv python/.venv
-          python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install yfinance pandas pyyaml
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            mkdir -p python/.venv/bin
-            cat > python/.venv/bin/python <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/python.exe" "$@"
-            EOF
-            cat > python/.venv/bin/pip <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
-            EOF
-            chmod +x python/.venv/bin/python python/.venv/bin/pip
-          fi
+          python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          python\.venv\Scripts\python.exe -m pip install yfinance pandas pyyaml
 
       - name: Run runtime diagnostics
         if: steps.market_day.outputs.should_run == 'true'
-        run: |
-          python/.venv/bin/python python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/update-tickers-runtime.json
+        run: python\.venv\Scripts\python.exe python/check_python_runtime.py --module yfinance --module pandas --module yaml --output tmp/update-tickers-runtime.json
 
       - name: Prepare runtime files
         if: steps.market_day.outputs.should_run == 'true'
-        run: mkdir -p tmp
+        run: New-Item -ItemType Directory -Force tmp
 
       - name: Build stock cache
         if: steps.market_day.outputs.should_run == 'true'
-        run: python/.venv/bin/python python/update_tickers.py --summary-output tmp/stock_cache_summary.json
+        run: python\.venv\Scripts\python.exe python/update_tickers.py --summary-output tmp/stock_cache_summary.json
 
       - name: Write run summary
         if: always()
@@ -76,7 +63,7 @@ jobs:
           TARGET_DATE: ${{ steps.market_day.outputs.target_date }}
           SKIP_REASON: ${{ steps.market_day.outputs.reason }}
         run: |
-          python - <<'PY'
+          @'
           import json
           import os
           from pathlib import Path
@@ -115,7 +102,7 @@ jobs:
                       ]
                   )
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
+          '@ | python -
 
       - name: Upload stock cache artifact
         if: steps.market_day.outputs.should_run == 'true'

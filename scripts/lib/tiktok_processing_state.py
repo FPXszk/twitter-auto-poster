@@ -178,8 +178,10 @@ def processing_lock(path: str | Path) -> Iterator[Path]:
     lock_path = Path(path)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = None
+    acquired = False
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        acquired = True
         os.write(fd, f"{os.getpid()}\n".encode("utf-8"))
         yield lock_path
     except FileExistsError as exc:
@@ -187,6 +189,8 @@ def processing_lock(path: str | Path) -> Iterator[Path]:
     finally:
         if fd is not None:
             os.close(fd)
+        if not acquired:
+            return
         try:
             lock_path.unlink()
         except FileNotFoundError:
