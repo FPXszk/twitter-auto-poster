@@ -24,7 +24,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_json(command: list[str], output_path: Path) -> tuple[int, str, str]:
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     payload = {
         "command": command,
         "returncode": result.returncode,
