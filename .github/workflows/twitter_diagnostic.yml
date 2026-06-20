@@ -108,7 +108,7 @@ jobs:
         run: |
           & "$env:PYTHON_BOOTSTRAP" -m venv python\.venv
           .\python\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\python\.venv\Scripts\python.exe -m pip install twitter-cli
+          .\python\.venv\Scripts\python.exe -m pip install twitter-cli tzdata
 
       - name: Run runtime diagnostics
         run: |
