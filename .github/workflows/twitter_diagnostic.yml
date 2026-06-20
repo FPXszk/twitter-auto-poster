@@ -46,19 +46,35 @@ jobs:
   run:
     runs-on:
       - self-hosted
-      - windows-wsl
+      - Windows
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     env:
       TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
       TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Resolve Python
+        run: |
+          $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+          if (-not $python) {
+            $py = Get-Command py -ErrorAction SilentlyContinue
+            if ($py) {
+              $python = $py.Source
+              "PYTHON_BOOTSTRAP=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "PYTHON_BOOTSTRAP_ARGS=-3" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              & $python -3 --version
+              exit 0
+            }
+          }
+          if (-not $python) {
+            throw "Python was not found on PATH."
+          }
+          "PYTHON_BOOTSTRAP=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PYTHON_BOOTSTRAP_ARGS=" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $python --version
 
       - name: Resolve run options
         id: run_options
@@ -66,7 +82,11 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_INPUTS_JSON: ${{ toJson(github.event.inputs) }}
         run: |
-          python - <<'PY'
+          $bootstrapArgs = @()
+          if (-not [string]::IsNullOrWhiteSpace($env:PYTHON_BOOTSTRAP_ARGS)) {
+            $bootstrapArgs = $env:PYTHON_BOOTSTRAP_ARGS -split " "
+          }
+          @'
           import json
           import os
 
@@ -90,34 +110,22 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               for name, value in values.items():
                   handle.write(f"{name}={value}\n")
-          PY
+          '@ | & "$env:PYTHON_BOOTSTRAP" @bootstrapArgs -
 
       - name: Install runtime dependencies
         run: |
-          python -m venv python/.venv
-          python/.venv/bin/pip install --upgrade pip
-          python/.venv/bin/pip install twitter-cli
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            mkdir -p python/.venv/bin
-            cat > python/.venv/bin/python <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/python.exe" "$@"
-            EOF
-            cat > python/.venv/bin/pip <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/pip.exe" "$@"
-            EOF
-            cat > python/.venv/bin/twitter <<'EOF'
-            #!/usr/bin/env bash
-            exec "$(dirname "$0")/../Scripts/twitter.exe" "$@"
-            EOF
-            chmod +x python/.venv/bin/python python/.venv/bin/pip python/.venv/bin/twitter
-          fi
+          $bootstrapArgs = @()
+          if (-not [string]::IsNullOrWhiteSpace($env:PYTHON_BOOTSTRAP_ARGS)) {
+            $bootstrapArgs = $env:PYTHON_BOOTSTRAP_ARGS -split " "
+          }
+          & "$env:PYTHON_BOOTSTRAP" @bootstrapArgs -m venv python\.venv
+          python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          python\.venv\Scripts\python.exe -m pip install twitter-cli
 
       - name: Run runtime diagnostics
         run: |
-          mkdir -p tmp/diagnostics
-          python/.venv/bin/python python/check_python_runtime.py --output tmp/diagnostics/runtime.json
+          New-Item -ItemType Directory -Force tmp\diagnostics | Out-Null
+          python\.venv\Scripts\python.exe python/check_python_runtime.py --output tmp/diagnostics/runtime.json
 
       - name: Restore score history
         uses: actions/cache/restore@v4
@@ -134,21 +142,27 @@ jobs:
           TWEET_ID_1: ${{ steps.run_options.outputs.tweet_id_1 }}
           TWEET_ID_2: ${{ steps.run_options.outputs.tweet_id_2 }}
         run: |
-          mkdir -p tmp/diagnostics
-          touch tmp/diagnostics/account-score-history.jsonl
-          EXTRA_ARGS=""
-          if [ -n "${TWEET_ID_1}" ]; then
-            EXTRA_ARGS="${EXTRA_ARGS} --tweet-id ${TWEET_ID_1}"
-          fi
-          if [ -n "${TWEET_ID_2}" ]; then
-            EXTRA_ARGS="${EXTRA_ARGS} --tweet-id ${TWEET_ID_2}"
-          fi
-          python/.venv/bin/python python/twitter_account_diagnostic.py --diagnostics-dir tmp/diagnostics --summary-output tmp/diagnostics/account-score.json --history-path tmp/diagnostics/account-score-history.jsonl --recent-post-limit "${RECENT_POSTS_MAX}" --assume-premium "${ASSUME_PREMIUM}" ${EXTRA_ARGS}
+          New-Item -ItemType Directory -Force tmp\diagnostics | Out-Null
+          New-Item -ItemType File -Force tmp\diagnostics\account-score-history.jsonl | Out-Null
+          $extraArgs = @()
+          if (-not [string]::IsNullOrWhiteSpace($env:TWEET_ID_1)) {
+            $extraArgs += @("--tweet-id", $env:TWEET_ID_1)
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:TWEET_ID_2)) {
+            $extraArgs += @("--tweet-id", $env:TWEET_ID_2)
+          }
+          python\.venv\Scripts\python.exe python\twitter_account_diagnostic.py `
+            --diagnostics-dir tmp\diagnostics `
+            --summary-output tmp\diagnostics\account-score.json `
+            --history-path tmp\diagnostics\account-score-history.jsonl `
+            --recent-post-limit "$env:RECENT_POSTS_MAX" `
+            --assume-premium "$env:ASSUME_PREMIUM" `
+            @extraArgs
 
       - name: Write diagnostic summary
         if: always()
         run: |
-          python - <<'PY'
+          @'
           import json
           import os
           from pathlib import Path
@@ -232,7 +246,7 @@ jobs:
                               lines.append(f"  - Error: {item.get('error')}")
 
           summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
+          '@ | python\.venv\Scripts\python.exe -
 
       - name: Save score history
         if: always()
