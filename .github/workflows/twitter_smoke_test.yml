@@ -11,6 +11,11 @@ on:
         options:
           - "true"
           - "false"
+      delete_tweet_id:
+        description: Existing tweet ID to delete without creating a new smoke-test post
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +41,7 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
       INPUT_CLEANUP: ${{ inputs.cleanup }}
+      INPUT_DELETE_TWEET_ID: ${{ inputs.delete_tweet_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,9 +86,15 @@ jobs:
           twitter = Path("python/.venv/Scripts/twitter.exe")
           cleanup = os.environ.get("INPUT_CLEANUP", "true").strip().lower() == "true"
 
-          def run(name: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+          def run(
+              name: str,
+              command: list[str],
+              *,
+              input_text: str | None = None,
+          ) -> subprocess.CompletedProcess[str]:
               result = subprocess.run(
                   command,
+                  input=input_text,
                   capture_output=True,
                   text=True,
                   encoding="utf-8",
@@ -139,6 +151,25 @@ jobs:
               raise SystemExit("twitter whoami failed")
           whoami_payload = load_json_stdout(whoami)
           username = (((whoami_payload or {}).get("data") or {}).get("user") or {}).get("username", "")
+          delete_tweet_id = os.environ.get("INPUT_DELETE_TWEET_ID", "").strip()
+          if delete_tweet_id:
+              delete = run("delete", [str(twitter), "delete", delete_tweet_id], input_text="y\n")
+              if delete.returncode != 0:
+                  raise SystemExit("twitter delete cleanup failed")
+              summary = {
+                  "status": "ok",
+                  "username": username,
+                  "tweet_id": delete_tweet_id,
+                  "url": f"https://x.com/{username}/status/{delete_tweet_id}" if username else f"https://x.com/i/status/{delete_tweet_id}",
+                  "posted": False,
+                  "liked": False,
+                  "cleanup_requested": True,
+                  "deleted": True,
+                  "delete_returncode": delete.returncode,
+              }
+              (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+              print(json.dumps(summary, ensure_ascii=False))
+              raise SystemExit(0)
 
           now_jst = datetime.now(ZoneInfo("Asia/Tokyo")).replace(microsecond=0)
           text = f"Windows native smoke test {now_jst.isoformat()}"
@@ -161,7 +192,7 @@ jobs:
           deleted = False
           delete_returncode = None
           if cleanup:
-              delete = run("delete", [str(twitter), "delete", tweet_id])
+              delete = run("delete", [str(twitter), "delete", tweet_id], input_text="y\n")
               delete_returncode = delete.returncode
               if delete.returncode != 0:
                   raise SystemExit("twitter delete cleanup failed")
