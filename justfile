@@ -1,13 +1,13 @@
-set shell := ["bash", "-cu"]
+set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 dev:
-  ./devinit.sh
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/dev/devinit.ps1
 
 stop:
-  tmux kill-session -t twitter-auto-poster
+  Write-Host "No tmux session is managed in Windows native mode."
 
 logs:
-  tail -F twitter-auto-poster.log
+  if (Test-Path twitter-auto-poster.log) { Get-Content twitter-auto-poster.log -Wait } else { Write-Host "twitter-auto-poster.log not found." }
 
 session-logs:
-  ls -lt docs/working-memory/session-logs
+  if (Test-Path docs/working-memory/session-logs) { Get-ChildItem docs/working-memory/session-logs | Sort-Object LastWriteTime -Descending } else { Write-Host "docs/working-memory/session-logs not found." }

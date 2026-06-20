@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from tool_paths import default_twitter_bin
+
 LOGGER = logging.getLogger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
-DEFAULT_TWITTER_BIN = Path("python/.venv/bin/twitter")
+DEFAULT_TWITTER_BIN = default_twitter_bin()
 DEFAULT_BACKUP_DIR = Path("tmp/bulk_delete_backup")
 DEFAULT_STATE_PATH = Path("tmp/bulk_delete_state.json")
 TWEET_CATEGORIES = ("normal", "reply", "quote", "retweet", "unknown")

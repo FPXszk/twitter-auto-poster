@@ -20,6 +20,7 @@ from auto_follow import (
     record_follow,
     record_skip,
 )
+from tool_paths import default_twitter_bin
 
 
 def build_user(
@@ -45,6 +46,7 @@ class AutoFollowTests(unittest.TestCase):
             args = parse_args()
 
         self.assertEqual(args.target_username, "suzuka_saga")
+        self.assertEqual(args.twitter_bin, default_twitter_bin())
 
     def test_has_japanese_text_detects_profile_language(self) -> None:
         self.assertTrue(has_japanese_text("日本株と投資"))

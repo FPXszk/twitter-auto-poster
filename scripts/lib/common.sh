@@ -7,8 +7,13 @@ readonly PROJECT_ROOT="$(cd "${COMMON_DIR}/../.." && pwd)"
 readonly DEFAULT_SOURCES_CONFIG="${PROJECT_ROOT}/config/sources.yaml"
 readonly DEFAULT_ACCOUNTS_CONFIG="${PROJECT_ROOT}/config/accounts.yaml"
 readonly DEFAULT_TMP_DIR="${PROJECT_ROOT}/tmp"
-readonly DEFAULT_PYTHON_BIN="${PROJECT_ROOT}/python/.venv/bin/python3"
-readonly DEFAULT_TWITTER_BIN="${PROJECT_ROOT}/python/.venv/bin/twitter"
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == mingw* || "${OSTYPE:-}" == cygwin* ]]; then
+  readonly DEFAULT_PYTHON_BIN="${PROJECT_ROOT}/python/.venv/Scripts/python.exe"
+  readonly DEFAULT_TWITTER_BIN="${PROJECT_ROOT}/python/.venv/Scripts/twitter.exe"
+else
+  readonly DEFAULT_PYTHON_BIN="${PROJECT_ROOT}/python/.venv/bin/python3"
+  readonly DEFAULT_TWITTER_BIN="${PROJECT_ROOT}/python/.venv/bin/twitter"
+fi
 readonly DEFAULT_RETRY_ATTEMPTS="${TWITTER_RETRY_ATTEMPTS:-3}"
 readonly DEFAULT_RETRY_DELAY_SECONDS="${TWITTER_RETRY_DELAY_SECONDS:-2}"
 

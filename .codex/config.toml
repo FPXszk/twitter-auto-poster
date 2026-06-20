@@ -4,28 +4,16 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 network = "enabled"
 
-[projects."/home/fpxszk/code/Oh-MY-TradingView"]
+[projects."C:/00_mycode/twitter-auto-poster"]
 trust_level = "trusted"
 writable_roots = [
-"/home/fpxszk/code/Oh-MY-TradingView",
-"/home/fpxszk/code/Oh-MY-TradingView/.git",
-"/tmp",
-"/home/fpxszk/.codex/memories",
+"C:/00_mycode/twitter-auto-poster",
+"C:/00_mycode/twitter-auto-poster/.git",
+"C:/Users/szk/.codex/memories",
 ]
-
-[projects."/mnt/c/actions-runner/_work"]
-trust_level = "trusted"
 
 [plugins."github@openai-curated"]
 enabled = true
-
-[mcp_servers.oh-my-tradingview]
-command = "node"
-args = ["/home/fpxszk/code/Oh-MY-TradingView/src/server.js"]
-
-[mcp_servers.oh-my-tradingview.env]
-TV_CDP_HOST = "172.31.144.1"
-TV_CDP_PORT = "9223"
 
 [sandbox_workspace_write]
 network_access = true

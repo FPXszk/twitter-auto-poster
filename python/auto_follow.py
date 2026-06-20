@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
+from tool_paths import default_twitter_bin
+
 LOGGER = logging.getLogger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
-DEFAULT_TWITTER_BIN = Path("python/.venv/bin/twitter")
+DEFAULT_TWITTER_BIN = default_twitter_bin()
 DEFAULT_STATE_PATH = Path("config/follow_state.json")
 DEFAULT_SUMMARY_OUTPUT = Path("tmp/auto_follow_summary.json")
 JAPANESE_PATTERN = re.compile(r"[ぁ-んァ-ヶ一-龯々ー]")

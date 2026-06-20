@@ -118,17 +118,36 @@
 
 ## 必要なもの
 
-- `python3`
+- Windows native の正規作業場所: `C:\00_mycode\twitter-auto-poster`
+- `python` または `py -3`
 - `pyyaml`
 - `twitter-cli`
 - `twikit` と `XClientTransaction`（動画投稿を使う場合）
 - `copilot`
-- `tmux`
-- `lazygit`
 - `gh`
 - `just`
 
-ローカルの最低限セットアップ例:
+Windows native の最低限セットアップ例:
+
+```powershell
+cd C:\00_mycode\twitter-auto-poster
+py -3 -m venv python\.venv
+python\.venv\Scripts\python.exe -m pip install --upgrade pip
+python\.venv\Scripts\python.exe -m pip install pyyaml tzdata twitter-cli
+npm install -g @github/copilot
+copilot login
+```
+
+`twitter-cli` の認証確認:
+
+```powershell
+python\.venv\Scripts\twitter.exe status --yaml
+python\.venv\Scripts\twitter.exe whoami
+```
+
+`twitter` を PATH に置いている場合は、各 Python entrypoint の `--twitter-bin` を省略できます。Windows native では既定で `python/.venv/Scripts/twitter.exe` を見ます。
+
+WSL/Linux での旧セットアップ例:
 
 ```bash
 npm install -g @github/copilot
@@ -155,31 +174,19 @@ twitter whoami
 
 GitHub Actions で Copilot 要約を使う場合は、`COPILOT_GITHUB_TOKEN` secret に **fine-grained PAT** または **GitHub App トークン**（Copilot Requests 権限付き）を設定してください。Classic Personal Access Token（`ghp_` 形式）は Copilot CLI が拒否するため使用できません。
 
-シェルスクリプトは既定で `python/.venv/bin/python3` を優先し、必要なら `PYTHON_BIN` で override できます。
+シェルスクリプトは Linux/WSL では既定で `python/.venv/bin/python3` を優先し、Git Bash on Windows では `python/.venv/Scripts/python.exe` を優先します。必要なら `PYTHON_BIN` と `TWITTER_BIN` で override できます。
 
 ## ローカル起動コマンド
 
 ### 開発セッション起動
 
-`just dev` で `devinit.sh` を起動します。
+Windows native では `just dev` で PowerShell の環境確認を実行します。`tmux` セッションは作成しません。
 
-```bash
+```powershell
 just dev
 ```
 
-`devinit.sh` は `tmux` セッション `twitter-auto-poster` を作り、3 ペイン構成で起動します。
-
-- `copilot`
-- `logs`
-- `git`
-
-内部的には以下を行います。
-
-- `gh auth status` を確認
-- 必要なら GitHub ログイン
-- Copilot CLI を起動
-- `twitter-auto-poster.log` を tail
-- `lazygit` を起動
+WSL/Linux の旧入口として `devinit.sh` は残っていますが、Windows native 移行中は `scripts/dev/devinit.ps1` を正とします。
 
 ### 開発セッション停止
 
@@ -229,9 +236,11 @@ live 投稿に切り替える場合は `--dry-run false` を指定してくだ�
 
 ### auto follow を手動確認する
 
-```bash
-python/.venv/bin/python python/auto_follow.py --target-username suzuka_saga
-python/.venv/bin/python python/auto_unfollow.py
+> live follow / unfollow は書き込み操作です。Windows native 移行確認では実行しないでください。
+
+```powershell
+python\.venv\Scripts\python.exe python\auto_follow.py --target-username suzuka_saga --twitter-bin python\.venv\Scripts\twitter.exe
+python\.venv\Scripts\python.exe python\auto_unfollow.py
 ```
 
 `auto_follow.py` は `@suzuka_saga` のフォロワーを最大 1000 人まで調べ、認証済みかつプロフィールまたは直近投稿に日本語シグナルと株関連キーワードがある候補を follow します。1 回あたりの合計フォロー件数は 10〜15 件です。`auto_unfollow.py` は `config/follow_state.json` を見て、7 日以上経過して未フォローバックの相手だけをランダム件数 unfollow します。
@@ -252,6 +261,12 @@ python/.venv/bin/python python/bulk_delete.py --execute
 
 # 4. 確認プロンプトをスキップ（CI 向け、慎重に使用）
 python/.venv/bin/python python/bulk_delete.py --execute --yes
+```
+
+Windows native:
+
+```powershell
+python\.venv\Scripts\python.exe python\bulk_delete.py --twitter-bin python\.venv\Scripts\twitter.exe
 ```
 
 安全仕様:
@@ -283,12 +298,13 @@ python/.venv/bin/python scripts/lib/tiktok_pipeline.py \
 
 ### auto like を手動確認する
 
-```bash
-python/.venv/bin/python python/auto_like.py --dry-run
-python/.venv/bin/python python/auto_like.py
+```powershell
+python\.venv\Scripts\python.exe python\auto_like.py --dry-run
 ```
 
 `auto_like.py` は for-you タイムラインから直近候補を集め、`300` 以上いいね済みの投稿を除外しつつ、できるだけ「新しく・まだいいね数が少ない」投稿を優先して 1 回ごとに `5〜15` 件の like をします。連続 like の待機は `2〜8秒` です。
+
+Windows native 移行確認中は `--dry-run` なしの auto like を実行しないでください。
 
 ## 保守・確認コマンド
 
@@ -303,6 +319,29 @@ git --no-pager status --short
 python/.venv/bin/python -m py_compile python/auto_follow.py python/auto_unfollow.py python/auto_like.py python/bulk_delete.py
 python/.venv/bin/python -m unittest discover -s tests
 ```
+
+Windows native:
+
+```powershell
+python -m py_compile python/tool_paths.py python/auto_follow.py python/bulk_delete.py python/twitter_account_diagnostic.py
+python -m unittest tests.test_auto_follow tests.test_bulk_delete
+git status --short
+```
+
+## Windows native 移行中に実行禁止のコマンド
+
+- `git push`
+- `twitter post`
+- `twitter delete`
+- `twitter reply`
+- `twitter quote`
+- `twitter like`
+- `twitter retweet`
+- `twitter follow`
+- `twitter unfollow`
+- `python\bulk_delete.py --execute`
+- `bash scripts/fetch_and_post.sh --post`
+- dry-run なしの投稿・like・follow・unfollow 系 workflow 手動実行
 
 README や workflow を触ったときの軽い確認例:
 

@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Sequence
 
 from account_score import analyze_account_score, current_jst_datetime
+from tool_paths import default_twitter_bin
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Twitter account diagnostics and estimate account score.")
-    parser.add_argument("--twitter-bin", type=Path, default=Path("python/.venv/bin/twitter"))
+    parser.add_argument("--twitter-bin", type=Path, default=default_twitter_bin())
     parser.add_argument("--diagnostics-dir", type=Path, required=True)
     parser.add_argument("--summary-output", type=Path, required=True)
     parser.add_argument("--history-path", type=Path, required=True)

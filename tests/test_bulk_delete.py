@@ -17,6 +17,7 @@ from bulk_delete import (
     parse_args,
     validate_before_execute,
 )
+from tool_paths import default_twitter_bin
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ class TestParseArgs(unittest.TestCase):
 
     def test_twitter_bin_default(self) -> None:
         args = parse_args([])
-        self.assertEqual(args.twitter_bin, Path("python/.venv/bin/twitter"))
+        self.assertEqual(args.twitter_bin, default_twitter_bin())
 
 
 class TestFetchWhoamiUsername(unittest.TestCase):
