@@ -1,0 +1,193 @@
+name: Twitter write smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      cleanup:
+        description: Delete the smoke-test post after verifying post and like
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: twitter-write-smoke-test
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on:
+      - self-hosted
+      - Windows
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      INPUT_CLEANUP: ${{ inputs.cleanup }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python
+        run: |
+          $candidates = @(
+            "C:\Users\szk\AppData\Local\Programs\Python\Python310\python.exe",
+            "C:\Users\szk\miniconda3\python.exe"
+          )
+          $python = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $python) {
+            $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $python) {
+            throw "Python was not found on PATH."
+          }
+          "PYTHON_BOOTSTRAP=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $python --version
+
+      - name: Install runtime dependencies
+        run: |
+          & "$env:PYTHON_BOOTSTRAP" -m venv python\.venv
+          .\python\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\python\.venv\Scripts\python.exe -m pip install twitter-cli tzdata
+
+      - name: Run write smoke test
+        run: |
+          New-Item -ItemType Directory -Force tmp\twitter-smoke | Out-Null
+          @'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import subprocess
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          out_dir = Path("tmp/twitter-smoke")
+          out_dir.mkdir(parents=True, exist_ok=True)
+          twitter = Path("python/.venv/Scripts/twitter.exe")
+          cleanup = os.environ.get("INPUT_CLEANUP", "true").strip().lower() == "true"
+
+          def run(name: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+              result = subprocess.run(
+                  command,
+                  capture_output=True,
+                  text=True,
+                  encoding="utf-8",
+                  errors="replace",
+                  check=False,
+              )
+              (out_dir / f"{name}.json").write_text(
+                  json.dumps(
+                      {
+                          "command": [Path(command[0]).name, *command[1:]],
+                          "returncode": result.returncode,
+                          "stdout": result.stdout,
+                          "stderr": result.stderr,
+                      },
+                      ensure_ascii=False,
+                      indent=2,
+                  )
+                  + "\n",
+                  encoding="utf-8",
+              )
+              return result
+
+          def load_json_stdout(result: subprocess.CompletedProcess[str]) -> object:
+              return json.loads(result.stdout)
+
+          def find_tweet_id(payload: object, raw: str) -> str:
+              def walk(value: object) -> str:
+                  if isinstance(value, dict):
+                      for key in ("id", "tweet_id", "rest_id", "id_str"):
+                          item = str(value.get(key) or "").strip()
+                          if item.isdigit():
+                              return item
+                      for item in value.values():
+                          found = walk(item)
+                          if found:
+                              return found
+                  if isinstance(value, list):
+                      for item in value:
+                          found = walk(item)
+                          if found:
+                              return found
+                  return ""
+
+              found = walk(payload)
+              if found:
+                  return found
+              match = re.search(r"status/(\d+)|/i/status/(\d+)|\b(\d{10,})\b", raw)
+              if not match:
+                  return ""
+              return next(group for group in match.groups() if group)
+
+          whoami = run("whoami", [str(twitter), "whoami", "--json"])
+          if whoami.returncode != 0:
+              raise SystemExit("twitter whoami failed")
+          whoami_payload = load_json_stdout(whoami)
+          username = (((whoami_payload or {}).get("data") or {}).get("user") or {}).get("username", "")
+
+          now_jst = datetime.now(ZoneInfo("Asia/Tokyo")).replace(microsecond=0)
+          text = f"Windows native smoke test {now_jst.isoformat()}"
+          post = run("post", [str(twitter), "post", text, "--json"])
+          if post.returncode != 0:
+              raise SystemExit("twitter post failed")
+          post_payload = load_json_stdout(post)
+          tweet_id = find_tweet_id(post_payload, post.stdout)
+          if not tweet_id:
+              raise SystemExit("twitter post succeeded but tweet id was not found")
+
+          like = run("like", [str(twitter), "like", tweet_id])
+          if like.returncode != 0:
+              raise SystemExit("twitter like failed")
+
+          verify = run("tweet", [str(twitter), "tweet", tweet_id, "--json"])
+          if verify.returncode != 0:
+              raise SystemExit("twitter tweet verify failed")
+
+          deleted = False
+          delete_returncode = None
+          if cleanup:
+              delete = run("delete", [str(twitter), "delete", tweet_id])
+              delete_returncode = delete.returncode
+              if delete.returncode != 0:
+                  raise SystemExit("twitter delete cleanup failed")
+              deleted = True
+
+          summary = {
+              "status": "ok",
+              "username": username,
+              "tweet_id": tweet_id,
+              "url": f"https://x.com/{username}/status/{tweet_id}" if username else f"https://x.com/i/status/{tweet_id}",
+              "posted": True,
+              "liked": True,
+              "cleanup_requested": cleanup,
+              "deleted": deleted,
+              "delete_returncode": delete_returncode,
+              "text": text,
+              "run_at_jst": now_jst.isoformat(),
+          }
+          (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({k: v for k, v in summary.items() if k != "text"}, ensure_ascii=False))
+          '@ | .\python\.venv\Scripts\python.exe -
+
+      - name: Upload smoke-test artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitter-write-smoke-test
+          path: tmp/twitter-smoke/
+          if-no-files-found: ignore
